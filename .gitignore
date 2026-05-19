@@ -1,0 +1,16 @@
+# Maven / Java build output (do not upload)
+rrbm-backend/target/
+
+# IDE and editor folders
+.idea/
+.vscode/
+*.iml
+
+# OS junk files
+Thumbs.db
+.DS_Store
+
+# Local secrets (create this file on your machine only — never commit passwords)
+rrbm-backend/src/main/resources/application-local.properties
+.env
+.env.*

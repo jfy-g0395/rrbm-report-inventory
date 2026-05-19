@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RRBM Packaging — Management System</title>
+
+  <!-- Bootstrap 5 (for utility classes if needed) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+  <!-- Tabler Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css" rel="stylesheet" />
+
+  <!-- Chart.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+  <!-- App Styles -->
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="assets/rrbm-logo.png" />
+</head>
+<body data-theme="light">
+
+  <!-- ============================================================
+       LOGIN SCREEN
+       ============================================================ -->
+  <div class="login-screen" id="login-screen">
+    <div class="login-logo-area">
+      <img src="assets/rrbm-logo.png" alt="RRBM" />
+      <div class="login-tagline">Packaging Supplies and Trading</div>
+    </div>
+    <div class="login-box">
+      <div class="login-subtitle">Sign in to your workspace</div>
+      <input type="text" class="login-input" id="login-email" placeholder="Email" />
+      <input type="password" class="login-input" id="login-password" placeholder="Password" />
+      <button class="login-btn" onclick="doLogin()">Sign In</button>
+      <div class="login-hint">Use your RRBM credentials to sign in</div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       APP LAYOUT
+       ============================================================ -->
+  <div class="app">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <img src="assets/rrbm-logo.png" alt="RRBM Packaging" />
+      </div>
+      <nav class="sidebar-nav">
+        <div class="nav-section">Main</div>
+        <button class="nav-item active" data-view="dash" onclick="navigateTo('dash')">
+          <i class="ti ti-layout-dashboard"></i><span>Dashboard</span>
+        </button>
+        <button class="nav-item" data-view="new" onclick="navigateTo('new')">
+          <i class="ti ti-plus"></i><span>New Order</span>
+        </button>
+        <button class="nav-item" data-view="list" onclick="navigateTo('list')">
+          <i class="ti ti-list"></i><span>Order List</span>
+        </button>
+        <button class="nav-item" data-view="inv" onclick="navigateTo('inv')">
+          <i class="ti ti-package"></i><span>Inventory</span>
+        </button>
+
+        <div class="nav-section">Insights</div>
+        <button class="nav-item" data-view="rep" onclick="navigateTo('rep')">
+          <i class="ti ti-chart-bar"></i><span>Reports</span>
+        </button>
+
+        <div class="nav-section">Admin</div>
+        <button class="nav-item" data-view="emp" onclick="navigateTo('emp')">
+          <i class="ti ti-users"></i><span>Employees</span>
+        </button>
+        <button class="nav-item" data-view="set" onclick="navigateTo('set')">
+          <i class="ti ti-settings"></i><span>Settings</span>
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="avatar">RR</div>
+        <div>
+          <div class="user-name">Ryan Reyes</div>
+          <div class="user-role">Super Admin</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main">
+
+      <!-- TOPBAR -->
+      <header class="topbar">
+        <div>
+          <div class="page-title" id="page-title">Dashboard</div>
+          <div class="page-subtitle" id="page-subtitle">Today's overview</div>
+        </div>
+        <div class="topbar-right">
+          <span class="time-chip" id="clock">--:--:--</span>
+          <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme">
+            <i class="ti ti-sun" id="theme-icon"></i>
+          </button>
+          <button class="icon-btn" title="Notifications"><i class="ti ti-bell"></i></button>
+          <button class="icon-btn" onclick="doLogout()" title="Logout"><i class="ti ti-logout"></i></button>
+        </div>
+      </header>
+
+      <!-- CONTENT -->
+      <div class="content">
+
+        <!-- ====================================================
+             VIEW: DASHBOARD
+             ==================================================== -->
+        <section class="view active" id="view-dash">
+          <div class="d-flex justify-between align-center" style="margin-bottom:14px;">
+            <div></div>
+            <div class="tab-group">
+              <button class="tab-btn active">Daily</button>
+              <button class="tab-btn">Weekly</button>
+              <button class="tab-btn">Monthly</button>
+            </div>
+          </div>
+
+          <div class="grid grid-4" style="margin-bottom:12px;">
+            <div class="stat-card">
+              <i class="ti ti-currency-peso stat-icon"></i>
+              <div class="stat-label">Total Sales</div>
+              <div class="stat-value">₱48,750</div>
+              <div class="stat-sub" style="color:#10B981;">↑ 12.5% vs yesterday</div>
+            </div>
+            <div class="stat-card">
+              <i class="ti ti-shopping-cart stat-icon"></i>
+              <div class="stat-label">Active Orders</div>
+              <div class="stat-value">23</div>
+              <div class="stat-sub">5 pending payment</div>
+            </div>
+            <div class="stat-card">
+              <i class="ti ti-box stat-icon"></i>
+              <div class="stat-label">Pizza Boxes Sold</div>
+              <div class="stat-value">3,420</div>
+              <div class="stat-sub">Today's total pcs</div>
+            </div>
+            <div class="stat-card">
+              <i class="ti ti-device-laptop stat-icon"></i>
+              <div class="stat-label">E-commerce Orders</div>
+              <div class="stat-value">14</div>
+              <div class="stat-sub">Shopee / TikTok / Lazada</div>
+            </div>
+          </div>
+
+          <div class="grid grid-4" style="margin-bottom:12px;">
+            <div class="stat-card">
+              <i class="ti ti-cash stat-icon"></i>
+              <div class="stat-label">Cash on Hand</div>
+              <div class="stat-value">₱32,400</div>
+            </div>
+            <div class="stat-card">
+              <i class="ti ti-credit-card stat-icon"></i>
+              <div class="stat-label">E-wallet / Online</div>
+              <div class="stat-value">₱16,350</div>
+            </div>
+            <div class="stat-card">
+              <i class="ti ti-shopping-bag stat-icon"></i>
+              <div class="stat-label">Shopee Orders</div>
+              <div class="stat-value">8</div>
+            </div>
+            <div class="stat-card">
+              <i class="ti ti-alert-triangle stat-icon"></i>
+              <div class="stat-label">Low Stock Items</div>
+              <div class="stat-value" style="color:#EF4444;">7</div>
+            </div>
+          </div>
+
+          <div class="grid grid-2" style="margin-bottom:12px;">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Sales Trend (Last 7 Days)</div></div>
+              <div class="card-body" style="height:240px;position:relative;">
+                <canvas id="chart-sales" role="img" aria-label="Sales trend chart"></canvas>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">E-commerce Breakdown</div></div>
+              <div class="card-body" style="height:240px;position:relative;">
+                <canvas id="chart-ecommerce" role="img" aria-label="Ecommerce breakdown"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: NEW ORDER
+             ==================================================== -->
+        <section class="view" id="view-new">
+
+          <div class="order-form-container">
+            <h4>New Order</h4>
+
+              <!-- Customer Info Row -->
+              <div class="row mb-3">
+                  <div class="col-md-4">
+                      <label class="form-label">Customer Name <span class="text-danger">*</span></label>
+                      <input type="text" class="form-control" id="field-customer" required placeholder="Enter customer name">
+                  </div>
+                  <div class="col-md-3">
+                      <label class="form-label">Source <span class="text-danger">*</span></label>
+                      <select class="form-select" id="field-source" required onchange="onSourceChange()">
+                          <option value="">Select source</option>
+                          <option value="WALK_IN">Walk-in</option>
+                          <option value="AGENT">Agent</option>
+                          <option value="ECOMMERCE">E-Commerce</option>
+                          <option value="FACEBOOK_PAGE">Facebook Page</option>
+                      </select>
+                  </div>
+                  <!-- Agent name (hidden by default, shown when AGENT selected) -->
+                  <div class="col-md-3" id="field-agent-wrap" style="display: none;">
+                      <label class="form-label">Agent Name</label>
+                      <input type="text" class="form-control" id="field-agent" placeholder="Enter agent name">
+                  </div>
+                  <!-- Facebook Page (hidden by default, shown when FACEBOOK_PAGE selected) -->
+                  <div class="col-md-3" id="field-fb-wrap" style="display: none;">
+                      <label class="form-label">FB Page</label>
+                      <input type="text" class="form-control" id="field-fb" placeholder="Enter FB page name">
+                  </div>
+                  <!-- E-commerce platform sub-dropdown (hidden by default) -->
+                  <div class="col-md-2" id="ecommercePlatformGroup" style="display: none;">
+                      <label class="form-label">Platform <span class="text-danger">*</span></label>
+                      <select class="form-select" id="ecommercePlatform">
+                          <option value="">Select</option>
+                          <option value="SHOPEE">Shopee</option>
+                          <option value="TIKTOK">TikTok Shop</option>
+                          <option value="LAZADA">Lazada</option>
+                      </select>
+                  </div>
+                  <div class="col-md-3">
+                      <label class="form-label">Payment Mode <span class="text-danger">*</span></label>
+                      <select class="form-select" id="field-payment" required>
+                          <option value="">Select payment</option>
+                          <option value="CASH">Cash</option>
+                          <option value="GCASH">GCash</option>
+                          <option value="PAYMAYA">PayMaya</option>
+                          <option value="BANK_TRANSFER">Bank Transfer</option>
+                          <option value="BANK_DEPOSIT">Bank Deposit</option>
+                          <option value="ONLINE">Online</option>
+                      </select>
+                  </div>
+              </div>
+
+              <!-- Discount & Notes Row -->
+              <div class="row mb-3">
+                  <div class="col-md-4">
+                      <label class="form-label">Discount (₱ amount)</label>
+                      <input type="number" class="form-control" id="orderDiscount" value="0" min="0" step="0.01">
+                  </div>
+                  <div class="col-md-8">
+                      <label class="form-label">Notes</label>
+                      <input type="text" class="form-control" id="orderNotes" placeholder="Optional notes">
+                  </div>
+              </div>
+
+              <!-- Order Items Section -->
+              <h5 class="mt-4 mb-3">Order Items</h5>
+              <div id="orderItemsContainer">
+                  <!-- Item rows added by JavaScript -->
+              </div>
+              <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="addItemBtn">
+                  <i class="ti ti-plus"></i> Add Item
+              </button>
+
+              <!-- Order Summary -->
+              <div class="order-summary mt-4 p-3 bg-light rounded">
+                  <div class="row">
+                      <div class="col-md-6"></div>
+                      <div class="col-md-6">
+                          <div class="d-flex justify-content-between mb-1">
+                              <span>Subtotal:</span>
+                              <span id="orderSubtotal">₱0.00</span>
+                          </div>
+                          <div class="d-flex justify-content-between mb-1">
+                              <span>Discount:</span>
+                              <span id="orderDiscountAmount">-₱0.00</span>
+                          </div>
+                          <hr>
+                          <div class="d-flex justify-content-between fw-bold fs-5">
+                              <span>Total:</span>
+                              <span id="orderTotal">₱0.00</span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              <!-- Submit Buttons -->
+              <div class="mt-4 d-flex gap-2">
+                  <button type="button" class="btn btn-primary" onclick="addOrder()">
+                      <i class="ti ti-check"></i> Submit Order
+                  </button>
+                  <button type="button" class="btn btn-secondary" onclick="clearOrderForm()">
+                      <i class="ti ti-x"></i> Clear Form
+                  </button>
+              </div>
+
+          </div>
+
+          <!-- Recent Orders Table (below the form) -->
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header"><div class="card-title">Today's Orders</div></div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Order ID</th><th>Customer</th><th>Product</th>
+                  <th>Qty</th><th>Total</th><th>Source</th><th>Payment</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="orders-tbody"></tbody>
+            </table>
+          </div>
+
+        </section>
+
+        <!-- ====================================================
+             VIEW: ORDER LIST
+             ==================================================== -->
+        <section class="view" id="view-list">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">All Orders</div>
+              <input class="form-control" placeholder="Search by customer or Order ID" style="width:280px;padding:6px 12px;font-size:12px;" />
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Order ID</th><th>Date</th><th>Customer</th>
+                  <th>Items</th><th>Total</th><th>Status</th><th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="list-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: INVENTORY
+             ==================================================== -->
+        <section class="view" id="view-inv">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Inventory</div>
+              <div style="display:flex;gap:8px;">
+                <select class="form-control form-select" style="width:140px;padding:6px 24px 6px 10px;font-size:12px;">
+                  <option>All Categories</option>
+                  <option>Pizza Boxes</option>
+                  <option>Burger Boxes</option>
+                  <option>Bags</option>
+                </select>
+                <button class="btn btn-primary btn-sm"><i class="ti ti-plus"></i>Add Product</button>
+              </div>
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Product</th><th>Tag</th><th>WH1</th><th>WH2</th>
+                  <th>WH3</th><th>Total</th><th>Stock Bar</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="inv-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: REPORTS
+             ==================================================== -->
+        <section class="view" id="view-rep">
+          <div class="grid grid-2" style="margin-bottom:12px;">
+            <div class="stat-card">
+              <div class="stat-label">Best Day This Month</div>
+              <div class="stat-value">₱68,420</div>
+              <div class="stat-sub">Friday, Nov 8</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Month Total</div>
+              <div class="stat-value">₱1.24M</div>
+              <div class="stat-sub" style="color:#10B981;">↑ 18% vs last month</div>
+            </div>
+          </div>
+          <div class="card" style="margin-bottom:12px;">
+            <div class="card-header"><div class="card-title">Monthly Revenue Trend</div></div>
+            <div class="card-body" style="height:240px;position:relative;">
+              <canvas id="chart-monthly" role="img" aria-label="Monthly revenue"></canvas>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Direct vs E-commerce (6 Months)</div></div>
+            <div class="card-body" style="height:240px;position:relative;">
+              <canvas id="chart-comparison" role="img" aria-label="Direct vs ecommerce"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: EMPLOYEES
+             ==================================================== -->
+        <section class="view" id="view-emp">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Team Members</div>
+              <button class="btn btn-primary btn-sm"><i class="ti ti-user-plus"></i>Add Member</button>
+            </div>
+            <table class="table">
+              <thead>
+                <tr><th>Name</th><th>Email</th><th>Role</th><th>Permissions</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Ryan Reyes</strong></td><td>ryan@rrbm.com</td>
+                  <td><span class="badge badge-honey">Super Admin</span></td>
+                  <td>Full Access</td>
+                  <td><span class="status-dot dot-active"></span>Active</td>
+                </tr>
+                <tr>
+                  <td>Maria Santos</td><td>maria@rrbm.com</td>
+                  <td><span class="badge badge-ok">Admin</span></td>
+                  <td>Orders, Inventory, Reports</td>
+                  <td><span class="status-dot dot-active"></span>Active</td>
+                </tr>
+                <tr>
+                  <td>Juan Cruz</td><td>juan@rrbm.com</td>
+                  <td><span class="badge badge-low">Staff</span></td>
+                  <td>Orders Only</td>
+                  <td><span class="status-dot dot-active"></span>Active</td>
+                </tr>
+                <tr>
+                  <td>Anna Lim</td><td>anna@rrbm.com</td>
+                  <td><span class="badge badge-low">Staff</span></td>
+                  <td>Orders, Inventory</td>
+                  <td><span class="status-dot dot-active"></span>Active</td>
+                </tr>
+                <tr>
+                  <td>Carlos Reyes</td><td>carlos@rrbm.com</td>
+                  <td><span class="badge badge-low">Staff</span></td>
+                  <td>Orders Only</td>
+                  <td><span class="status-dot dot-pending"></span>Away</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: SETTINGS
+             ==================================================== -->
+        <section class="view" id="view-set">
+          <div class="grid grid-2">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Company</div></div>
+              <div class="card-body">
+                <label class="form-label">Company Name</label>
+                <input class="form-control" value="RRBM Packaging Supplies and Trading" style="margin-bottom:12px;" />
+                <label class="form-label">Daily Reset Time</label>
+                <input class="form-control" value="12:00 AM" style="margin-bottom:12px;" />
+                <label class="form-label">Master Key (for cancellation)</label>
+                <input class="form-control" type="password" value="••••••••" />
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Stock Thresholds</div></div>
+              <div class="card-body">
+                <label class="form-label">Hot Selling — Critical</label>
+                <input class="form-control" value="3,000 pcs" style="margin-bottom:12px;" />
+                <label class="form-label">Hot Selling — Low Warning</label>
+                <input class="form-control" value="5,000 pcs" style="margin-bottom:12px;" />
+                <label class="form-label">Selling / Slow — Critical</label>
+                <input class="form-control" value="1,000 pcs" />
+              </div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:12px;">
+            <div class="card-header"><div class="card-title">Appearance</div></div>
+            <div class="card-body">
+              <div class="d-flex justify-between align-center">
+                <div>
+                  <div style="font-size:13px;font-weight:500;">Dark Mode</div>
+                  <div style="font-size:11.5px;color:var(--text-muted);">Toggle between light and dark themes</div>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="toggleTheme()">
+                  <i class="ti ti-sun"></i>Toggle
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div><!-- /.content -->
+    </main>
+  </div><!-- /.app -->
+
+  <!-- ============================================================
+       TOAST CONTAINER
+       ============================================================ -->
+  <div class="rrbm-toast-container" id="rrbm-toast-container"></div>
+
+  <!-- ============================================================
+       MODAL: CANCEL ORDER
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-cancel">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;">Cancel Order</div>
+        <button class="icon-btn" onclick="closeModal()"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+          Enter master key to cancel order <strong id="cancel-order-id"></strong>
+        </div>
+        <input type="password" class="form-control" id="cancel-key-input" placeholder="Master key" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmCancel()">Cancel Order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Script -->
+  <script src="js/app.js"></script>
+</body>
+</html>
