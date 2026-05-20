@@ -3,6 +3,8 @@ package rrbm_backend;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
+import org.springframework.data.jpa.repository.Query;
+
 public interface ProductRepository extends JpaRepository<Product, Long> {
 
     // Get all active products sorted alphabetically
@@ -13,4 +15,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     // Find by category among active products
     List<Product> findByCategoryAndActiveTrue(String category);
+
+    @Query("SELECT DISTINCT p.category FROM Product p WHERE p.category IS NOT NULL AND TRIM(p.category) <> '' ORDER BY p.category")
+    List<String> findDistinctCategory();
 }

@@ -15,6 +15,7 @@
     toastId: 0,
     cachedProducts: [],
     itemRowCounter: 0,
+    deliveryLineCounter: 0,
   };
 
   function pad(n, w) { n = '' + n; while (n.length < w) n = '0' + n; return n; }
@@ -55,21 +56,7 @@
     return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionStorage.getItem('rrbm_token') };
   }
 
-  // ----------------------------------------------------------------
-  // Inventory seed data (will be replaced by real data in Phase 4)
-  // ----------------------------------------------------------------
-  const inventory = [
-    { n: 'Pizza Box 10" White', tag: 'hot', w1: 1000, w2: 800, w3: 600, thr: 5000 },
-    { n: 'Pizza Box 12" White', tag: 'hot', w1: 2000, w2: 1500, w3: 1300, thr: 5000 },
-    { n: 'Pizza Box 8" Brown', tag: 'sel', w1: 3500, w2: 2800, w3: 2400, thr: 1000 },
-    { n: 'Burger Box Small', tag: 'sel', w1: 400, w2: 250, w3: 200, thr: 1000 },
-    { n: 'Burger Box Large', tag: 'sel', w1: 1200, w2: 900, w3: 800, thr: 1000 },
-    { n: 'Take-out Bag Large', tag: 'sel', w1: 1500, w2: 1100, w3: 900, thr: 1000 },
-    { n: 'Take-out Bag XL', tag: 'slw', w1: 0, w2: 0, w3: 0, thr: 1000 },
-    { n: 'Cup Sleeve 12oz', tag: 'sel', w1: 300, w2: 220, w3: 100, thr: 1000 },
-    { n: 'Paper Napkin Pack', tag: 'slw', w1: 2500, w2: 2000, w3: 1800, thr: 1000 },
-    { n: 'Plastic Cutlery Set', tag: 'slw', w1: 3000, w2: 2500, w3: 2200, thr: 1000 },
-  ];
+  // Inventory data now comes from GET /api/products/all — no seed data needed
 
   // ================================================================
   // Render: Today's Orders (fetches from GET /api/orders/today)
@@ -185,25 +172,246 @@
     }
   };
 
+  function populateInvCategoryDropdown(categories, previousValue) {
+    const sel = $('inv-category-filter');
+    if (!sel) return;
+    previousValue = previousValue != null ? previousValue : sel.value;
+    sel.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = 'All categories';
+    sel.appendChild(allOpt);
+    const list = (categories || []).filter(function (c) { return c != null && String(c).trim() !== ''; })
+      .map(function (c) { return String(c).trim(); })
+      .sort(function (a, b) { return a.localeCompare(b); });
+    list.forEach(function (c) {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      sel.appendChild(opt);
+    });
+    if (previousValue && [...sel.options].some(function (o) { return o.value === previousValue; })) {
+      sel.value = previousValue;
+    }
+  }
+
+  window.onInventoryCategoryChange = function () {
+    renderInventory();
+  };
+
   // ----------------------------------------------------------------
-  // Render: Inventory Table
+  // Render: Inventory Table (real data from GET /api/products/all + category filter)
   // ----------------------------------------------------------------
-  function renderInventory() {
+  async function renderInventory() {
     const tb = $('inv-tbody');
     if (!tb) return;
-    tb.innerHTML = inventory.map((p) => {
-      const total = p.w1 + p.w2 + p.w3;
-      let row = '', badge = '', barColor = '#10B981';
-      const pct = Math.min(100, (total / (p.thr * 2)) * 100);
-      if (total === 0) { row = 'row-oos'; badge = '<span class="badge badge-crit">Out of Stock</span>'; barColor = '#888'; }
-      else if (p.tag === 'hot' && total < 3000) { row = 'row-crit'; badge = '<span class="badge badge-crit">Critical</span>'; barColor = '#EF4444'; }
-      else if (p.tag === 'hot' && total < 5000) { row = 'row-hot'; badge = '<span class="badge badge-low">Low</span>'; barColor = '#F59E0B'; }
-      else if (p.tag !== 'hot' && total < 1000) { row = 'row-crit'; badge = '<span class="badge badge-crit">Critical</span>'; barColor = '#EF4444'; }
-      else { badge = '<span class="badge badge-ok">OK</span>'; }
-      const tagHTML = p.tag === 'hot' ? '<span class="selling-tag tag-hot">HOT</span>' : p.tag === 'sel' ? '<span class="selling-tag tag-sell">SELLING</span>' : '<span class="selling-tag tag-slow">SLOW</span>';
-      return '<tr class="' + row + '"><td><strong>' + p.n + '</strong></td><td>' + tagHTML + '</td><td>' + p.w1.toLocaleString() + '</td><td>' + p.w2.toLocaleString() + '</td><td>' + p.w3.toLocaleString() + '</td><td><strong>' + total.toLocaleString() + '</strong></td><td><div class="stock-bar-wrap"><div class="stock-bar" style="width:' + pct + '%;background:' + barColor + ';"></div></div></td><td>' + badge + '</td></tr>';
-    }).join('');
+
+    const token = sessionStorage.getItem('rrbm_token');
+    if (!token) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+
+    const catSel = $('inv-category-filter');
+    const previousCat = catSel ? catSel.value : '';
+
+    // Show a loading state while fetching
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Loading inventory...</td></tr>';
+
+    try {
+      const headers = { 'Authorization': 'Bearer ' + token };
+      const [catRes, prodRes] = await Promise.all([
+        fetch('http://localhost:8080/api/products/categories', { headers }),
+        fetch('http://localhost:8080/api/products/all', { headers })
+      ]);
+
+      if (catRes.ok) {
+        const cats = await catRes.json();
+        populateInvCategoryDropdown(cats, previousCat);
+      }
+
+      if (!prodRes.ok) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Failed to load inventory</td></tr>'; return; }
+
+      let products = await prodRes.json();
+      const filterCat = (catSel && catSel.value) ? catSel.value.trim() : '';
+      if (filterCat) {
+        products = products.filter(function (p) { return (p.category || '') === filterCat; });
+      }
+      if (products.length === 0) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">No products in this category</td></tr>'; return; }
+
+      tb.innerHTML = products.map(function (p) {
+        const wh1 = p.stockWh1 || 0;
+        const wh2 = p.stockWh2 || 0;
+        const wh3 = p.stockWh3 || 0;
+        const total = wh1 + wh2 + wh3;
+
+        // Use the product's actual thresholds from the database
+        const critLevel = p.thresholdCritical || 0;
+        const lowLevel  = p.thresholdLow || 0;
+        const tag       = (p.sellingTag || 'SELLING').toUpperCase();
+
+        // Stock bar: scale to 2× the low threshold (so "OK" fills the bar)
+        const barMax = lowLevel > 0 ? lowLevel * 2 : 1000;
+        const pct = Math.min(100, (total / barMax) * 100);
+
+        let rowClass = '', badge = '', barColor = '#10B981';
+        if (total === 0) {
+          rowClass = 'row-oos';
+          badge = '<span class="badge badge-crit">Out of Stock</span>';
+          barColor = '#888';
+        } else if (total <= critLevel) {
+          rowClass = 'row-crit';
+          badge = '<span class="badge badge-crit">Critical</span>';
+          barColor = '#EF4444';
+        } else if (total <= lowLevel) {
+          rowClass = 'row-hot';
+          badge = '<span class="badge badge-low">Low</span>';
+          barColor = '#F59E0B';
+        } else {
+          badge = '<span class="badge badge-ok">OK</span>';
+        }
+
+        const tagHTML = tag === 'HOT'
+          ? '<span class="selling-tag tag-hot">HOT</span>'
+          : tag === 'SELLING'
+          ? '<span class="selling-tag tag-sell">SELLING</span>'
+          : '<span class="selling-tag tag-slow">SLOW</span>';
+
+        // Grey out inactive (discontinued) products
+        const nameStyle = p.active ? 'font-weight:600;' : 'font-weight:600;color:#aaa;text-decoration:line-through;';
+        const inactiveLabel = p.active ? '' : ' <span style="font-size:10px;color:#aaa;">(inactive)</span>';
+
+        return '<tr class="' + rowClass + '">'
+          + '<td><span style="' + nameStyle + '">' + p.name + '</span>' + inactiveLabel + '</td>'
+          + '<td>' + tagHTML + '</td>'
+          + '<td>' + wh1.toLocaleString() + '</td>'
+          + '<td>' + wh2.toLocaleString() + '</td>'
+          + '<td>' + wh3.toLocaleString() + '</td>'
+          + '<td><strong>' + total.toLocaleString() + '</strong></td>'
+          + '<td><div class="stock-bar-wrap"><div class="stock-bar" style="width:' + pct + '%;background:' + barColor + ';"></div></div></td>'
+          + '<td>' + badge + '</td>'
+          + '</tr>';
+      }).join('');
+
+    } catch (err) {
+      console.error('Error loading inventory:', err);
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Connection error</td></tr>';
+    }
   }
+
+  // ----------------------------------------------------------------
+  // Receive stock — delivery receipt (POST /api/products/delivery)
+  // ----------------------------------------------------------------
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  }
+
+  function buildDeliveryProductOptionsHtml() {
+    const list = appState.cachedProducts || [];
+    let html = '<option value="">Select product</option>';
+    list.forEach(function (p) {
+      html += '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>';
+    });
+    return html;
+  }
+
+  function addDeliveryLineRow() {
+    appState.deliveryLineCounter = (appState.deliveryLineCounter || 0) + 1;
+    const n = appState.deliveryLineCounter;
+    const container = $('delivery-items-container');
+    if (!container) return;
+    const opts = buildDeliveryProductOptionsHtml();
+    container.insertAdjacentHTML('beforeend',
+      '<div class="row align-items-end mb-2 delivery-line" id="delivery-row-' + n + '">'
+      + '<div class="col-md-5"><label class="form-label">Product <span class="text-danger">*</span></label>'
+      + '<select class="form-select delivery-product" id="delivery-product-' + n + '">' + opts + '</select></div>'
+      + '<div class="col-md-2"><label class="form-label">Qty <span class="text-danger">*</span></label>'
+      + '<input type="number" class="form-control delivery-qty" id="delivery-qty-' + n + '" min="1" value="1" /></div>'
+      + '<div class="col-md-2"><label class="form-label">Warehouse</label>'
+      + '<select class="form-select delivery-wh" id="delivery-wh-' + n + '"><option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">WH3</option></select></div>'
+      + '<div class="col-md-2 text-end"><label class="form-label">&nbsp;</label>'
+      + '<button type="button" class="btn btn-outline-danger btn-sm" onclick="removeDeliveryLine(\'delivery-row-' + n + '\')"><i class="ti ti-trash"></i></button></div>'
+      + '</div>');
+  }
+
+  window.removeDeliveryLine = function (rowId) {
+    const row = $(rowId);
+    if (row) row.remove();
+  };
+
+  async function initDeliveryForm() {
+    await loadProducts();
+    if ($('delivery-receipt')) $('delivery-receipt').value = '';
+    if ($('delivery-receiver')) $('delivery-receiver').value = '';
+    if ($('delivery-verifier')) $('delivery-verifier').value = '';
+    if ($('delivery-notes')) $('delivery-notes').value = '';
+    const c = $('delivery-items-container');
+    if (c) { c.innerHTML = ''; appState.deliveryLineCounter = 0; }
+    addDeliveryLineRow();
+    const addBtn = $('delivery-add-line');
+    if (addBtn) {
+      const fresh = addBtn.cloneNode(true);
+      addBtn.parentNode.replaceChild(fresh, addBtn);
+      fresh.addEventListener('click', addDeliveryLineRow);
+    }
+  }
+
+  window.clearDeliveryForm = function () {
+    initDeliveryForm();
+  };
+
+  window.submitDeliveryReceipt = async function () {
+    const token = sessionStorage.getItem('rrbm_token');
+    if (!token) { showToast('Please login first', 'error'); return; }
+
+    const receipt = (($('delivery-receipt') || {}).value || '').trim();
+    if (!/^[A-Za-z0-9]{6,7}$/.test(receipt)) {
+      showToast('Receipt # must be 6–7 letters or numbers (no spaces)', 'error');
+      return;
+    }
+
+    const rows = $$('.delivery-line');
+    const items = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const sel = row.querySelector('.delivery-product');
+      const qtyEl = row.querySelector('.delivery-qty');
+      const whEl = row.querySelector('.delivery-wh');
+      const pid = sel ? parseInt(sel.value, 10) : NaN;
+      const qty = qtyEl ? parseInt(qtyEl.value, 10) : 0;
+      const warehouse = whEl ? whEl.value : 'wh1';
+      if (!sel || !sel.value) { showToast('Select a product on every line', 'error'); return; }
+      if (!qty || qty < 1) { showToast('Quantity must be at least 1', 'error'); return; }
+      items.push({ productId: pid, quantity: qty, warehouse: warehouse });
+    }
+
+    if (items.length === 0) { showToast('Add at least one line item', 'error'); return; }
+
+    const body = {
+      receiptNumber: receipt,
+      receiverName: (($('delivery-receiver') || {}).value || '').trim() || null,
+      verifierName: (($('delivery-verifier') || {}).value || '').trim() || null,
+      notes: (($('delivery-notes') || {}).value || '').trim() || null,
+      items: items
+    };
+
+    try {
+      const res = await fetch('http://localhost:8080/api/products/delivery', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        let msg = 'Failed to post receipt';
+        try { const d = await res.json(); msg = d.message || msg; } catch (e) {}
+        showToast(msg, 'error');
+        return;
+      }
+      showToast('Stock updated from receipt ' + receipt, 'success');
+      await loadProducts();
+      initDeliveryForm();
+    } catch (err) {
+      console.error('Delivery receipt error:', err);
+      showToast('Connection error. Is the backend running?', 'error');
+    }
+  };
 
   // ----------------------------------------------------------------
   // Navigation
@@ -213,11 +421,12 @@
     $$('.view').forEach((w) => w.classList.remove('active'));
     const target = $('view-' + view);
     if (target) target.classList.add('active');
-    const titles = { dash: ['Dashboard', "Today's overview"], new: ['New Order', 'Create order'], list: ['Order List', 'All orders'], inv: ['Inventory', 'Stock levels'], rep: ['Reports', 'Analytics'], emp: ['Employees', 'Team management'], set: ['Settings', 'System configuration'] };
+    const titles = { dash: ['Dashboard', "Today's overview"], new: ['New Order', 'Create order'], list: ['Order List', 'All orders'], inv: ['Inventory', 'Stock levels'], delivery: ['Receive stock', 'Delivery receipt and stock in'], rep: ['Reports', 'Analytics'], emp: ['Employees', 'Team management'], set: ['Settings', 'System configuration'] };
     if (titles[view]) { $('page-title').textContent = titles[view][0]; $('page-subtitle').textContent = titles[view][1]; }
     if (view === 'new') { initOrderForm(); renderOrders(); }
     if (view === 'list') renderOrderList();
     if (view === 'inv') renderInventory();
+    if (view === 'delivery') initDeliveryForm();
     if (view === 'rep') setTimeout(initReportCharts, 50);
   };
 

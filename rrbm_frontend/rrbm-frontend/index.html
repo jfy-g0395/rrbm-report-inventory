@@ -63,6 +63,9 @@
         <button class="nav-item" data-view="inv" onclick="navigateTo('inv')">
           <i class="ti ti-package"></i><span>Inventory</span>
         </button>
+        <button class="nav-item" data-view="delivery" onclick="navigateTo('delivery')">
+          <i class="ti ti-truck-loading"></i><span>Receive stock</span>
+        </button>
 
         <div class="nav-section">Insights</div>
         <button class="nav-item" data-view="rep" onclick="navigateTo('rep')">
@@ -344,14 +347,11 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title">Inventory</div>
-              <div style="display:flex;gap:8px;">
-                <select class="form-control form-select" style="width:140px;padding:6px 24px 6px 10px;font-size:12px;">
-                  <option>All Categories</option>
-                  <option>Pizza Boxes</option>
-                  <option>Burger Boxes</option>
-                  <option>Bags</option>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <select class="form-control form-select" id="inv-category-filter" style="min-width:180px;max-width:240px;padding:6px 24px 6px 10px;font-size:12px;" onchange="onInventoryCategoryChange()">
+                  <option value="">All categories</option>
                 </select>
-                <button class="btn btn-primary btn-sm"><i class="ti ti-plus"></i>Add Product</button>
+                <button type="button" class="btn btn-primary btn-sm"><i class="ti ti-plus"></i>Add Product</button>
               </div>
             </div>
             <table class="table">
@@ -363,6 +363,45 @@
               </thead>
               <tbody id="inv-tbody"></tbody>
             </table>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: RECEIVE STOCK (delivery receipt)
+             ==================================================== -->
+        <section class="view" id="view-delivery">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Receive stock — delivery receipt</div>
+              <div style="font-size:12px;color:var(--text-muted);">Receipt # must be 6–7 letters or numbers (no spaces).</div>
+            </div>
+            <div class="card-body">
+              <div class="row mb-3">
+                <div class="col-md-3">
+                  <label class="form-label">Receipt # <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control" id="delivery-receipt" maxlength="7" placeholder="e.g. ABC123" autocomplete="off" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Received by</label>
+                  <input type="text" class="form-control" id="delivery-receiver" placeholder="Name" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Verified by</label>
+                  <input type="text" class="form-control" id="delivery-verifier" placeholder="Name" />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Notes</label>
+                  <input type="text" class="form-control" id="delivery-notes" placeholder="Optional" />
+                </div>
+              </div>
+              <h6 class="mb-2">Line items</h6>
+              <div id="delivery-items-container"></div>
+              <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="delivery-add-line"><i class="ti ti-plus"></i> Add line</button>
+              <div class="mt-4 d-flex gap-2">
+                <button type="button" class="btn btn-primary" onclick="submitDeliveryReceipt()"><i class="ti ti-check"></i> Post receipt &amp; update stock</button>
+                <button type="button" class="btn btn-secondary" onclick="clearDeliveryForm()"><i class="ti ti-x"></i> Clear</button>
+              </div>
+            </div>
           </div>
         </section>
 
