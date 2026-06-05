@@ -1,0 +1,403 @@
+package rrbm_backend;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.util.List;
+
+/**
+ * Core accounting service.
+ *
+ * Every financial event flows through here and writes one immutable
+ * Transaction row.  Nothing in this service modifies orders or reports —
+ * it only appends to the ledger.
+ *
+ * Calculation convention:
+ *   NET_SALES = grossSales + refundsTotal + adjustmentsTotal
+ *   (refundsTotal and adjustmentsTotal are already negative when they represent reversals)
+ */
+@Service
+public class TransactionService {
+
+    private final TransactionRepository transactionRepository;
+    private final ActivityLogService    activityLogService;
+    private final OrderRepository       orderRepository;
+    private final ProductRepository     productRepository;
+    private final InventoryService      inventoryService;
+
+    public TransactionService(TransactionRepository transactionRepository,
+                              ActivityLogService activityLogService,
+                              OrderRepository orderRepository,
+                              ProductRepository productRepository,
+                              InventoryService inventoryService) {
+        this.transactionRepository = transactionRepository;
+        this.activityLogService    = activityLogService;
+        this.orderRepository       = orderRepository;
+        this.productRepository     = productRepository;
+        this.inventoryService      = inventoryService;
+    }
+
+    // ── Internal helpers (called from OrderService) ────────────────────
+
+    /**
+     * Creates a positive SALE transaction when an order is placed.
+     * Idempotent: skips silently if a SALE already exists for this order
+     * (protects against double-recording during migration backfill).
+     */
+    @Transactional
+    public Transaction recordSale(Order order, Long createdByUserId) {
+        if (transactionRepository.existsByOrderIdAndTransactionType(order.getId(), "SALE")) {
+            return null; // already recorded by backfill migration — do nothing
+        }
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("SALE-" + order.getId());
+        txn.setOrderId(order.getId());
+        txn.setTransactionType("SALE");
+        txn.setAmount(order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO);
+        txn.setReferenceType("ORDER");
+        txn.setReferenceId(order.getId());
+        txn.setNotes("Sale — " + order.getCustomerName());
+        txn.setCreatedBy(createdByUserId);
+        txn.setEffectiveDate(LocalDate.now());
+        return transactionRepository.save(txn);
+    }
+
+    /**
+     * Creates a negative VOID transaction using an explicit net amount.
+     *
+     * The amount passed must already reflect any prior item-level voids:
+     *   effectiveVoid = order.getTotal() - order.getVoidedAmount()
+     *
+     * effective_date = TODAY (date of cancellation), NOT the original order date.
+     * This keeps historical daily reports immutable.
+     */
+    @Transactional
+    public Transaction recordVoid(Order order, BigDecimal amount,
+                                  Long cancelledByUserId, String reason) {
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("VOID-" + order.getId() + "-" + System.currentTimeMillis());
+        txn.setOrderId(order.getId());
+        txn.setTransactionType("VOID");
+        txn.setAmount(amount.negate());
+        txn.setReferenceType("ORDER");
+        txn.setReferenceId(order.getId());
+        txn.setNotes("Void/Cancel — " + (reason != null && !reason.isBlank() ? reason : "Order cancelled"));
+        txn.setCreatedBy(cancelledByUserId);
+        txn.setEffectiveDate(LocalDate.now());
+        return transactionRepository.save(txn);
+    }
+
+    /**
+     * Records a RETURN ledger entry when a post-sale return includes a refund.
+     *
+     * Called by OrderService.processReturn() inside the same @Transactional
+     * boundary as the inventory adjustments — if this write fails, all stock
+     * changes roll back atomically.
+     *
+     * Uses transaction type RETURN, which is already summed in
+     * getRefundsTotalForDate() alongside REFUND and VOID, so return refunds
+     * appear correctly in daily report net sales with no other changes needed.
+     *
+     * Does NOT touch inventory — stock adjustments are handled by
+     * InventoryService.processReturnForItem() before this is called.
+     *
+     * amount must be positive; stored as negative (reversal).
+     * effectiveDate = today so historical daily reports are never touched.
+     */
+    @Transactional
+    public Transaction recordReturnRefund(String orderId, BigDecimal amount,
+                                          String reason, Long userId, String userName) {
+        validatePositiveAmount(amount, "Return refund");
+
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("RETURN-" + orderId + "-" + System.currentTimeMillis());
+        txn.setOrderId(orderId);
+        txn.setTransactionType("RETURN");
+        txn.setAmount(amount.negate());
+        txn.setReferenceType("ORDER");
+        txn.setReferenceId(orderId);
+        txn.setNotes(reason != null && !reason.isBlank() ? reason : "Return refund for order " + orderId);
+        txn.setCreatedBy(userId);
+        txn.setEffectiveDate(LocalDate.now());
+
+        Transaction saved = transactionRepository.save(txn);
+        activityLogService.log(userId, userName, "RETURN_ORDER",
+                "Return refund of ₱" + amount + " for order " + orderId
+                + (reason != null && !reason.isBlank() ? " — " + reason : ""),
+                "ORDER", orderId);
+        return saved;
+    }
+
+    // ── API-facing methods (called from TransactionController) ─────────
+
+    /**
+     * POST /api/transactions/refund
+     * Issues a full or partial refund.  Amount must be positive
+     * (stored as negative internally).
+     */
+    @Transactional
+    public Transaction recordRefund(String orderId, BigDecimal amount,
+                                    String reason, Long userId, String userName) {
+        validatePositiveAmount(amount, "Refund");
+
+        // Idempotency guard: reject if an identical refund was recorded in the last 30 seconds.
+        // Prevents double-posting from double-clicks or network retries.
+        LocalDateTime dedupeWindow = LocalDateTime.now().minusSeconds(30);
+        if (transactionRepository.existsByOrderIdAndTransactionTypeAndAmountAndCreatedAtAfter(
+                orderId, "REFUND", amount.negate(), dedupeWindow)) {
+            throw new RuntimeException(
+                "A refund of ₱" + amount + " for this order was just recorded — possible duplicate. Wait 30 seconds before retrying.");
+        }
+
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("REFUND-" + orderId + "-" + System.currentTimeMillis());
+        txn.setOrderId(orderId);
+        txn.setTransactionType("REFUND");
+        txn.setAmount(amount.negate());
+        txn.setReferenceType("ORDER");
+        txn.setReferenceId(orderId);
+        txn.setNotes(reason != null && !reason.isBlank() ? reason : "Refund for order " + orderId);
+        txn.setCreatedBy(userId);
+        txn.setEffectiveDate(LocalDate.now());
+
+        Transaction saved = transactionRepository.save(txn);
+        activityLogService.log(userId, userName, "REFUND_ORDER",
+            "Refund of ₱" + amount + " for order " + orderId
+            + (reason != null && !reason.isBlank() ? " — " + reason : ""),
+            "ORDER", orderId);
+
+        // Restore inventory + flag order as refunded — all inside this @Transactional boundary.
+        // A failure here rolls back the ledger write, stock changes, and flag atomically.
+        Order order = orderRepository.findByIdWithItems(orderId).orElse(null);
+        if (order != null) {
+            // Mark order as refunded (first refund sets the timestamp; subsequent refunds preserve it)
+            if (order.getRefundedAt() == null) {
+                order.setRefundedAt(OffsetDateTime.now());
+            }
+            // Restore inventory proportionally
+            if (order.getItems() != null && !order.getItems().isEmpty()) {
+                double refundRatio = 1.0;
+                if (order.getTotal() != null && order.getTotal().compareTo(BigDecimal.ZERO) > 0) {
+                    refundRatio = Math.min(amount.doubleValue() / order.getTotal().doubleValue(), 1.0);
+                }
+                for (OrderItem item : order.getItems()) {
+                    if (item.getProductId() == null) continue;
+                    Product product = productRepository.findById(item.getProductId()).orElse(null);
+                    if (product == null) continue;
+                    int restoreQty = (int) Math.round(item.getQuantity() * refundRatio);
+                    if (restoreQty > 0) {
+                        String wh = item.getWarehouse() != null ? item.getWarehouse() : "wh1";
+                        switch (wh) {
+                            case "wh2": product.setStockWh2(product.getStockWh2() + restoreQty); break;
+                            case "wh3": product.setStockWh3(product.getStockWh3() + restoreQty); break;
+                            default:    product.setStockWh1(product.getStockWh1() + restoreQty); break;
+                        }
+                        productRepository.save(product);
+                        inventoryService.logMovement(item.getProductId(), "REFUND_RETURN", wh,
+                            +restoreQty, orderId,
+                            "Refund of ₱" + amount + " on order " + orderId, userId);
+                    }
+                }
+            }
+            orderRepository.save(order);
+        }
+
+        return saved;
+    }
+
+    /**
+     * Records a VOID ledger entry for a partial or full item-level void.
+     * Called by OrderService.voidOrderItems() after quantities are validated.
+     *
+     * amount — the monetary value being removed (sum of voidedQty × unitPrice
+     *          across all voided items); must be positive, stored as negative.
+     * effectiveDate = today so historical daily reports are never touched.
+     */
+    @Transactional
+    public Transaction recordItemVoid(String orderId, BigDecimal amount,
+                                      String reason, Long userId, String userName) {
+        validatePositiveAmount(amount, "Void");
+
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("VOID-" + orderId + "-" + System.currentTimeMillis());
+        txn.setOrderId(orderId);
+        txn.setTransactionType("VOID");
+        txn.setAmount(amount.negate());
+        txn.setReferenceType("ORDER");
+        txn.setReferenceId(orderId);
+        txn.setNotes(reason != null && !reason.isBlank() ? reason : "Item void for order " + orderId);
+        txn.setCreatedBy(userId);
+        txn.setEffectiveDate(LocalDate.now());
+
+        Transaction saved = transactionRepository.save(txn);
+        activityLogService.log(userId, userName, "VOID_ORDER",
+            "Item void of ₱" + amount + " for order " + orderId
+            + (reason != null && !reason.isBlank() ? " — " + reason : ""),
+            "ORDER", orderId);
+        return saved;
+    }
+
+    /**
+     * POST /api/transactions/adjustment
+     * Manual correction — amount may be positive or negative.
+     * orderId is optional (null for non-order corrections).
+     */
+    @Transactional
+    public Transaction recordAdjustment(String orderId, BigDecimal amount,
+                                        String reason, Long userId, String userName) {
+        if (amount == null) throw new RuntimeException("Adjustment amount is required");
+
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("ADJ-" + System.currentTimeMillis());
+        txn.setOrderId(orderId);
+        txn.setTransactionType("ADJUSTMENT");
+        txn.setAmount(amount);
+        txn.setReferenceType(orderId != null ? "ORDER" : "MANUAL");
+        txn.setReferenceId(orderId);
+        txn.setNotes(reason != null && !reason.isBlank() ? reason : "Manual adjustment");
+        txn.setCreatedBy(userId);
+        txn.setEffectiveDate(LocalDate.now());
+
+        Transaction saved = transactionRepository.save(txn);
+        activityLogService.log(userId, userName, "ADJUSTMENT",
+            "Adjustment of ₱" + amount
+            + (orderId != null ? " for order " + orderId : "")
+            + (reason != null && !reason.isBlank() ? " — " + reason : ""),
+            orderId != null ? "ORDER" : "MANUAL",
+            orderId);
+        return saved;
+    }
+
+    /**
+     * Creates a VOID to neutralise a SALE that was recorded at order-creation time.
+     * Used when a force-close defers an order to the Collection page.
+     * effective_date = originalOrderDate so it hits the SAME date as the original SALE
+     * and zeroes it out of that day's totals before the daily report snapshot is taken.
+     */
+    @Transactional
+    public Transaction recordDeferralVoid(Order order, Long userId) {
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("COLL-DEFER-" + order.getId());
+        txn.setOrderId(order.getId());
+        txn.setTransactionType("VOID");
+        // NET basis: subtract any prior item-level voids so the COLL-DEFER
+        // only reverses what the order still owes, not the gross total.
+        // MUST stay in sync with recordCollectionSale() — both use the same
+        // net basis so COLL-DEFER and COLL-SALE cancel each other exactly.
+        BigDecimal gross  = order.getTotal()       != null ? order.getTotal()       : BigDecimal.ZERO;
+        BigDecimal voided = order.getVoidedAmount() != null ? order.getVoidedAmount() : BigDecimal.ZERO;
+        txn.setAmount(gross.subtract(voided).negate());
+        txn.setReferenceType("ORDER");
+        txn.setReferenceId(order.getId());
+        txn.setNotes("Deferred to collection — " + order.getCustomerName());
+        txn.setCreatedBy(userId);
+        // Hits the SAME date as the original SALE so it nets to zero
+        txn.setEffectiveDate(order.getCreatedAt().toLocalDate());
+        return transactionRepository.save(txn);
+    }
+
+    /**
+     * Creates a SALE transaction when a deferred order is eventually collected.
+     * effective_date = original order date so revenue is retroactively posted there.
+     */
+    @Transactional
+    public Transaction recordCollectionSale(Order order, Long userId) {
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("COLL-SALE-" + order.getId());
+        txn.setOrderId(order.getId());
+        txn.setTransactionType("SALE");
+        // NET basis: matches recordDeferralVoid() so COLL-DEFER and COLL-SALE
+        // cancel each other exactly when the order carries prior item-level voids.
+        // MUST stay in sync with recordDeferralVoid() — both use the same net basis.
+        BigDecimal gross  = order.getTotal()       != null ? order.getTotal()       : BigDecimal.ZERO;
+        BigDecimal voided = order.getVoidedAmount() != null ? order.getVoidedAmount() : BigDecimal.ZERO;
+        txn.setAmount(gross.subtract(voided));
+        txn.setReferenceType("ORDER");
+        txn.setReferenceId(order.getId());
+        txn.setNotes("Collection received — " + order.getCustomerName());
+        txn.setCreatedBy(userId);
+        // Retroactive: post to the original order date
+        txn.setEffectiveDate(order.getCreatedAt().toLocalDate());
+        return transactionRepository.save(txn);
+    }
+
+    // ── Guard helpers used by OrderService ────────────────────────────
+
+    /**
+     * Returns true iff this order was force-closed (a COLL-DEFER-{id} entry
+     * exists) AND has not yet been collected (no COLL-SALE-{id} entry exists).
+     *
+     * Used by cancelOrder() to determine whether to skip the VOID ledger entry.
+     * The three cancel lifecycles are:
+     *
+     *   1. Never deferred (normal ACTIVE/PENDING → CANCELLED):
+     *      COLL-DEFER absent → returns false → caller writes VOID(-X). Net = 0. ✓
+     *
+     *   2. Deferred, uncollected (PENDING_COLLECTION → CANCELLED):
+     *      COLL-DEFER present, COLL-SALE absent → returns true → caller skips VOID.
+     *      Ledger: SALE(+X) + COLL-DEFER(-X) already nets to 0. ✓
+     *
+     *   3. Deferred then collected (DELIVERED after collection → CANCELLED):
+     *      COLL-DEFER present AND COLL-SALE present → returns false → caller writes VOID(-X).
+     *      Ledger: SALE(+X) + COLL-DEFER(-X) + COLL-SALE(+X) + VOID(-X) = 0. ✓
+     *
+     * A COLL-DEFER-only guard (ignoring COLL-SALE) would incorrectly return true
+     * for lifecycle 3, leaving the ledger at +X after cancel.
+     */
+    public boolean isDeferredAndUncollected(String orderId) {
+        return transactionRepository.existsByTransactionCode("COLL-DEFER-" + orderId)
+            && !transactionRepository.existsByTransactionCode("COLL-SALE-"  + orderId);
+    }
+
+    // ── Read queries ───────────────────────────────────────────────────
+
+    public List<Transaction> getByOrderId(String orderId) {
+        return transactionRepository.findByOrderIdOrderByCreatedAtDesc(orderId);
+    }
+
+    public List<Transaction> getByDate(LocalDate date) {
+        return transactionRepository.findByEffectiveDateOrderByCreatedAtDesc(date);
+    }
+
+    public List<Transaction> getByDateRange(LocalDate start, LocalDate end) {
+        return transactionRepository.findByEffectiveDateBetweenOrderByCreatedAtDesc(start, end);
+    }
+
+    // ── Aggregate helpers used by daily-close ─────────────────────────
+
+    /** SUM of SALE transactions for a date. Always positive (or zero). */
+    public BigDecimal getGrossSalesForDate(LocalDate date) {
+        return transactionRepository.sumByDateAndType(date, "SALE");
+    }
+
+    /**
+     * SUM of all reversal transactions for a date (REFUND + VOID + RETURN).
+     * Returns a negative or zero value.
+     */
+    public BigDecimal getRefundsTotalForDate(LocalDate date) {
+        BigDecimal refunds = transactionRepository.sumByDateAndType(date, "REFUND");
+        BigDecimal voids   = transactionRepository.sumByDateAndType(date, "VOID");
+        BigDecimal returns = transactionRepository.sumByDateAndType(date, "RETURN");
+        return refunds.add(voids).add(returns);
+    }
+
+    /** SUM of ADJUSTMENT transactions for a date — may be positive or negative. */
+    public BigDecimal getAdjustmentsTotalForDate(LocalDate date) {
+        return transactionRepository.sumByDateAndType(date, "ADJUSTMENT");
+    }
+
+    /** Total number of transactions recorded on this date. */
+    public long countTransactionsForDate(LocalDate date) {
+        return transactionRepository.countByEffectiveDate(date);
+    }
+
+    // ── Private ───────────────────────────────────────────────────────
+    private void validatePositiveAmount(BigDecimal amount, String label) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0)
+            throw new RuntimeException(label + " amount must be a positive number");
+    }
+}

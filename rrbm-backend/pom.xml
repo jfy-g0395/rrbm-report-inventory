@@ -81,6 +81,12 @@
 			<artifactId>spring-security-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- Embedded DB for @DataJpaTest slices — test scope only, never shipped -->
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- JWT (JSON Web Tokens) -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
@@ -98,6 +104,12 @@
 			<artifactId>jjwt-jackson</artifactId>
 			<version>0.12.5</version>
 			<scope>runtime</scope>
+		</dependency>
+
+		<!-- Email notifications for low-stock alerts -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
 		</dependency>
 	</dependencies>
 
