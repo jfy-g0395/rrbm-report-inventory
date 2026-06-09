@@ -1,35 +1,45 @@
 package rrbm_backend;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDate;
+import java.util.List;
 
-/**
- * Simple service to record user actions in the {@code activity_log} table.
- * It is intentionally lightweight – callers just provide the user id, an action name,
- * and optional free‑form details. The service creates and persists an {@link ActivityLog} entity.
- */
 @Service
 public class ActivityLogService {
 
-    private final ActivityLogRepository repository;
+    private final ActivityLogRepository repo;
 
-    @Autowired
-    public ActivityLogService(ActivityLogRepository repository) {
-        this.repository = repository;
+    public ActivityLogService(ActivityLogRepository repo) {
+        this.repo = repo;
     }
 
-    /**
-     * Record an action performed by a user.
-     *
-     * @param userId  the id of the user performing the action
-     * @param action  a short identifier such as "login", "order_create", "product_add"
-     * @param details optional free‑form details (may be {@code null})
-     */
-    public void log(Long userId, String action, String details) {
+    public void log(Long userId, String userName, String action, String description,
+                    String entityType, String entityId) {
         ActivityLog entry = new ActivityLog();
         entry.setUserId(userId);
+        entry.setUserName(userName);
         entry.setAction(action);
-        entry.setDetails(details);
-        repository.save(entry);
+        entry.setDescription(description);
+        entry.setEntityType(entityType);
+        entry.setEntityId(entityId);
+        repo.save(entry);
+    }
+
+    public List<ActivityLog> getTodayLogs() {
+        return repo.findByReportDateOrderByCreatedAtDesc(LocalDate.now());
+    }
+
+    public List<ActivityLog> getLogsByDate(LocalDate date) {
+        return repo.findByReportDateOrderByCreatedAtDesc(date);
+    }
+
+    public List<ActivityLog> getLogsBetween(LocalDate start, LocalDate end) {
+        return repo.findByReportDateBetweenOrderByCreatedAtDesc(start, end);
+    }
+
+    @Transactional
+    public int closeLogsForDate(LocalDate date) {
+        return repo.closeLogsForDate(date);
     }
 }

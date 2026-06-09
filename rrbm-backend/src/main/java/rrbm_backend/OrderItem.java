@@ -48,4 +48,25 @@ public class OrderItem {
     // Which warehouse this item ships from (wh1, wh2, wh3)
     @Column(length = 10)
     private String warehouse = "wh1";
+
+    // Cumulative units voided from this line (V39).
+    // The original quantity column is NEVER modified.
+    // Effective quantity = quantity - voidedQuantity.
+    @Column(name = "voided_quantity", nullable = false)
+    private Integer voidedQuantity = 0;
+
+    // A2 + U15: O.P. (Over Price) fields — nullable; only set for agent-linked orders.
+    @Column(name = "base_price", precision = 10, scale = 2)
+    private BigDecimal basePrice;
+
+    @Column(name = "op_rate", precision = 5, scale = 4)
+    private BigDecimal opRate;
+
+    // U15: Flat per-unit overprice; commission = op_per_unit * qty.
+    @Column(name = "op_per_unit", precision = 10, scale = 2)
+    private BigDecimal opPerUnit;
+
+    // base_price * op_rate * qty (legacy) OR op_per_unit * qty (current).
+    @Column(name = "op_amount", precision = 10, scale = 2)
+    private BigDecimal opAmount;
 }

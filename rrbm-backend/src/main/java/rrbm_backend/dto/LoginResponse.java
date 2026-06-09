@@ -12,9 +12,11 @@ public class LoginResponse {
     @Data
     @AllArgsConstructor
     public static class UserInfo {
-        private Long id;
-        private String email;
-        private String fullName;
-        private String role;
+        private Long    id;
+        private String  email;
+        private String  fullName;
+        private String  role;
+        private String  allowedPages;        // JSON array string, null = unrestricted (Super Admin)
+        private boolean mustChangePassword;  // true → force password change on first login
     }
 }

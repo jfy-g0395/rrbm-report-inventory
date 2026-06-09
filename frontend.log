@@ -1,0 +1,29 @@
+::1 - - [04/Jun/2026 12:10:01] "GET /index.html HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 12:10:01] "GET /js/app.js HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 12:10:01] "GET /css/styles.css HTTP/1.1" 304 -
+::1 - - [04/Jun/2026 12:38:18] "GET / HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 12:40:25] "GET /index.html HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 12:40:25] "GET /js/app.js HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 13:24:20] "GET /assets/logo-two.png HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 15:09:51] "GET /index.html HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 15:09:51] "GET /css/styles.css HTTP/1.1" 304 -
+::1 - - [04/Jun/2026 15:09:51] "GET /js/app.js HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 15:42:05] "GET /assets/logo-two.png HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 15:42:34] "GET /index.html HTTP/1.1" 304 -
+::1 - - [04/Jun/2026 15:42:34] "GET /js/app.js HTTP/1.1" 200 -
+::1 - - [04/Jun/2026 16:10:01] code 404, message File not found
+::1 - - [04/Jun/2026 16:10:01] "GET /api/inventory/product/91 HTTP/1.1" 404 -
+::1 - - [04/Jun/2026 16:10:12] code 404, message File not found
+::1 - - [04/Jun/2026 16:10:12] "GET /api/inventory?productId=91 HTTP/1.1" 404 -
+::1 - - [04/Jun/2026 16:10:21] code 404, message File not found
+::1 - - [04/Jun/2026 16:10:21] "GET /api/inventory/movements?productId=91 HTTP/1.1" 404 -
+::1 - - [04/Jun/2026 16:10:21] code 404, message File not found
+::1 - - [04/Jun/2026 16:10:21] "GET /api/inventory/summary HTTP/1.1" 404 -
+::1 - - [04/Jun/2026 16:27:36] code 404, message File not found
+::1 - - [04/Jun/2026 16:27:36] "GET /api/purchase-orders HTTP/1.1" 404 -
+::1 - - [04/Jun/2026 16:28:03] code 404, message File not found
+::1 - - [04/Jun/2026 16:28:03] "GET /api/purchase-orders/13 HTTP/1.1" 404 -
+::1 - - [04/Jun/2026 16:28:42] code 404, message File not found
+::1 - - [04/Jun/2026 16:28:42] "GET /api/purchase-orders HTTP/1.1" 404 -
+::1 - - [04/Jun/2026 16:29:04] code 404, message File not found
+::1 - - [04/Jun/2026 16:29:04] "GET /api/purchase-orders HTTP/1.1" 404 -

@@ -14,3 +14,7 @@ Thumbs.db
 rrbm-backend/src/main/resources/application-local.properties
 .env
 .env.*
+
+# Node
+node_modules/
+package-lock.json

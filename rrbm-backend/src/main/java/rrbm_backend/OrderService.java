@@ -8,8 +8,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -32,6 +34,8 @@ public class OrderService {
     private final MasterKeyService   masterKeyService;
     private final ActivityLogService activityLogService;
     private final TransactionService transactionService;
+    private final CommissionService  commissionService;
+    private final DailyReportRepository dailyReportRepository;
 
     public OrderService(OrderRepository orderRepository,
                         OrderIdGenerator orderIdGenerator,
@@ -39,7 +43,9 @@ public class OrderService {
                         InventoryService inventoryService,
                         MasterKeyService masterKeyService,
                         ActivityLogService activityLogService,
-                        TransactionService transactionService) {
+                        TransactionService transactionService,
+                        CommissionService commissionService,
+                        DailyReportRepository dailyReportRepository) {
         this.orderRepository    = orderRepository;
         this.orderIdGenerator   = orderIdGenerator;
         this.userRepository     = userRepository;
@@ -47,6 +53,8 @@ public class OrderService {
         this.masterKeyService   = masterKeyService;
         this.activityLogService = activityLogService;
         this.transactionService = transactionService;
+        this.commissionService  = commissionService;
+        this.dailyReportRepository = dailyReportRepository;
     }
 
     /**
@@ -105,6 +113,58 @@ public class OrderService {
         transactionService.recordSale(savedOrder, createdByUserId);
 
         // Deduct stock — if this throws, the whole transaction rolls back.
+        inventoryService.deductStockForOrder(savedOrder, createdByUserId);
+
+        return savedOrder;
+    }
+
+    /**
+     * Same as createOrder() but uses a caller-supplied date for the order ID prefix and createdAt.
+     * Used exclusively by the batch import pipeline for backdating.
+     *
+     * The existing createOrder() method is intentionally left untouched — all live order creation
+     * paths continue to call that method without any change.
+     *
+     * Key differences from createOrder():
+     *   - order ID prefix = targetDate (so DailyReportService can find the order at close time)
+     *   - createdAt is pre-set to targetDate@noon; @PrePersist skips because createdAt != null
+     *   - activity log entry includes "(backdated ...)" for audit trail
+     */
+    @Transactional
+    public Order createOrderAtDate(Order order, Long createdByUserId, LocalDate targetDate) {
+        if (order.getSource() == null || !VALID_SOURCES.contains(order.getSource().toUpperCase())) {
+            throw new RuntimeException("Invalid order source: '" + order.getSource()
+                + "'. Must be one of: " + VALID_SOURCES);
+        }
+        order.setSource(order.getSource().toUpperCase());
+
+        // ID prefix = target date so DailyReportService finds it at close time
+        order.setId(orderIdGenerator.generateOrderIdForDate(targetDate));
+
+        // Pre-set createdAt so @PrePersist leaves it alone (conditional guard on onCreate())
+        order.setCreatedAt(targetDate.atTime(12, 0));
+
+        User creator = userRepository.findById(createdByUserId)
+                .orElseThrow(() -> new RuntimeException("User not found: " + createdByUserId));
+        order.setCreatedBy(creator);
+
+        order.getItems().forEach(item -> item.setOrder(order));
+        order.calculateTotals();
+
+        if ("COD".equalsIgnoreCase(order.getPaymentMode())) {
+            order.setStatus("PENDING");
+        }
+
+        Order savedOrder = orderRepository.save(order);
+
+        activityLogService.log(createdByUserId, creator.getFullName(), "CREATE_ORDER",
+            "Imported order " + savedOrder.getId() + " (backdated " + targetDate + ") for "
+                + savedOrder.getCustomerName() + " — ₱" + savedOrder.getTotal(),
+            "ORDER", savedOrder.getId());
+
+        // Use the date-parameterised overload so the SALE transaction lands on targetDate
+        // in the ledger — not on today. Existing recordSale(Order, Long) is untouched.
+        transactionService.recordSale(savedOrder, createdByUserId, targetDate);
         inventoryService.deductStockForOrder(savedOrder, createdByUserId);
 
         return savedOrder;
@@ -750,5 +810,83 @@ public class OrderService {
         result.put("effectiveTotal",    effectiveTotal);
         result.put("voidedItems",       resultItems);
         return result;
+    }
+
+    @Transactional
+    public BatchCollectResult batchMarkAsCollected(List<String> orderIds, Long userId, String callerName) {
+        int collected = 0;
+        List<Map<String, Object>> skipped  = new ArrayList<>();
+        List<Map<String, Object>> errors   = new ArrayList<>();
+
+        for (String orderId : orderIds) {
+            try {
+                Order order = orderRepository.findByIdForUpdateWithItems(orderId).orElse(null);
+                if (order == null) {
+                    skipped.add(Map.of("orderId", orderId, "reason", "Order not found"));
+                    continue;
+                }
+
+                String status = order.getStatus();
+                if (!"PENDING_COLLECTION".equals(status) && !"PENDING".equals(status)) {
+                    skipped.add(Map.of("orderId", orderId, "reason", "Not in collectable state: " + status));
+                    continue;
+                }
+
+                order.setStatus("DELIVERED");
+                order.setCollectedAt(OffsetDateTime.now());
+                order.setCollectedBy(callerName);
+                orderRepository.save(order);
+
+                LocalDate originalDate = order.getCreatedAt().toLocalDate();
+
+                if ("PENDING_COLLECTION".equals(status)) {
+                    transactionService.recordCollectionSale(order, userId);
+                    try { commissionService.createEntriesForOrder(order, userId); } catch (Exception ignored) {}
+
+                    Optional<DailyReport> reportOpt = dailyReportRepository.findByReportDate(originalDate);
+                    if (reportOpt.isPresent()) {
+                        DailyReport report = reportOpt.get();
+                        BigDecimal amount = order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO;
+                        report.setGrossSales(report.getGrossSales() != null
+                                ? report.getGrossSales().add(amount) : amount);
+                        report.setNetSales(report.getNetSales() != null
+                                ? report.getNetSales().add(amount) : amount);
+                        report.setTotalRevenue(report.getTotalRevenue() != null
+                                ? report.getTotalRevenue().add(amount) : amount);
+                        report.setTotalOrders(report.getTotalOrders() + 1);
+                        report.setUnfulfilledOrders(Math.max(0, report.getUnfulfilledOrders() - 1));
+                        BigDecimal ua = report.getUnfulfilledAmount() != null
+                                ? report.getUnfulfilledAmount() : BigDecimal.ZERO;
+                        report.setUnfulfilledAmount(ua.subtract(amount).max(BigDecimal.ZERO));
+                        dailyReportRepository.save(report);
+                    }
+                }
+
+                activityLogService.log(userId, callerName, "ORDER_COLLECT",
+                        "Collected payment for order " + orderId + " — ₱" + order.getTotal()
+                                + " (original date: " + originalDate + ")",
+                        "ORDER", orderId);
+
+                collected++;
+            } catch (Exception e) {
+                errors.add(Map.of("orderId", orderId, "error", e.getMessage()));
+            }
+        }
+
+        return new BatchCollectResult(collected, skipped, errors);
+    }
+
+    public static class BatchCollectResult {
+        public final int collected;
+        public final List<Map<String, Object>> skipped;
+        public final List<Map<String, Object>> errors;
+
+        public BatchCollectResult(int collected,
+                                  List<Map<String, Object>> skipped,
+                                  List<Map<String, Object>> errors) {
+            this.collected = collected;
+            this.skipped   = skipped;
+            this.errors    = errors;
+        }
     }
 }

@@ -4,9 +4,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 /**
- * Service for validating and managing the master key used for privileged operations.
- * The key is stored as a BCrypt hash in the {@code master_keys} table.
+ * Service for validating and managing master keys used for privileged operations.
+ * Up to 3 active keys are supported simultaneously; any one of them validates.
  */
 @Service
 public class MasterKeyService {
@@ -21,31 +23,54 @@ public class MasterKeyService {
     }
 
     /**
-     * Validates a raw master key against the stored BCrypt hash.
-     *
-     * @param rawKey the plain‑text master key supplied by the user
-     * @return {@code true} if the key matches the stored hash, {@code false} otherwise
+     * Validates a raw master key against ALL active stored keys.
+     * Returns true if ANY active key matches.
      */
     public boolean validateMasterKey(String rawKey) {
-        MasterKey stored = masterKeyRepository.findTopByOrderByCreatedAtDesc();
-        if (stored == null) {
-            // No master key configured – reject any attempt
-            return false;
+        List<MasterKey> activeKeys = masterKeyRepository.findByIsActiveTrue();
+        if (activeKeys.isEmpty()) {
+            // Fallback: check the latest key (for backward compat with pre-V32 data)
+            MasterKey latest = masterKeyRepository.findTopByOrderByCreatedAtDesc();
+            return latest != null && passwordEncoder.matches(rawKey, latest.getKeyHash());
         }
-        return passwordEncoder.matches(rawKey, stored.getKeyHash());
+        return activeKeys.stream().anyMatch(k -> passwordEncoder.matches(rawKey, k.getKeyHash()));
     }
 
     /**
-     * Creates or rotates the master key. Only callers with proper admin privileges should invoke this.
-     *
-     * @param rawKey the new plain‑text master key
-     * @param adminUserId the id of the admin performing the rotation
+     * @deprecated Use addMasterKey instead. Kept for backward compatibility.
      */
     public MasterKey rotateMasterKey(String rawKey, Long adminUserId) {
-        String hash = passwordEncoder.encode(rawKey);
+        return addMasterKey(rawKey, "Default", adminUserId);
+    }
+
+    /** Add a new active master key. Max 3 active keys enforced. */
+    public MasterKey addMasterKey(String rawKey, String label, Long adminUserId) {
+        long activeCount = masterKeyRepository.countByIsActiveTrue();
+        if (activeCount >= 3) {
+            throw new RuntimeException("Maximum of 3 active master keys reached. Remove one before adding a new key.");
+        }
         MasterKey mk = new MasterKey();
-        mk.setKeyHash(hash);
+        mk.setKeyHash(passwordEncoder.encode(rawKey));
+        mk.setLabel(label != null && !label.isBlank() ? label.trim() : "Key " + (activeCount + 1));
+        mk.setActive(true);
         mk.setUpdatedBy(adminUserId);
         return masterKeyRepository.save(mk);
+    }
+
+    /** Deactivate a master key. At least 1 must remain active. */
+    public void removeMasterKey(Long keyId) {
+        long activeCount = masterKeyRepository.countByIsActiveTrue();
+        if (activeCount <= 1) {
+            throw new RuntimeException("Cannot remove the last active master key. At least one must remain.");
+        }
+        masterKeyRepository.findById(keyId).ifPresent(mk -> {
+            mk.setActive(false);
+            masterKeyRepository.save(mk);
+        });
+    }
+
+    /** List all active master keys (without hashes — safe for frontend). */
+    public List<MasterKey> listActiveKeys() {
+        return masterKeyRepository.findByIsActiveTrue();
     }
 }

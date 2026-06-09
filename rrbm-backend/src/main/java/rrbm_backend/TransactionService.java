@@ -5,8 +5,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -63,6 +61,30 @@ public class TransactionService {
         txn.setNotes("Sale — " + order.getCustomerName());
         txn.setCreatedBy(createdByUserId);
         txn.setEffectiveDate(LocalDate.now());
+        return transactionRepository.save(txn);
+    }
+
+    /**
+     * Same as recordSale(Order, Long) but with a caller-supplied effectiveDate.
+     * Used exclusively by the batch import pipeline so that backdated orders land
+     * on the correct date in the transaction ledger — not on today.
+     * The existing two-arg overload above is untouched and still uses LocalDate.now().
+     */
+    @Transactional
+    public Transaction recordSale(Order order, Long createdByUserId, LocalDate effectiveDate) {
+        if (transactionRepository.existsByOrderIdAndTransactionType(order.getId(), "SALE")) {
+            return null;
+        }
+        Transaction txn = new Transaction();
+        txn.setTransactionCode("SALE-" + order.getId());
+        txn.setOrderId(order.getId());
+        txn.setTransactionType("SALE");
+        txn.setAmount(order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO);
+        txn.setReferenceType("ORDER");
+        txn.setReferenceId(order.getId());
+        txn.setNotes("Sale — " + order.getCustomerName());
+        txn.setCreatedBy(createdByUserId);
+        txn.setEffectiveDate(effectiveDate);
         return transactionRepository.save(txn);
     }
 
@@ -133,81 +155,6 @@ public class TransactionService {
     }
 
     // ── API-facing methods (called from TransactionController) ─────────
-
-    /**
-     * POST /api/transactions/refund
-     * Issues a full or partial refund.  Amount must be positive
-     * (stored as negative internally).
-     */
-    @Transactional
-    public Transaction recordRefund(String orderId, BigDecimal amount,
-                                    String reason, Long userId, String userName) {
-        validatePositiveAmount(amount, "Refund");
-
-        // Idempotency guard: reject if an identical refund was recorded in the last 30 seconds.
-        // Prevents double-posting from double-clicks or network retries.
-        LocalDateTime dedupeWindow = LocalDateTime.now().minusSeconds(30);
-        if (transactionRepository.existsByOrderIdAndTransactionTypeAndAmountAndCreatedAtAfter(
-                orderId, "REFUND", amount.negate(), dedupeWindow)) {
-            throw new RuntimeException(
-                "A refund of ₱" + amount + " for this order was just recorded — possible duplicate. Wait 30 seconds before retrying.");
-        }
-
-        Transaction txn = new Transaction();
-        txn.setTransactionCode("REFUND-" + orderId + "-" + System.currentTimeMillis());
-        txn.setOrderId(orderId);
-        txn.setTransactionType("REFUND");
-        txn.setAmount(amount.negate());
-        txn.setReferenceType("ORDER");
-        txn.setReferenceId(orderId);
-        txn.setNotes(reason != null && !reason.isBlank() ? reason : "Refund for order " + orderId);
-        txn.setCreatedBy(userId);
-        txn.setEffectiveDate(LocalDate.now());
-
-        Transaction saved = transactionRepository.save(txn);
-        activityLogService.log(userId, userName, "REFUND_ORDER",
-            "Refund of ₱" + amount + " for order " + orderId
-            + (reason != null && !reason.isBlank() ? " — " + reason : ""),
-            "ORDER", orderId);
-
-        // Restore inventory + flag order as refunded — all inside this @Transactional boundary.
-        // A failure here rolls back the ledger write, stock changes, and flag atomically.
-        Order order = orderRepository.findByIdWithItems(orderId).orElse(null);
-        if (order != null) {
-            // Mark order as refunded (first refund sets the timestamp; subsequent refunds preserve it)
-            if (order.getRefundedAt() == null) {
-                order.setRefundedAt(OffsetDateTime.now());
-            }
-            // Restore inventory proportionally
-            if (order.getItems() != null && !order.getItems().isEmpty()) {
-                double refundRatio = 1.0;
-                if (order.getTotal() != null && order.getTotal().compareTo(BigDecimal.ZERO) > 0) {
-                    refundRatio = Math.min(amount.doubleValue() / order.getTotal().doubleValue(), 1.0);
-                }
-                for (OrderItem item : order.getItems()) {
-                    if (item.getProductId() == null) continue;
-                    Product product = productRepository.findById(item.getProductId()).orElse(null);
-                    if (product == null) continue;
-                    int restoreQty = (int) Math.round(item.getQuantity() * refundRatio);
-                    if (restoreQty > 0) {
-                        String wh = item.getWarehouse() != null ? item.getWarehouse() : "wh1";
-                        switch (wh) {
-                            case "wh2": product.setStockWh2(product.getStockWh2() + restoreQty); break;
-                            case "wh3": product.setStockWh3(product.getStockWh3() + restoreQty); break;
-                            default:    product.setStockWh1(product.getStockWh1() + restoreQty); break;
-                        }
-                        productRepository.save(product);
-                        inventoryService.logMovement(item.getProductId(), "REFUND_RETURN", wh,
-                            +restoreQty, orderId,
-                            "Refund of ₱" + amount + " on order " + orderId, userId);
-                    }
-                }
-            }
-            orderRepository.save(order);
-        }
-
-        return saved;
-    }
 
     /**
      * Records a VOID ledger entry for a partial or full item-level void.
@@ -365,6 +312,16 @@ public class TransactionService {
 
     public List<Transaction> getByDateRange(LocalDate start, LocalDate end) {
         return transactionRepository.findByEffectiveDateBetweenOrderByCreatedAtDesc(start, end);
+    }
+
+    /** Filtered ledger list — type null means all types. */
+    public List<Transaction> getLedger(String type, LocalDate start, LocalDate end) {
+        return transactionRepository.findFiltered(type, start, end);
+    }
+
+    /** Per-type aggregate rows for the ledger report [type, sum, count]. */
+    public List<Object[]> getLedgerReportBreakdown(LocalDate start, LocalDate end) {
+        return transactionRepository.aggregateByTypeForDateRange(start, end);
     }
 
     // ── Aggregate helpers used by daily-close ─────────────────────────

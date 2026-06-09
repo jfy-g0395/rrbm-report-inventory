@@ -3,6 +3,7 @@ package rrbm_backend;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -13,16 +14,14 @@ import java.util.Map;
 
 @Component
 public class JwtUtil {
-    
-    // Secret key for signing tokens (256-bit minimum for HS256)
-    // In production, load this from environment variable
-    private static final String SECRET = "rrbm-secret-key-minimum-256-bits-for-hs256-algorithm-security";
-    private static final long EXPIRATION_TIME = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
-    
+
+    private static final long EXPIRATION_TIME = 8 * 60 * 60 * 1000; // 8 hours
+
     private final SecretKey key;
-    
-    public JwtUtil() {
-        this.key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+
+    /** Secret injected from rrbm.jwt.secret (env var RRBM_JWT_SECRET, with dev fallback). */
+    public JwtUtil(@Value("${rrbm.jwt.secret}") String secret) {
+        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
     
     /**
@@ -48,6 +47,31 @@ public class JwtUtil {
      */
     public String extractEmail(String token) {
         return extractClaims(token).getSubject();
+    }
+
+    /**
+     * Alias for extractEmail — returns the user's email (JWT subject).
+     * Provided for API consistency; the JWT stores email, not a separate username.
+     */
+    public String extractUsername(String token) {
+        return extractEmail(token);
+    }
+
+    /**
+     * Extract role claim from token
+     */
+    public String extractRole(String token) {
+        Object role = extractClaims(token).get("role");
+        return role != null ? role.toString() : null;
+    }
+
+    /**
+     * Extract userId claim from token
+     */
+    public Long extractUserId(String token) {
+        Object id = extractClaims(token).get("userId");
+        if (id instanceof Number) return ((Number) id).longValue();
+        return null;
     }
     
     /**

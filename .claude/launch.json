@@ -1,0 +1,1 @@
+{"version":"0.0.1","configurations":[{"name":"frontend","runtimeExecutable":"npx","runtimeArgs":["--yes","serve","-l","5500","rrbm_frontend/rrbm-frontend"],"port":5500}]}

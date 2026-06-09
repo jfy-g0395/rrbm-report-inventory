@@ -1,0 +1,2358 @@
+# Session 53 — Dark Mode Form Fix + Product-Analytics Dashboard
+
+## Context
+Two pieces: (1) a dark-mode bug where `<select>` dropdowns and their `<option>` items render unreadable (light text on default-white) on the New Order, Receive Stock, and Expenses pages; (2) a major dashboard expansion adding product-hierarchy analytics — pizza-box quota with period targets, total quantity sold, category & subcategory breakdowns, top products, and 5 charts — with weekly/monthly driven by **closed days only**.
+
+Per user decisions: classification **reuses the existing inventory `category`/`sub_category` fields** (no new product fields, no migration), and the new sections are **added below** the existing financial cards (nothing removed).
+
+---
+
+## Part 1 — Dark Mode Form Fields (CSS only)
+
+**Root cause:** `.form-select` (styles.css ~683) sets the dropdown-arrow `background-image` but **no `background-color` and no `color`**. A plain `<select class="form-select">` inherits the page's light `--text-primary` on the browser-default white control → invisible in dark mode. Native `<option>` popups also default to white.
+
+**Fix (`css/styles.css`):**
+- Give `.form-select` explicit `background-color: var(--input-bg);` and `color: var(--text-primary);` (keep arrow image; use `background-color`, not `background` shorthand).
+- Dark-theme safety net:
+```css
+[data-theme="dark"] select,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-control,
+[data-theme="dark"] input,
+[data-theme="dark"] textarea { background-color: var(--input-bg); color: var(--text-primary); }
+[data-theme="dark"] select option,
+[data-theme="dark"] .form-select option,
+[data-theme="dark"] .form-control option { background-color: var(--input-bg); color: var(--text-primary); }
+```
+- Sweep New Order (`view-new`), Receive Stock (`view-delivery`), Expenses (`view-expenses` + expense modal) for inline light bg/color on inputs/selects; rely on the classes/overrides above.
+
+**Verify:** dark mode → all dropdowns/options/inputs readable on the three pages.
+
+---
+
+## Part 2 — Product-Analytics Dashboard
+
+### Category mapping (reuse existing inventory categories — no migration)
+Actual stored `products.category` / `sub_category`:
+- `Pizza Box` (Claycoat/Generic/Plain), `Pizza Supplies` (blank sub)
+- `Die-Cut Packaging Boxes` (Bilao/Flower/Mailer/Party/Roasted Food)
+- `Offset Packaging Boxes` (Pastry Box)
+- `Packaging Supplies` (Tapes/Wrappers), `RSC` (blank sub)
+
+**Backend classifier** maps stored category → 4 spec buckets:
+| Stored `category` | Dashboard category | Subcategory |
+|---|---|---|
+| `Pizza Box` | **Pizza Supplies** | `Pizza Boxes` |
+| `Pizza Supplies` | **Pizza Supplies** | `Other Pizza Supplies` |
+| `Die-Cut Packaging Boxes` | **Die Cut Packaging Boxes** | stored `sub_category` |
+| `Offset Packaging Boxes` | **Offset Packaging Boxes** | `Pastry Boxes` |
+| else (`Packaging Supplies`,`RSC`,null) | **Packaging Supplies** | stored `sub_category` or `Other` |
+
+Pizza-box quota actual = qty of products in subcategory `Pizza Boxes` (stored category `Pizza Box`).
+
+### New endpoint `GET /api/dashboard/product-analytics?period=daily|weekly|monthly`
+- `daily` → today's live non-cancelled orders (`findByCreatedAtDateWithItems`).
+- `weekly` → Mon→today, **closed days only**: closed dates from `dailyReportRepository.findByReportDateBetweenOrderByReportDateDesc(weekStart, today)`; aggregate `findByDateRangeWithItems` orders whose date ∈ closed set.
+- `monthly` → 1st→today, same closed-days filter.
+- Batch `productRepository.findAllById` for category lookup (reuse existing N+1 pattern in `getStats`).
+
+Response: `{ period, periodStart, periodEnd, totalQtySold, pizzaQuota:{target,actual,pct}, categories:[{name,qty,pct,rank,subcategories:[{name,qty}]}], topProducts:[{name,qty}×5], trend:[{label,qty}] }`.
+- Quota targets: daily 5000, weekly 30000, monthly = previous-month closed pizza-box total (`null` if none) → `pct=target?actual/target*100:null`.
+- Trend: daily=24 hour buckets; weekly=Mon–Sun; monthly=each date — summing item quantities.
+
+### Frontend (`index.html`, new sections below Row 5; refresh on `switchDashTab`)
+1. Period-aware Pizza Quota KPI (target/actual/achievement% relabels per period).
+2. Product Sales Summary (Total Quantity Sold).
+3. Category Sales Breakdown table (Category | Qty | Contribution % | Rank).
+4. Subcategory expandable rows per category.
+5. Top 5 Products (period) — reuse top-5 styling.
+6. Charts (Chart.js, reuse existing pattern): Sales Trend line (axis relabels per period), Category Distribution donut, Category Performance stacked bar.
+
+### Frontend JS (`app.js`)
+- `loadProductAnalytics(period)` — fetch, render summary/category/subcategory/top, build 3 charts (destroy-before-recreate via `appState`).
+- Wire into `switchDashTab(period)` alongside existing `renderDashboard()`.
+- Reuse `escapeHtml`, number formatting, existing Chart.js config style (`chart-sales`, `chart-source-donut`).
+
+### Data update rule
+Weekly/Monthly reflect closed days automatically: a date only appears once its `daily_reports` row exists (created at close). No scheduler needed.
+
+---
+
+## Files Modified
+| File | Change |
+|---|---|
+| `css/styles.css` | `.form-select` bg+color; dark select/option/input/textarea overrides |
+| `index.html` | form inline-style sweep (3 pages); dashboard sections + 3 chart canvases |
+| `DashboardController.java` | `/product-analytics` endpoint + classifier + closed-days aggregation + trend |
+| `app.js` | `loadProductAnalytics()`, category/subcategory render, 3 charts; wire `switchDashTab` |
+
+## Verification
+1. Dark mode: dropdowns/options/inputs readable on New Order / Receive Stock / Expenses.
+2. Endpoint returns correct buckets; weekly/monthly include only closed dates (check vs `daily_reports`).
+3. Category % sums to 100; ranks correct; subcategories sum to category total.
+4. Quota: daily 5,000 / weekly 30,000 / monthly = prev-month (or "no data").
+5. Tab switch updates all new sections + relabels trend axis.
+6. Top 5 correct; daily live, weekly/monthly only after a close.
+
+---
+
+# Session 50-A — UI Bug Fixes & Corrections
+
+## Context
+Several visual and data bugs found across the app: dark mode table backgrounds, dashboard blank on login, activity log field mismatches in daily report, PDF logo wrong file, monthly report tab styling, collections page UX redesign, and accounting summary in wrong tab.
+
+---
+
+## 50-A-1 · Dark Mode — Table backgrounds remain white
+
+**Root cause:** `styles.css` defines `--bg-card` and `--table-stripe` for dark mode, but the `.table` element's `<td>` and `<tbody>` backgrounds may not be using CSS variables. Inline `style="background:#fafafa"` or `background:#fff` on striped rows ignores the theme.
+
+**Fix (`css/styles.css`):**
+- Add dark-mode override for table body backgrounds:
+```css
+[data-theme="dark"] .table tbody tr td,
+[data-theme="dark"] .table tbody tr:nth-child(even) td {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+[data-theme="dark"] .table thead th {
+  background: var(--bg-secondary, #2d2d2d);
+  color: var(--text-primary);
+}
+```
+- Also check `.stat-card`, `.card-body`, and any inline `background:#fafafa` or `background:#f8f9fa` used in the monthly report cards — add dark overrides for those.
+
+**Scope:** All tables across the app (Top 10 Products, Daily Order Summary, Daily Accounting Breakdown, etc.)
+
+---
+
+## 50-A-2 · Dashboard blank on first login
+
+**Root cause:** In `doLogin()`, `navigateTo('dashboard')` is called which sets the view active, but `renderDashboard()` is called BEFORE `navigateTo()` — charts may render into a container that isn't visible yet (Chart.js needs visible containers for sizing).
+
+**Fix (`app.js` — `doLogin()`):** Move `renderDashboard()`, `renderTopProductsToday()`, and `updateCollectionsBadge()` to AFTER `navigateTo('dashboard')`. The navigate function shows the view first, then the render calls populate it while it's visible.
+
+Current order:
+```
+_clearSessionState();
+navigateTo('dashboard');
+renderDashboard();        // these run after navigateTo → view is visible
+renderTopProductsToday();
+updateCollectionsBadge();
+```
+
+This should already be correct from Session 45, but verify the actual execution order — `navigateTo` is synchronous, so it should work. If charts still fail, add a `setTimeout(renderDashboard, 100)` to let the DOM settle.
+
+---
+
+## 50-A-3 · Activity Log — User/Description columns empty in Daily Report
+
+**Root cause:** Field name mismatch. Backend `ActivityLog` entity has:
+- `userName` — but frontend `_buildDailyReportHTML` references `log.performedBy`
+- `description` — but frontend references `log.details`
+
+**Fix (`app.js` — `_buildDailyReportHTML`):** Change:
+- `log.performedBy` → `log.userName`
+- `log.details` → `log.description`
+
+---
+
+## 50-A-4 · Daily Report PNG generation fails
+
+**Root cause:** `html2canvas` is loaded via CDN script tag inside the dynamically-written HTML. When `savePNG()` is called, the script may not have loaded yet (race condition), or CORS issues with the logo image.
+
+**Fix (`app.js` — `downloadDailyReportPdf` and `printPoDocument`):**
+1. Add `onload` handler to the html2canvas script tag that sets a flag
+2. In `savePNG()`, check if `html2canvas` is defined; if not, wait briefly or show a "loading..." message
+3. Add `crossorigin="anonymous"` to the logo `<img>` tag
+4. In html2canvas options, keep `useCORS: true` and add `logging: false`
+5. Alternatively: preload html2canvas in the main page `index.html` as a `<script>` tag so it's always available, then in the popup window use `opener.html2canvas` or just reference it directly.
+
+**Simplest fix:** Add html2canvas CDN to `index.html` `<head>`, then in the popup window reference `window.opener.html2canvas || window.html2canvas`.
+
+---
+
+## 50-A-5 · Collections Page — "Collect" → "View" with detail modal
+
+**Current state:** Each collection row has a "Print Receipt" button + "Collect" button (with lock icon). Clicking "Collect" opens a security key modal directly.
+
+**New flow:**
+1. Replace "Print Receipt" + "Collect" buttons with a single **"View"** button
+2. Clicking "View" opens a new **`modal-collection-detail`** modal showing full order info:
+   - Order ID, Date, Customer, Payment Mode, Items table, Total, Notes
+   - "Print Receipt" button (inside modal)
+   - "Mark as Collected" button (inside modal) → clicking this reveals the security key input field inline in the modal
+   - On successful collection: toast, close modal, reload collections
+
+**Changes:**
+- `index.html`: Add `modal-collection-detail` (similar pattern to order detail modals)
+- `app.js`: New `openCollectionDetail(orderId)` function; move security key logic inside the modal; `renderCollectionRows()` replaces buttons with single "View"
+
+---
+
+## 50-A-6 · Monthly Report — Tab styling hard to read + Accounting Summary in wrong tab
+
+**Tab styling fix (`app.js` — `switchRepTab`):**
+- Match the dashboard period tab design (Today/Weekly/Monthly buttons)
+- Active: solid accent background with white text (already done, but may need contrast adjustment)
+- Inactive: transparent background with muted text, subtle border
+
+**Also in `index.html`:** Move the Accounting Summary section (the collapsible block with Gross Sales/Refunds/Adjustments/Net Sales cards + Daily Accounting Breakdown table) from Tab 1 (Monthly Statistics) into Tab 2 (Accounting) — place it at the top of Tab 2 before Month-over-Month.
+
+---
+
+## 50-A-7 · PDF Logo — use logo-two.png instead of rrbm-logo.png
+
+**Fix (`app.js`):** In both `printPoDocument()` and `downloadDailyReportPdf()`, change the logo path from `'assets/rrbm-logo.png'` to `'assets/logo-two.png'`.
+
+---
+
+## Files Modified
+
+| File | Changes |
+|---|---|
+| `css/styles.css` | Dark mode overrides for table backgrounds, thead, striped rows, stat cards |
+| `app.js` | Fix `doLogin` render order; fix activity log field names; fix PNG generation; collections detail modal; switchRepTab styling; logo path |
+| `index.html` | Add `modal-collection-detail`; move Accounting Summary to Tab 2; optionally add html2canvas CDN |
+
+## Verification
+
+1. Toggle dark mode → all tables readable (no white backgrounds with white text)
+2. Login fresh → dashboard shows data immediately without needing to switch tabs
+3. Close daily sales → View daily report → Activity Log shows user names and descriptions
+4. Click "Save as PNG" on daily report → downloads successfully
+5. Collections page → "View" button → modal shows order detail + Print Receipt + Mark as Collected with security key
+6. Monthly Report → Accounting tab → contains Accounting Summary + Month-over-Month + all financial sections
+7. PO PDF → logo visible (logo-two.png, not white-on-white)
+
+---
+
+# Sessions 45–51 — Feature Backlog & Bug Fixes
+
+## Overview
+Large batch of features, redesigns and bug fixes. Split into focused sessions.
+
+---
+
+## Session 45 — Bug Fixes + Quick Wins
+
+### Context
+Several small bugs and UX gaps found across the app that can be resolved without migrations.
+
+### 45-A · Session state not cleared on re-login
+**Problem:** When a second user logs in, the first user's cached data (orders, inventory rows, etc.) remains visible in `appState` until a manual page refresh.  
+**Fix (`app.js` — `doLogin()`):** After storing token/user, call a new `_clearSessionState()` helper that resets all appState array/object caches (`allOrders`, `cachedProducts`, `inventoryAllProducts`, `_importParsed`, `_collectionsParsed`, etc.) and clears any rendered table bodies that might show stale data, then explicitly calls `navigateTo('dashboard')`.
+
+```javascript
+function _clearSessionState() {
+  appState.allOrders = [];
+  appState.cachedProducts = [];
+  appState.inventoryAllProducts = [];
+  appState._importParsed = [];
+  // clear rendered tables
+  ['list-tbody','order-history-tbody','collections-tbody',
+   'inventory-tbody','activity-log-tbody'].forEach(function(id){
+    var el = $(id); if (el) el.innerHTML = '';
+  });
+}
+```
+
+### 45-B · Login always navigates to dashboard
+**Fix (`app.js` — `doLogin()`):** After `_clearSessionState()`, explicitly call `navigateTo('dashboard')` so the dashboard nav item is active regardless of which view was last active before logout.
+
+### 45-C · Order Pending → Resume requires password for ALL payment modes
+**Problem:** `updateOrderStatus` (non-COD path) calls directly without a password prompt. Only `askCodResume()` prompts for a password.  
+**Fix (`app.js`):** Find every call-site that sets an order back to `ACTIVE` from `PENDING`. Unify them: all resume actions — regardless of payment mode — go through `askCodResume()` (rename to `askResumeOrder()`). The backend already has `POST /api/auth/verify-password`. Add an activity log entry `"ORDER_RESUMED"` in `updateOrderStatus` (or create a dedicated endpoint).
+
+### 45-D · Subtotal field truncating large amounts
+**Fix (`index.html`):** The `#orderSubtotal` span sits inside a `d-flex justify-content-between` row. Add `style="min-width:max-content;"` or remove any `overflow:hidden` on the parent. Also check the summary container width and allow it to grow.
+
+### 45-E · "Santan" still appears in stock info field when wh3 selected
+**Fix (`app.js`):** Grep all remaining `"Santan"` references in warehouse-display contexts (stock info tooltips, order item stock indicator, `updateOrderItemStockInfo()`, any string concatenation that was missed in Session 42). Replace all non-address occurrences with `"Balagtas"`.
+
+---
+
+## Session 46 — Purchase Order PDF Redesign + Receive Stocks Redesign
+
+### Context
+PO PDF needs a complete layout overhaul; Receive Stocks form needs to auto-populate from the selected PO and fix the broken PO-update bug.
+
+### 46-A · PO PDF Redesign
+
+**Current state:** Hardcoded "RB" initials box + full company name + address + contact. Uses A4 size implicitly. Shows `unitPrice` instead of `unitCost`. Description field shows product name instead of `product.description`.
+
+**New layout (Letter size — 8.5×11in):**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  [RRBM Logo PNG]              PURCHASE ORDER             │
+│                               P.O. #: XXXXXXXXXXXX      │
+│                               Date: May 30, 2026        │
+├─────────────────────────────────────────────────────────┤
+│  VENDOR                       SHIP TO                   │
+│  Name / Contact / Address     Name / Contact / Address  │
+├─────────────────────────────────────────────────────────┤
+│  # │ Item Code │ Description │ Qty │ Unit Cost │ Total  │
+│  … │ …         │ …           │ …   │ …         │ …     │
+├─────────────────────────────────────────────────────────┤
+│  VAT Type: ___    Shipping: ___                         │
+│  Notes: ___                                             │
+│  ORDER TOTAL: ₱XX,XXX.XX                               │
+├─────────────────────────────────────────────────────────┤
+│  Prepared by: ___________   Approved by: ___________   │
+├─────────────────────────────────────────────────────────┤
+│  Generated: May 30, 2026 12:00 PM                       │
+│  INTERNAL DOCUMENT — CONFIDENTIAL                       │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Key changes to `printPoDocument(id)` in `app.js`:**
+- Logo: `<img src="assets/rrbm-logo.png" style="height:60px;">` — no company name/address/contact text
+- Paper: `@page { size: letter; margin: 15mm; }` in the print CSS
+- Description column: use `item.itemDescription` (already exists in PO item data)
+- Unit Cost column: use `item.unitCost` instead of `item.unitPrice`
+- Remove footer business name; replace with "INTERNAL DOCUMENT — CONFIDENTIAL TO RRBM"
+- **Download as image:** After opening the print window, use `html2canvas` OR simply add a second button "Save as Image" that uses the browser's print-to-PDF → screenshot approach. Simpler: use `window.print()` with CSS `@media print { body { -webkit-print-color-adjust: exact; } }` and instruct user to "Save as PDF" then convert. Actually implement: add a `<canvas>` render via a hidden `<div>` + `html2canvas` CDN, then `.toBlob()` → download PNG.
+
+**Files:** `app.js` (`printPoDocument`), `index.html` (add html2canvas CDN script tag)
+
+### 46-B · Receive Stocks — Complete Redesign
+
+**Current bug:** User selects a PO from the dropdown but the PO matching on the backend uses item-code matching across ALL open POs, not specifically the one selected. The explicit `poNumber` field from the form was added in Session 38, but it relies on the user entering the PO number manually in the DR number field (the old behavior).
+
+**New flow:**
+
+1. User selects a PO from the dropdown → PO number stored, **supplier auto-fills**, AND **all unfulfilled PO line items auto-populate** the line items table with:
+   - Product name (read-only label)
+   - Qty Ordered (read-only from PO)
+   - Total Received (editable number input, starts blank)
+   - Rejected (editable number input, starts 0)
+   - Warehouse (dropdown: WH1/WH2/Balagtas)
+   - Delete button (removes that row if item wasn't delivered)
+
+2. The PO dropdown shows only **INCOMPLETE** POs, and only shows **unfulfilled items** per PO (fulfilled items excluded from the auto-populated rows).
+
+3. User fills in: DR number, Received By, Verified By (Encoded By auto-fills from logged-in user).
+
+4. On submit: sends the PO number explicitly → backend matches fulfillment against **that specific PO only**.
+
+**Backend fix (`ProductController.java`):** The `poNumber` field is already sent. The matching logic already uses it when non-blank (Session 38). The bug may be that the frontend wasn't sending the right `poNumber`. Confirm and fix.
+
+**Frontend changes (`index.html` — `view-delivery`):**
+- Replace the manual `delivery-items-container` (add-item button row) with a div `#delivery-items-auto` that gets populated when a PO is selected
+- Keep the manual add-item flow as a fallback when no PO is selected (unlinked delivery)
+
+**`app.js` — `onDeliveryPoChange()`:** Extend to also call new `populateDeliveryItemsFromPo(po)` that:
+- Fetches full PO data (or uses already-loaded PO list)
+- Filters `po.items` where `!item.isFulfilled`
+- Renders each as a locked-name row with editable received/rejected/warehouse fields
+- Shows delete (×) button per row
+
+**`app.js` — `submitDeliveryReceipt()`:** When a PO is selected, read items from the auto-populated rows rather than the manual add-item rows. Each item must have `productId` (from PO item `componentProductId` mapping or a lookup). The backend needs the `productId` or `itemCode` to match inventory.
+
+**Files:** `index.html` (view-delivery HTML), `app.js` (`onDeliveryPoChange`, `populateDeliveryItemsFromPo`, `submitDeliveryReceipt`), possibly `ProductController.java` if PO matching needs adjustment.
+
+---
+
+## Session 47 — Monthly Report: Tab Segmentation
+
+### Context
+Monthly report is a single very long scrollable page. Segment into 3 tabs.
+
+### Tab Structure
+
+```
+[ Monthly Statistics ] [ Accounting ] [ E-commerce ]
+```
+
+**Tab 1 — Monthly Statistics:**
+- Summary stat cards (Total Orders, Total Revenue, Items Sold, Total Expenses)
+- Daily Revenue Breakdown chart
+- Top 10 Products | Hot Selling Items (side by side, 2-col)
+- Daily Order Summary table
+- Pizza Box Summary
+- Non-Pizza Items Summary
+
+**Tab 2 — Accounting:**
+- Month-over-Month Comparison cards
+- Sales vs Expenses chart
+- Orders by Source (donut + table)
+- Accounting Summary (collapsible, with daily breakdown)
+- Expense Breakdown by Category
+- Delivery Fee Collections
+- Supplier Payables Outstanding
+- Pending Collections
+
+**Tab 3 — E-commerce:**
+- E-commerce stat cards (orders, revenue)
+- Platform breakdown (Shopee / TikTok / Lazada cards + table)
+- Top Agents / Resellers table
+- Top Revenue Days table
+
+**Implementation:**
+- Add tab buttons at top of `#view-rep` (reuse existing tab button CSS already in app for dashboard periods)
+- Wrap each group of existing cards in a `<div class="rep-tab-content" data-tab="stats|accounting|ecommerce">` with `display:none` by default; active tab shows via `display:''`
+- `window.switchRepTab(tab)` — hides all, shows selected, updates button active state
+- `loadAllReports()` still fetches all data on page load; tabs only affect display
+
+**`initReportsView()`:** Default to tab `stats` on open.
+
+**Files:** `index.html` (restructure view-rep content into 3 tab groups), `app.js` (`switchRepTab`, `initReportsView` default tab)
+
+---
+
+## Session 48 — Close Daily Sales UI + Daily Report PDF
+
+### Context
+After closing, the order list should show a "closed" state with a download button. Daily report needs a full-featured PDF.
+
+### 48-A · Closed Day Banner in Order List
+
+**`index.html` — `view-list` card header:** Add a hidden banner div:
+```html
+<div id="daily-closed-banner" style="display:none; background:#D1FAE5; border:1px solid #6EE7B7;
+     border-radius:8px; padding:12px 16px; margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+  <i class="ti ti-circle-check" style="color:#059669; font-size:20px;"></i>
+  <span style="font-weight:600; color:#065F46;">Daily sales for <span id="closed-date-label"></span> have been closed.</span>
+  <button class="btn btn-sm btn-secondary" style="margin-left:auto;" onclick="downloadDailyReportPdf()">
+    <i class="ti ti-download"></i> Download Report
+  </button>
+</div>
+```
+
+**`app.js` — `renderOrderList()`:** Call `GET /api/reports/daily-status` and if `closed:true`, show the banner with today's date; hide it otherwise. Already called on load. Store `_todayReport` when closed.
+
+**`app.js` — after `confirmCloseDailySales()` success:** Show banner immediately without waiting for `renderOrderList()` to re-run.
+
+### 48-B · Daily Report PDF
+
+New function `window.downloadDailyReportPdf(dateStr)` (today if omitted). Fetches:
+1. `GET /api/reports/daily/{date}` — base report data
+2. `GET /api/orders/today` (or `GET /api/orders/date/{date}`) — full order list for that day
+3. `GET /api/reports/top-products-today?date={date}` (or reuse existing endpoint)
+4. `GET /api/reports/accounting-summary?month={yyyy-MM}&day={date}` — daily accounting
+
+**PDF sections (Letter size, built as print HTML):**
+
+```
+PAGE 1 — SUMMARY
+─────────────────────────────────────────────
+[RRBM Logo]     Daily Sales Report
+                Date: May 30, 2026
+                Closed by: [name] at [time]
+─────────────────────────────────────────────
+┌──────────┬──────────┬──────────┬──────────┐
+│ Orders   │ Revenue  │ PizzaBox │ Expenses │
+└──────────┴──────────┴──────────┴──────────┘
+
+Revenue Breakdown:
+  Direct Transactions:    ₱XX,XXX
+  E-commerce Revenue:     ₱XX,XXX
+  Grand Total:            ₱XX,XXX
+
+Cash & Payments:
+  E-wallet / Online:      ₱XX,XXX
+  Cash on Hand:           ₱XX,XXX
+  Total Expenses:         ₱XX,XXX
+
+Top 5 Products Today (table: name, qty, revenue)
+
+PAGE BREAK
+─────────────────────────────────────────────
+PAGE 2 — ORDERS
+─────────────────────────────────────────────
+DIRECT TRANSACTIONS TABLE
+Order ID | Customer | Items | Total | Payment
+
+ECOMMERCE TRANSACTIONS TABLE
+Order Ref | Platform | Customer | Items | Total
+
+PAGE BREAK
+─────────────────────────────────────────────
+PAGE 3 — ACTIVITY LOG
+─────────────────────────────────────────────
+Today's Activity Log (table: time, user, action, details)
+
+FOOTER each page: Generated [datetime] · Internal Document
+```
+
+**Download as Image (PNG):** Add a second button "Save as PNG" next to the PDF button. Uses `html2canvas` to render the same hidden div to a canvas → `canvas.toBlob()` → download as `daily-report-{date}.png`. Same CDN script tag as PO image export.
+
+### 48-C · Daily Reports Page — View Modal matches PDF
+
+**`openDailyReportDetail(date)` (`app.js`):** Replace current minimal modal content with the same multi-section layout as the PDF (rendered in HTML, not as an actual PDF). Use the same data fetches. Modal body gets `overflow-y:auto; max-height:75vh`.
+
+**Download button in modal footer:** Calls `downloadDailyReportPdf(date)`.
+
+**Files:** `index.html` (closed banner, modal structure), `app.js` (`renderOrderList`, `downloadDailyReportPdf`, `openDailyReportDetail`), possibly `DailyReportController.java` for any missing data endpoints.
+
+---
+
+## Session 49 — Accounting Role + Multiple Master Keys
+
+### Context
+Refund/Void/Cancel should be gated to an ACCOUNTING role (or combined with existing admin roles per business preference). Master keys need to support up to 3 simultaneous active keys.
+
+### 49-A · Accounting Role
+
+**New role name:** `"ACCOUNTING"` — add alongside existing roles.
+
+**Backend (`UserController.java`):**
+- Add `"ACCOUNTING"` to `VALID_ROLES` list
+- Add to `UserDto` role options
+
+**Frontend (`app.js`):**
+- Update `canManageOrders()` — ACCOUNTING is additive (ADMIN/ADMINISTRATOR keep their permissions):
+  ```javascript
+  function canManageOrders() {
+    return ['SUPER_ADMIN', 'ADMINISTRATOR', 'ADMIN', 'ACCOUNTING'].includes(currentUserRole());
+  }
+  ```
+- Update `applyRoleRestrictions()` to handle `ACCOUNTING` role appropriately (same nav access as ADMIN)
+
+**Frontend (`index.html`):**
+- Add `<option value="ACCOUNTING">Accounting</option>` to Add/Edit Employee role dropdowns
+
+**No migration needed** — role is stored as VARCHAR.
+
+### 49-B · Multiple Master Keys (max 3)
+
+**Current state:** One master key in `master_keys` table, validated by `findTopByOrderByCreatedAtDesc()`.
+
+**New behavior:** Up to 3 active keys; any one of them validates the close. Can add/remove individual keys.
+
+**Migration V32:**
+```sql
+ALTER TABLE master_keys ADD COLUMN IF NOT EXISTS label VARCHAR(50);
+ALTER TABLE master_keys ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+```
+
+**`MasterKeyService.java`:**
+- `validateMasterKey(String rawKey)`: now checks ALL active keys (`findByIsActiveTrue()`), returns true if any matches
+- `addMasterKey(String rawKey, String label, Long adminUserId)`: validates count < 3, inserts new active key
+- `removeMasterKey(Long keyId)`: sets `is_active = false`
+- `listActiveMasterKeys()`: returns active keys (id, label, createdAt — no hash)
+
+**New endpoints (`AuthController.java`):**
+- `GET /api/auth/master-keys` — SUPER_ADMIN only; returns active keys list (no hashes)
+- `POST /api/auth/master-keys` — add a new key `{rawKey, label}` (max 3 enforced)
+- `DELETE /api/auth/master-keys/{id}` — deactivate a key (must keep at least 1)
+
+**Settings page (`index.html`):** Replace single-key change form with:
+- List of active keys (label, date added, remove button)
+- "Add Key" button → small inline form (label + key + confirm)
+- Max 3 shown; "Add" disabled when at 3
+
+**`app.js`:** `loadMasterKeys()`, `addMasterKey()`, `removeMasterKey(id)` functions.
+
+**`MasterKeyRepository.java`:** Add `findByIsActiveTrue()`, `countByIsActiveTrue()`.
+
+---
+
+## Session 50 — Low Stock Email Notifications
+
+### Context
+When any product hits low-stock threshold, send email to configured addresses. Settings page allows adding/removing notification emails.
+
+### Migration V33
+```sql
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS value_type VARCHAR(20) DEFAULT 'string';
+-- Or simpler: add a new table
+CREATE TABLE IF NOT EXISTS notification_emails (
+  id BIGSERIAL PRIMARY KEY,
+  email VARCHAR(120) NOT NULL UNIQUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by VARCHAR(120)
+);
+```
+
+### Backend
+
+**`pom.xml`:** Add Spring Mail dependency:
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-mail</artifactId>
+</dependency>
+```
+
+**`application-local.properties`:** Gmail App Password configuration:
+```properties
+spring.mail.host=smtp.gmail.com
+spring.mail.port=587
+spring.mail.username=your-gmail@gmail.com
+spring.mail.password=xxxx-xxxx-xxxx-xxxx   # 16-char Gmail App Password
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+spring.mail.properties.mail.smtp.starttls.required=true
+rrbm.mail.from=your-gmail@gmail.com
+```
+Note: Admin must generate an App Password at myaccount.google.com → Security → 2-Step Verification → App Passwords.
+
+**`EmailService.java` (new):**
+- `sendLowStockAlert(List<Product> lowItems)` — builds branded HTML email + sends to all configured addresses
+- HTML email template: RRBM logo header, table of low-stock items (name, warehouse stocks, threshold), footer with timestamp
+
+**`NotificationEmailRepository.java` + `NotificationEmail.java`:** Simple entity for the emails table.
+
+**`NotificationEmailController.java`:**
+- `GET /api/settings/notification-emails` — SUPER_ADMIN/ADMINISTRATOR only
+- `POST /api/settings/notification-emails` — add email
+- `DELETE /api/settings/notification-emails/{id}` — remove email
+
+**Trigger:** In `ProductController.java` — `deductStockForOrder()` (in `InventoryService.java`) — after stock deduction, check if any product falls below its threshold. If so, call `emailService.sendLowStockAlert(lowItems)` **asynchronously** (`@Async`). Log each send in `ActivityLogService` with action `"LOW_STOCK_ALERT"`.
+
+**Scheduling fallback:** `@Scheduled(cron = "0 0 8 * * *")` daily 8 AM check via `StockMonitorService` (optional).
+
+### Frontend
+
+**Settings page (`index.html`):** Add new card "Low Stock Email Notifications" (visible to SUPER_ADMIN + ADMINISTRATOR):
+- List of configured emails with remove button
+- Add email input + "Add" button
+- Max 10 emails
+
+**`app.js`:** `loadNotificationEmails()`, `addNotificationEmail()`, `removeNotificationEmail(id)`.
+
+---
+
+## Session 51 — Dashboard Weekly/Monthly Fix
+
+### Context
+Dashboard weekly/monthly period data doesn't match what daily data shows. Need to investigate the DashboardController aggregation logic and fix.
+
+### Investigation needed
+Read `DashboardController.java` — specifically how `period=weekly` and `period=monthly` data is aggregated vs `period=daily`. The user says weekly data should show accumulated totals per week of the month (Week 1, Week 2, etc.) and monthly should show the whole month's accumulated progress from daily reports.
+
+**Likely fix in `DashboardController.java`:**
+- `daily` period: today only
+- `weekly` period: Monday of current week → today (or fixed 7-day window matching the current week number)
+- `monthly` period: 1st of current month → today
+
+The display label on the dashboard should show "Week 1 (May 5–11)" etc. to match the user's expectation.
+
+**Frontend:** Update the tab labels and any sub-text to show the date range being displayed, so it's clear what period the data represents.
+
+---
+
+## Files Modified Summary (by session)
+
+| Session | Backend | Frontend | Migration |
+|---|---|---|---|
+| 45 | None | `app.js` (state clear, resume password, Balagtas), `index.html` (subtotal) | None |
+| 46 | `ProductController.java` (PO matching fix) | `app.js` (PO PDF, receive stocks), `index.html` (receive stocks form), add html2canvas | None |
+| 47 | None | `index.html` (tab structure), `app.js` (switchRepTab) | None |
+| 48 | `DailyReportController.java` (data endpoints if needed) | `app.js` (PDF, banner, modal), `index.html` (banner, modal) | None |
+| 49 | `UserController.java`, `MasterKeyService.java`, `MasterKeyRepository.java`, `AuthController.java` | `app.js`, `index.html` (settings) | V32 |
+| 50 | `EmailService.java`, `NotificationEmailController.java`, `NotificationEmailRepository.java`, `NotificationEmail.java`, `InventoryService.java`, `pom.xml`, `application-local.properties` | `app.js`, `index.html` (settings) | V33 |
+| 51 | `DashboardController.java` | `app.js` (labels), `index.html` | None |
+
+---
+
+# Session 44 — Password Assignment & Change Hardening
+
+## Context
+
+When a Super Admin creates a new employee account or resets an employee's password, the password is typed into a single field with no confirmation — a silent typo sets the wrong password and the employee can't log in. Additionally there is no mechanism to force an employee to set their own password after receiving a Super Admin-assigned one; they keep using whatever the admin typed indefinitely. This session adds:
+
+1. **Confirm-password fields** on Add Employee and Edit Employee modals (typo guard)
+2. **"Require password change on next login" flag** — Super Admin can tick a checkbox so the employee must set their own password on first login, then the flag is automatically cleared
+
+---
+
+## Existing Flow (reference only — already implemented)
+
+| Action | How | Files |
+|---|---|---|
+| Create account | `POST /api/users` → password BCrypt-hashed + plaintext stored | `UserController.java`, `submitAddEmployee()` |
+| Super Admin changes employee pw | Edit Employee `#edit-emp-password` (blank = keep) → PUT `/api/users/{id}` | same |
+| Employee changes own pw | "Change Password" sidebar → `modal-change-password` (current + new + confirm) → PATCH `/api/users/{id}/change-password` | same |
+| Super Admin views any pw | Credential viewer in Edit Employee → `GET /api/users/{id}/credentials` | Session 43 |
+
+---
+
+## Part 1 — Confirm Password Fields (no migration)
+
+### `index.html`
+
+**Add Employee modal** (~line 2379) — expand the Password row into a 2-column grid:
+- Col A: `#add-emp-password` (existing, label "Password *")
+- Col B: new `#add-emp-password-confirm` (label "Confirm Password *", same placeholder style)
+
+**Edit Employee modal** (~line 2516) — expand New Password row into 2-column grid:
+- Col A: `#edit-emp-password` (existing, label unchanged)
+- Col B: new `#edit-emp-password-confirm` (label "Confirm New Password", placeholder "Re-enter to confirm")
+
+Both new fields: `type="password"`, `autocomplete="new-password"`
+
+### `app.js`
+
+**`submitAddEmployee()`** — after reading `password`, read confirm and validate:
+```javascript
+const passwordConfirm = (($('add-emp-password-confirm') || {}).value || '').trim();
+if (password !== passwordConfirm) { showToast('Passwords do not match', 'error'); return; }
+```
+
+**`submitEditEmployee()`** — after reading `newPassword`, read confirm and validate (only when newPassword is non-blank):
+```javascript
+const newPasswordConfirm = (($('edit-emp-password-confirm') || {}).value || '').trim();
+if (newPassword && newPassword !== newPasswordConfirm) {
+  showToast('Passwords do not match', 'error'); return;
+}
+```
+
+**`askEditEmployee()`** (~line 3290) — clear the new confirm field alongside the existing clear:
+```javascript
+if ($('edit-emp-password-confirm')) $('edit-emp-password-confirm').value = '';
+```
+
+---
+
+## Part 2 — "Must Change Password" on Next Login
+
+### Migration V30
+
+**File:** `V30__user_must_change_password.sql`
+```sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+```
+
+### `User.java`
+```java
+@Column(name = "must_change_password", nullable = false)
+private boolean mustChangePassword = false;
+```
+Lombok `@Data` auto-generates getter/setter.
+
+### `UserController.java`
+
+**`createUser`** — after password hash, set flag:
+```java
+user.setMustChangePassword(true);   // force employee to set own password on first login
+```
+
+**`updateUser`** (inside `if (newPassword != null && !newPassword.isBlank())`) — flag reset on Super Admin password change:
+```java
+user.setMustChangePassword(true);
+```
+
+**`changePassword`** — clear flag on successful own-password change, and skip current-password verification when flag is true:
+```java
+// Replace the existing inner if (callerId.equals(id)) block:
+if (callerId.equals(id)) {
+    if (!user.isMustChangePassword()) {
+        // Normal flow — verify current password
+        String currentPassword = body.getOrDefault("currentPassword", "");
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash()))
+            return ResponseEntity.badRequest().body(Map.of("message", "Current password is incorrect"));
+    }
+    // else: mustChangePassword=true → skip verification (Super Admin set a temp password)
+}
+user.setMustChangePassword(false);   // clear flag after successful change
+```
+
+### `UserDto` record (inside `UserController.java`)
+Add `boolean mustChangePassword` to the `UserDto` record and `toDto()` mapping so it flows to the frontend in list/fetch responses.
+
+### `LoginResponse.java` / `AuthService.java`
+Add `mustChangePassword` to `LoginResponse.UserInfo` (or equivalent inner class) so it is included in the login response payload.
+
+### `index.html` changes
+
+**`modal-change-password`** — add a dismissible notice at the top of modal body:
+```html
+<div id="cp-notice" style="display:none; background:#FEF3C7; border:1px solid #F59E0B;
+     border-radius:6px; padding:10px 12px; font-size:13px; margin-bottom:12px; color:#92400E;">
+  <i class="ti ti-alert-triangle" style="margin-right:4px;"></i>
+  You must set a new password before you can continue.
+</div>
+<div id="cp-current-pw-wrap">
+  <label class="form-label" style="margin-top:0;">Current Password</label>
+  <input type="password" class="form-control" id="cp-current-pw" ... />
+</div>
+```
+The `×` close button on this modal gets an id: `id="cp-modal-close-btn"`.
+
+**Add Employee modal** — add "Require password change" checkbox below the password row:
+```html
+<div style="margin-top:6px;">
+  <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer;">
+    <input type="checkbox" id="add-emp-force-change" checked />
+    Require this employee to set their own password on first login
+  </label>
+</div>
+```
+Default: **checked**.
+
+**Edit Employee modal** — same checkbox below the password row (hidden when password field is blank):
+```html
+<div id="edit-emp-force-change-wrap" style="display:none;margin-top:6px;">
+  <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer;">
+    <input type="checkbox" id="edit-emp-force-change" checked />
+    Require password change on next login
+  </label>
+</div>
+```
+Show/hide `#edit-emp-force-change-wrap` via `oninput` on `#edit-emp-password`: show when field has content, hide when empty.
+
+### `app.js` changes
+
+**`submitAddEmployee()`** — read checkbox and include in payload:
+```javascript
+const forceChange = ($('add-emp-force-change') || {}).checked !== false;
+// payload: mustChangePassword: forceChange
+```
+
+**`POST /api/users` payload** — the backend already sets `mustChangePassword=true` unconditionally in Part 2 above; the checkbox overrides it:
+- If `forceChange` is false, add `mustChangePassword: false` to the POST body, and read it in `createUser` (`body.getOrDefault("mustChangePassword", "true")`) to conditionally skip setting the flag.
+
+Actually, simpler: the backend default is `true`; the frontend sends `mustChangePassword: false` only when unchecked. Backend reads `body.get("mustChangePassword")` — if `"false"` → don't set flag; otherwise set it.
+
+**`submitEditEmployee()`** — include `mustChangePassword: true` in PUT body only when a new password is being set AND the checkbox is checked:
+```javascript
+if (newPassword) {
+  const forceChange = ($('edit-emp-force-change') || {}).checked !== false;
+  if (forceChange) payload.mustChangePassword = true;
+}
+```
+
+**`doLogin()` success handler** — after storing user data, check flag:
+```javascript
+if (loginData.user && loginData.user.mustChangePassword) {
+  _forcedPasswordChange = true;
+  $('cp-notice').style.display = '';
+  $('cp-current-pw-wrap').style.display = 'none';  // hide current-pw field
+  var closeBtn = $('cp-modal-close-btn');
+  if (closeBtn) closeBtn.style.display = 'none';   // can't dismiss
+  openChangePasswordModal();
+} else {
+  _forcedPasswordChange = false;
+  // normal post-login navigation
+}
+```
+Add module-level `var _forcedPasswordChange = false;`
+
+**`openChangePasswordModal()`** — when NOT forced:
+- Reset `#cp-notice` to hidden
+- Show `#cp-current-pw-wrap`
+- Show close button
+
+**`submitChangePassword()`** — when `_forcedPasswordChange`:
+- Skip sending `currentPassword` in the body (backend skips verification when flag is set)
+- On success: set `_forcedPasswordChange = false`, show close button, call `navigateTo('dashboard')`
+
+**`#edit-emp-password` oninput handler** — show/hide `#edit-emp-force-change-wrap`:
+Add `oninput="toggleForceChangeWrap(this)"` to `#edit-emp-password`.
+```javascript
+window.toggleForceChangeWrap = function(inp) {
+  var wrap = $('edit-emp-force-change-wrap');
+  if (wrap) wrap.style.display = inp.value ? '' : 'none';
+};
+```
+
+---
+
+## Files Modified
+
+| File | Change |
+|---|---|
+| **NEW** `V30__user_must_change_password.sql` | `must_change_password BOOLEAN NOT NULL DEFAULT FALSE` |
+| `User.java` | `mustChangePassword` boolean field |
+| `UserController.java` | Set flag on create/reset; clear + skip-verify on own change; flag in `UserDto` + `toDto()` |
+| `LoginResponse.java` or `AuthService.java` inner class | Add `mustChangePassword` to `UserInfo` |
+| `index.html` | Confirm-password fields in Add/Edit modals; "Require change" checkbox; `#cp-notice` + `#cp-current-pw-wrap` in Change Password modal; `id` on modal close button |
+| `app.js` | Confirm-match validation; `toggleForceChangeWrap`; `_forcedPasswordChange` var; `doLogin` forced-change branch; `openChangePasswordModal` / `submitChangePassword` forced-mode awareness |
+
+---
+
+## Verification
+
+1. **Typo guard (Add)**: Add Employee → enter mismatched passwords → submit → "Passwords do not match" toast, no account created
+2. **Typo guard (Edit)**: Edit Employee → enter new password + wrong confirm → submit → same toast, no change saved
+3. **Forced change on create**: Create employee (checkbox checked) → log in as that employee → Change Password modal opens immediately with amber notice, close button hidden, current-pw hidden → enter new password → modal closes, navigate to dashboard normally
+4. **Skip forced change**: Create employee (uncheck checkbox) → log in → no forced modal
+5. **Super Admin reset triggers force**: Edit employee → type new password (force-change checkbox appears, checked by default) → save → employee logs in → forced modal appears
+6. **Super Admin can opt out**: Edit employee → new password → uncheck force-change → save → employee logs in → no forced modal
+7. **Credential viewer shows post-forced-change password**: After employee sets own password via forced modal → Super Admin opens Edit Employee → credential viewer shows the NEW password
+
+---
+
+# Session 43 — Super Admin Credential Viewer
+
+## Context
+When an employee forgets their login password or security key, the Super Admin currently has no way to look it up — they can only reset it. This feature adds a credential viewer inside the Edit Employee modal so a Super Admin can see the plaintext password and security key that were most recently set for any user. Values set before this feature is enabled will show as unavailable. The viewer is hidden by default (eye-toggle to reveal) and the section only renders for Super Admin sessions.
+
+**Why plaintext storage is acceptable here:** This is an internal business system. Only SUPER_ADMIN can access these values, enforced on the backend. The business owner has confirmed this trade-off is acceptable.
+
+---
+
+## Migration V29
+
+**File:** `V29__user_credential_plain_fields.sql`
+
+```sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_plain     VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS security_key_plain VARCHAR(255);
+```
+
+---
+
+## Backend Changes
+
+### 1 — `User.java`
+Add two fields with `@JsonIgnore` so they are never included in any standard JSON response:
+
+```java
+@JsonIgnore
+@Column(name = "password_plain")
+private String passwordPlain;
+
+@JsonIgnore
+@Column(name = "security_key_plain")
+private String securityKeyPlain;
+```
+Add getters + setters for both.
+
+### 2 — `UserController.java` — store plain values at all 4 credential-write paths
+
+| Endpoint | Where | Addition |
+|---|---|---|
+| `POST /api/users` | After `setPasswordHash()` (~line 99) | `user.setPasswordPlain(password);` |
+| `PUT /api/users/{id}` | Inside `if (newPassword != null && !newPassword.isBlank())` (~line 161) | `user.setPasswordPlain(newPassword);` |
+| `PATCH /api/users/{id}/security-key` | After `setAdminSecurityKey()` (~line 239) | `u.setSecurityKeyPlain(newKey);` |
+| `PATCH /api/users/{id}/change-password` | After `setPasswordHash()` (~line 365) | `user.setPasswordPlain(newPassword);` |
+
+### 3 — `UserController.java` — new endpoint
+
+**`GET /api/users/{id}/credentials`**
+- Verify caller's JWT; assert caller role is `SUPER_ADMIN` (403 otherwise)
+- Return `{ "passwordPlain": "...", "securityKeyPlain": "..." }` — empty string when null (never null key)
+- Returns 404 if user not found
+
+```java
+@GetMapping("/{id}/credentials")
+public ResponseEntity<?> getUserCredentials(@PathVariable Long id,
+        @RequestHeader(value = "Authorization", required = false) String authHeader) {
+    // role-gate: SUPER_ADMIN only
+    // return Map.of("passwordPlain", ..., "securityKeyPlain", ...)
+}
+```
+
+---
+
+## Frontend Changes
+
+### `index.html` — `modal-edit-employee`
+Add a new credential-viewer section **after** `#edit-emp-security-key-section`:
+
+```html
+<div id="edit-emp-credential-viewer" style="display:none; border:1px solid var(--border);
+     border-radius:8px; padding:14px; margin-top:12px;">
+  <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px;">
+    <i class="ti ti-shield-lock"></i> Credential Viewer — Super Admin Only
+  </div>
+  <!-- System Password row -->
+  <div style="margin-bottom:10px;">
+    <label class="form-label" style="font-size:12px;">System Password</label>
+    <div style="display:flex;gap:8px;">
+      <input type="password" class="form-control" id="cred-view-password" readonly
+             style="font-family:monospace;" />
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              onclick="toggleCredVisibility('cred-view-password',this)">
+        <i class="ti ti-eye"></i>
+      </button>
+    </div>
+    <div id="cred-view-password-hint" style="font-size:11px;color:var(--text-muted);margin-top:3px;"></div>
+  </div>
+  <!-- Security Key row -->
+  <div>
+    <label class="form-label" style="font-size:12px;">Security Key</label>
+    <div style="display:flex;gap:8px;">
+      <input type="password" class="form-control" id="cred-view-seckey" readonly
+             style="font-family:monospace;" />
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+              onclick="toggleCredVisibility('cred-view-seckey',this)">
+        <i class="ti ti-eye"></i>
+      </button>
+    </div>
+    <div id="cred-view-seckey-hint" style="font-size:11px;color:var(--text-muted);margin-top:3px;"></div>
+  </div>
+</div>
+```
+
+### `app.js` — new helper
+
+```javascript
+window.toggleCredVisibility = function(inputId, btn) {
+  var inp = $(inputId); if (!inp) return;
+  var revealing = inp.type === 'password';
+  inp.type = revealing ? 'text' : 'password';
+  var icon = btn.querySelector('i');
+  if (icon) icon.className = revealing ? 'ti ti-eye-off' : 'ti ti-eye';
+};
+```
+
+### `app.js` — extend `askEditEmployee(userId)` (~line 3268)
+After the existing modal population block, add credential-viewer logic:
+
+```javascript
+var credSection = $('edit-emp-credential-viewer');
+if (credSection && isSuperAdmin()) {
+  credSection.style.display = 'block';
+  // Reset to hidden state
+  ['cred-view-password','cred-view-seckey'].forEach(function(id) {
+    var el = $(id); if (el) { el.value = ''; el.type = 'password'; }
+  });
+  document.querySelectorAll('#edit-emp-credential-viewer button i')
+    .forEach(function(i){ i.className = 'ti ti-eye'; });
+  $('cred-view-password-hint').textContent = 'Loading...';
+  $('cred-view-seckey-hint').textContent   = 'Loading...';
+
+  fetch(API_BASE + '/api/users/' + userId + '/credentials', {
+    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('rrbm_token') }
+  }).then(function(r){ return r.ok ? r.json() : {}; })
+    .then(function(c) {
+      var pwInp = $('cred-view-password'), skInp = $('cred-view-seckey');
+      if (pwInp) pwInp.value = c.passwordPlain    || '';
+      if (skInp) skInp.value = c.securityKeyPlain || '';
+      $('cred-view-password-hint').textContent = c.passwordPlain
+        ? 'Click the eye icon to reveal'
+        : 'Not available — set before tracking was enabled';
+      $('cred-view-seckey-hint').textContent = c.securityKeyPlain
+        ? 'Click the eye icon to reveal'
+        : (c.securityKeyPlain === '' && c.hasOwnProperty('securityKeyPlain'))
+          ? 'No security key assigned'
+          : 'Not available — set before tracking was enabled';
+    }).catch(function(){
+      $('cred-view-password-hint').textContent = 'Could not load credentials';
+      $('cred-view-seckey-hint').textContent   = 'Could not load credentials';
+    });
+} else if (credSection) {
+  credSection.style.display = 'none';
+}
+```
+
+**Note:** `isSuperAdmin()` — check if this helper already exists; if not, inline as:
+```javascript
+function isSuperAdmin() {
+  return (JSON.parse(localStorage.getItem('rrbm_user') || '{}').role === 'SUPER_ADMIN');
+}
+```
+
+---
+
+## Files Modified
+
+| File | Change |
+|---|---|
+| **NEW** `V29__user_credential_plain_fields.sql` | `password_plain`, `security_key_plain` columns on `users` |
+| `User.java` | 2 new `@JsonIgnore` fields + getters/setters |
+| `UserController.java` | Plain-text stored at all 4 credential-write paths; new `GET /{id}/credentials` endpoint |
+| `index.html` | `#edit-emp-credential-viewer` section added to `modal-edit-employee` |
+| `app.js` | `toggleCredVisibility()`; extend `askEditEmployee()` to fetch + display credentials |
+
+---
+
+## Verification
+
+1. Create a new employee with a known password and security key → save → reopen Edit → credential viewer section appears → click eye → correct password shown → click eye on security key → correct key shown.
+2. Edit an employee and change their password → save → reopen Edit → credential viewer shows the **new** password.
+3. Existing employees (Ryan Reyes, Francis Garbosa) → both fields show "Not available — set before tracking was enabled".
+4. Log in as a non-Super Admin → open any Edit Employee modal → credential viewer section is absent.
+5. `GET /api/users/{id}/credentials` with a non-SUPER_ADMIN token → 403 response.
+6. Employee with no security key assigned → security key hint shows "No security key assigned".
+
+---
+
+# Session 42 — Collections Page + Close Daily Override + Monthly Report PDF
+
+## Context
+Three linked features:
+1. **Monthly Report PDF** is missing the non-pizza product breakdown and has no supplier payables section.
+2. **Collection Page** (new) — orders where the customer didn't pay on delivery day need a dedicated page so admins can track and collect payment later. Any ACTIVE/PENDING order from any date where payment hasn't been received appears here.
+3. **Close Daily Sales override** — currently the system blocks closing if any ACTIVE/PENDING orders exist. A dual-security-key override (logged-in admin + any Super Admin) is needed to force-close; those uncollected orders are moved to PENDING_COLLECTION status and excluded from today's revenue. When collected later, revenue is retroactively posted to the **original order date**.
+
+**Key design decisions:**
+- Revenue posts back to the original order date (Monday's report gets updated when Thursday's collection happens)
+- Inventory is already deducted at order creation — no change needed
+- SALE transactions are recorded only when an order is DELIVERED or collected; ACTIVE/PENDING orders at close time have no SALE transaction yet, which is why the current guard blocks the close
+- Payables section in PDF = supplier delivery payables (PENDING, what RRBM owes to vendors) — not customer receivables
+
+---
+
+## Migration V27
+
+**File:** `V27__collections_and_daily_override.sql`
+
+```sql
+-- Track when an order was pushed to collection + when collected
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pending_collection_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS collected_at           TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS collected_by           VARCHAR(100);
+
+-- Daily report: record how many orders were left uncollected at force-close
+ALTER TABLE daily_reports ADD COLUMN IF NOT EXISTS unfulfilled_orders  INT           NOT NULL DEFAULT 0;
+ALTER TABLE daily_reports ADD COLUMN IF NOT EXISTS unfulfilled_amount  DECIMAL(14,2) NOT NULL DEFAULT 0.00;
+```
+
+New valid status value (no migration needed — status is VARCHAR): **`PENDING_COLLECTION`**
+
+---
+
+## Backend Changes
+
+### 1 — `Order.java`
+Add fields: `pendingCollectionAt` (OffsetDateTime), `collectedAt` (OffsetDateTime), `collectedBy` (String) with `@Column` annotations.
+
+### 2 — `DailyReport.java`
+Add fields: `unfulfilledOrders` (int, default 0), `unfulfilledAmount` (BigDecimal, default 0).
+
+### 3 — `DailyReportService.java` — force-close path
+
+New `CloseDailyRequest` fields: `forceClose` (boolean), `adminSecurityKey` (String), `superAdminSecurityKey` (String).
+
+When `forceClose = true`:
+1. Verify `adminSecurityKey` against the logged-in user's stored `adminSecurityKey` (via BCrypt) — reuse existing `POST /api/auth/verify-security-key` pattern
+2. Verify `superAdminSecurityKey` against **any** user with role `SUPER_ADMIN` or `ADMINISTRATOR` — new helper `verifyAnySuperAdminKey(key)` that iterates all super admin users via `userRepository.findByRole("SUPER_ADMIN")` and calls `BCryptPasswordEncoder.matches()`
+3. Find all orders for today with status `ACTIVE` or `PENDING`
+4. For each: `order.setStatus("PENDING_COLLECTION")`, `order.setPendingCollectionAt(now())`
+5. Save all; record `unfulfilledOrders` count + `unfulfilledAmount` sum in the new DailyReport fields
+6. Proceed with normal close logic (these orders have no SALE transactions yet, so financials are correct)
+
+### 4 — `OrderController.java` — new endpoints
+
+**`GET /api/orders/collections`**
+```
+Returns all orders WHERE status IN ('PENDING_COLLECTION', 'PENDING') AND paymentMode != 'CASH'
+Ordered by createdAt ASC (oldest first — prioritise longest-outstanding)
+```
+
+**`PATCH /api/orders/{id}/collect`**
+Body: `{ securityKey: String }`
+1. Verify `securityKey` against logged-in admin's personal security key
+2. Fetch order; assert status is `PENDING_COLLECTION` or `PENDING`
+3. Set `status = "DELIVERED"`, `collected_at = now()`, `collected_by = adminName`
+4. Post a SALE transaction with `effective_date = order.createdAt.toLocalDate()` (original order date)
+5. Update the DailyReport row for that date: `grossSales += order.total`, `netSales += order.total`
+   - Use `dailyReportRepository.findByReportDate(originalDate)` — if record exists, increment; if no report for that date yet (order predates the daily report), just record the transaction (the monthly reports query the transaction ledger directly)
+6. Log `ORDER_COLLECT` activity
+7. Return updated order
+
+### 5 — `AuthController.java` — new endpoint
+
+**`POST /api/auth/verify-superadmin-key`**
+Body: `{ securityKey: String }`
+- Fetches all users with `role IN ('SUPER_ADMIN', 'ADMINISTRATOR')` who have a set `adminSecurityKey`
+- Returns `{ valid: true }` if the provided key BCrypt-matches any of them; `{ valid: false, message: "No Super Admin key matched" }` otherwise
+- Does NOT reveal which super admin matched
+
+---
+
+## Frontend Changes
+
+### `index.html`
+
+#### Nav item
+```html
+<button class="nav-item" data-view="collections" id="nav-collections" onclick="navigateTo('collections')">
+  <i class="ti ti-wallet"></i>
+  Collections
+  <span id="collections-badge" style="display:none;background:#EF4444;color:#fff;font-size:10px;padding:1px 5px;border-radius:8px;margin-left:4px;"></span>
+</button>
+```
+Insert between Order History and Delivery Reports in the sidebar.
+
+#### `#view-collections` section
+```html
+<section class="view" id="view-collections">
+  <div class="card">
+    <div class="card-header">
+      <h2>Pending Collections</h2>
+      <span style="font-size:12px;color:var(--text-muted);">Orders delivered but payment not yet received</span>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Order Date</th><th>Order ID</th><th>Customer</th><th>Payment</th><th>Items</th><th>Total</th><th>Days Outstanding</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="collections-tbody"></tbody>
+    </table>
+  </div>
+</section>
+```
+
+#### Close Daily Sales — override modal (`modal-close-daily-override`)
+```html
+<div class="modal-overlay" id="modal-close-daily-override">
+  <div class="modal-box" style="max-width:480px;">
+    <div class="modal-header">
+      <div>Force Close Daily Sales</div>
+      <button onclick="closeModal('modal-close-daily-override')">×</button>
+    </div>
+    <div class="modal-body" id="close-override-body">
+      <!-- populated by JS with uncollected order count + amount -->
+    </div>
+    <div class="modal-footer">
+      <button onclick="closeModal('modal-close-daily-override')">Cancel</button>
+      <button id="close-override-confirm-btn" onclick="confirmForceCloseDailySales()">Force Close</button>
+    </div>
+  </div>
+</div>
+```
+The body is populated with:
+- Warning: "X orders (₱Y total) could not be collected and will be moved to Pending Collections"
+- Admin's security key field (`#close-override-admin-key`)
+- Super Admin's security key field (`#close-override-superadmin-key`) with label "Any Super Admin security key"
+
+#### Mark as Collected modal (`modal-mark-collected`)
+Simple key-prompt modal (same pattern as payable security key modal):
+- Text: "Enter your security key to confirm collection of this order"
+- Input: `#mark-collected-key`
+- Hidden: `#mark-collected-order-id`
+- Confirm button → `confirmMarkCollected()`
+
+### `app.js` changes
+
+#### Module-level vars
+```javascript
+var _collectionsParsed = [];
+var _pendingCollectionCount = 0;
+```
+
+#### `navigateTo('collections')` — add to switch
+Calls `loadCollections()`.
+
+#### `window.loadCollections()`
+- `GET /api/orders/collections`
+- Sets `_collectionsParsed`; calls `renderCollectionRows(data)`
+- Calls `updateCollectionsBadge(data.length)`
+
+#### `window.renderCollectionRows(orders)`
+Builds table HTML. Each row:
+- Order date (formatted), Order ID (ecomOrderRef or id), Customer, payment mode badge, item preview, total, days outstanding (`Math.floor((Date.now() - new Date(o.createdAt)) / 86400000)`)
+- "View" button → `window.openCollectionDetail(id)` (reuses existing `printOrderReceipt` logic inside a modal instead of printing)
+- "Mark as Collected" button → `window.askMarkCollected(id)`
+
+#### `window.askMarkCollected(orderId)`
+- Sets `#mark-collected-order-id`, opens `modal-mark-collected`
+
+#### `window.confirmMarkCollected()`
+- Reads key + order ID
+- `PATCH /api/orders/{id}/collect` with `{ securityKey }`
+- On success: reload collections, show toast "Order collected — revenue posted to [original date]", update badge
+
+#### `window.updateCollectionsBadge(count)`
+- Shows/hides the red badge; updates text
+
+#### Modified `confirmCloseDailySales()`
+Current: on "Cannot close — X orders still ACTIVE" error → just shows error toast.
+New behavior:
+1. If backend returns 409 with `{ uncollected: X, uncollectedAmount: Y }` → instead of showing error, **open the override modal**
+2. Populate override modal body with the count + amount warning
+3. Keep the master key that was already entered (or re-prompt)
+
+New response from `DailyReportService`: when ACTIVE orders prevent close, return HTTP 409 with body `{ "error": "ACTIVE_ORDERS", "count": X, "amount": Y }` instead of a plain error string.
+
+#### `window.confirmForceCloseDailySales()`
+- Reads `#close-override-admin-key`, `#close-override-superadmin-key`
+- Also sends the original master key (already collected)
+- `POST /api/reports/close-daily` with `{ masterKey, adminSecurityKey, superAdminSecurityKey, forceClose: true }`
+- On success: close modals, reload orders, show toast "Daily sales closed — X orders moved to Pending Collections"
+
+---
+
+## Monthly Report PDF — Missing Sections
+
+The `printMonthlyReport()` function (app.js ~line 1775) already includes 18 of 19 sections. Two additions:
+
+### Addition 1 — Non-Pizza Items full breakdown
+Currently the page shows a summary card and a "View Product Breakdown" button that opens a modal. In the PDF, only the summary card is captured (the modal contents are not).
+
+Fix: When building the PDF HTML, fetch the non-pizza breakdown data (already available from the `non-pizza-summary` endpoint used by the page) and render it inline as a table — same format as the Top Products table.
+
+### Addition 2 — Supplier Payables section
+New API fetch in `printMonthlyReport()`: `GET /api/payables?status=PENDING`
+
+Add a new section in the PDF HTML:
+```
+SUPPLIER PAYABLES OUTSTANDING
+Receipt # | Supplier | Amount | Date Created | Days Outstanding
+[rows...]
+Total outstanding: ₱X across Y payables
+```
+If no pending payables: show "No outstanding payables".
+
+**Note:** The payables section should also appear on the **Monthly Report page** itself (new card at the bottom of `#view-rep`), so the PDF matches the page.
+
+---
+
+## Files Modified
+
+| File | Change |
+|---|---|
+| **NEW** `V27__collections_and_daily_override.sql` | `pending_collection_at`, `collected_at`, `collected_by` on orders; `unfulfilled_orders`, `unfulfilled_amount` on daily_reports |
+| `Order.java` | 3 new fields |
+| `DailyReport.java` | 2 new fields |
+| `DailyReportService.java` | Override close path (dual-key auth, PENDING_COLLECTION marking, unfulfilled stats) |
+| `OrderController.java` | `GET /api/orders/collections`, `PATCH /api/orders/{id}/collect` |
+| `AuthController.java` | `POST /api/auth/verify-superadmin-key` |
+| `index.html` | Collections nav item + `#view-collections` section + `#modal-close-daily-override` + `#modal-mark-collected` + payables card on monthly report |
+| `app.js` | `loadCollections`, `renderCollectionRows`, `askMarkCollected`, `confirmMarkCollected`, `updateCollectionsBadge`, `confirmForceCloseDailySales`; modify `confirmCloseDailySales` to handle 409; add payables section to `printMonthlyReport`; add non-pizza breakdown to PDF |
+
+---
+
+## Verification
+
+1. **Collection Page**: Navigate to Collections nav item → table appears (may be empty if no COD/pending orders)
+2. **Create a COD order** → immediately appears in Collections list; "Days Outstanding" shows 0
+3. **Mark as Collected**: click "Mark as Collected" on a collection row → key modal → enter correct key → order disappears from Collections, toast shows original date → open Daily Reports → that day's Net Sales increased by the order amount
+4. **Force Close with uncollected orders**: Create 2 ACTIVE orders → try Close Daily Sales → after entering master key, new override modal appears with "2 orders (₱X) could not be collected" → enter admin key + super admin key → confirm → orders disappear from today's list and appear in Collections; Daily Reports shows unfulfilled_orders = 2
+5. **Monthly Report PDF**: Open Monthly Reports → scroll to payables card (should show PENDING payables) → click "Generate PDF" → PDF includes non-pizza breakdown table and supplier payables section
+6. **Retroactive revenue**: Mark an old-date collection order as collected → open Daily Reports → that original date shows updated Net Sales
+
+---
+
+# Session 41 — CSV Import: Template Format + Smarter Matching
+
+## Context
+The current CSV import tries to parse raw ecommerce platform exports (Shopee, TikTok, Lazada) with two skipped header rows, inferred column positions, and name-only fuzzy matching. This is fragile. The business owner wants a controlled, downloadable template CSV that they fill in (mapping from any platform export), so parsing is deterministic and reliable. Additional needs: unit price sourced from CSV line total (not inventory price), a SKU column for future direct-match, better name-matching accuracy, and a "group by customer" option when the same buyer appears under multiple separate order numbers.
+
+---
+
+## Template Format
+
+**Download template filename:** `rrbm-import-template.csv`
+
+| Col | Index | Header | Usage |
+|-----|-------|--------|-------|
+| A | 0 | Order Number | Groups rows into one order; goes into Notes |
+| B | 1 | Shipping | Courier name; used for platform detection + Notes |
+| C | 2 | Tracking Number | Stored in Notes only; not a separate field in RRBM |
+| D | 3 | Product Name | Primary matching field against inventory |
+| E | 4 | Quantity | Line item qty |
+| F | 5 | Total | Line total (₱); unitPrice = Total ÷ Qty |
+| G | 6 | Customer Name | Buyer name for RRBM order |
+| H | 7 | SKU | Optional now; future direct match to product `sku` / `productCode` / `itemCode` |
+
+Row 1 = headers (skipped). Row 2+ = data. No date-header row (old format had 2 skipped rows).
+
+---
+
+## Key Behavior Changes from Old Format
+
+| Behavior | Before | After |
+|----------|--------|-------|
+| Header rows skipped | 2 (date + headers) | 1 (headers only) |
+| Customer name column | col[7] | col[6] |
+| Unit price source | Inventory `unitPrice` | CSV Total ÷ Qty (editable in preview) |
+| SKU column | Not present | col[7] — passed to matcher |
+| Product matching | Name fuzzy only | SKU exact → name fuzzy fallback |
+
+---
+
+## Files to Change
+
+| File | Changes |
+|------|---------|
+| `index.html` | "Download Template" button in import modal; updated empty-state text |
+| `app.js` | Rewrite `parseCsvOrders`; upgrade `matchCsvProduct`; add `downloadImportTemplate`; add `groupImportByCustomer`; wire "Group by customer" checkbox; fix status field in `submitCsvImport` |
+
+---
+
+## `index.html` Changes
+
+### Import modal file-picker row
+Add a "Download Template" link next to the file input (same grid row, or as a small link below):
+```html
+<a href="#" onclick="downloadImportTemplate();return false;" style="font-size:11px;color:var(--accent);">
+  <i class="ti ti-download"></i> Download Template
+</a>
+```
+
+### "Group by customer" checkbox — add to Step 1 header grid (4th column or new row)
+```html
+<div style="display:flex;align-items:center;gap:6px;font-size:12px;">
+  <input type="checkbox" id="import-group-by-customer" />
+  <label for="import-group-by-customer">Group same-customer orders</label>
+</div>
+```
+
+### Empty-state text update
+Change description to explain template format instead of "exported from Shopee, TikTok, Lazada".
+
+---
+
+## `app.js` Changes
+
+### 1 — `downloadImportTemplate()` (new function, near `openImportModal`)
+```javascript
+window.downloadImportTemplate = function() {
+  var header = 'Order Number,Shipping,Tracking Number,Product Name,Quantity,Total,Customer Name,SKU';
+  var example = '240530ABC001,SPX,TH1234567890PH,Pizza Box 10" White,10,1500,Maria Santos,';
+  var csv = header + '\n' + example + '\n';
+  var blob = new Blob([csv], { type: 'text/csv' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'rrbm-import-template.csv';
+  a.click();
+};
+```
+
+### 2 — `parseCsvOrders(text)` rewrite
+- Skip exactly **1** header row (skip rows where `headerSkipped < 1`)
+- Column mapping: `orderNo=cols[0]`, `shipping=cols[1]`, `tracking=cols[2]`, `prodName=cols[3]`, `qty=parseInt(cols[4])`, `total=parseFloat(cols[5])`, `customer=cols[6]`, `sku=cols[7]`
+- Unit price: `unitPrice = total / Math.max(qty, 1)` — NOT from inventory
+- Pass `sku` to `matchCsvProduct(prodName, sku)`
+- Customer name from `cols[6]` (was `cols[7]`)
+- After grouping all rows, call `groupImportByCustomer(orderMap, orderSeq)` if `import-group-by-customer` checkbox is checked
+
+### 3 — `matchCsvProduct(csvName, csvSku)` upgrade
+
+```
+Step 1 — SKU exact match (if csvSku non-empty):
+  normalise sku: toLowerCase().trim()
+  check against p.sku, p.productCode, p.itemCode (all toLowerCase)
+  if match → return { product: p, confidence: 'high' }
+
+Step 2 — Improved name fuzzy match:
+  a. Dimension normalisation (before tokenisation):
+     "10 inch" / "10\"" / "10in" / "10inches" → "10"
+     "10x10" stays as "10x10" (size pair token)
+  
+  b. Expanded stop list (add these to existing STOP regex):
+     "gen", "pso", "and", "for", "the", "per", "with",
+     "white", "savers", "saver", "stand", "supplies",
+     "tripod", "fresh", "tasty", "hot", "its", "time",
+     "super", "delicious", "care", "slice"  ← already in list, keep
+  
+  c. Token scoring — increase precision:
+     Exact token match:             +3 (was +2)
+     Dimension / numeric token:     +4 (new — sizes are most discriminating)
+     Variant/colour token:          +3 (new — "black","white","brown","cg2","gen4","pso")
+     Partial substring match:       +1 only if overlap ≥ 4 chars (was no minimum)
+  
+  d. Confidence thresholds:
+     High: score ≥ 5 (was 4)
+     Low:  score 2–4
+     None: score < 2 (was 0 — any match qualified as "low")
+```
+
+### 4 — `groupImportByCustomer(orderMap, orderSeq)` (new helper)
+Called after parsing when the "Group by customer" checkbox is checked.
+- Build `customerMap: customerName → first order object`
+- For each subsequent order with same customer name:
+  - Append all items to the first order's `items` array
+  - Append order number to a `allOrderNos` array (first order gets `allOrderNos = [orderNo]` on creation)
+  - Add to `orderTotal`
+- Return filtered `orderSeq` (deduplicated) with merged orders
+- Notes field in `submitCsvImport` should use `order.allOrderNos.join(', ')` when present
+
+### 5 — `onImportFileChange` — re-trigger grouping when checkbox toggled
+Add `onchange="onImportGroupToggle()"` to the `import-group-by-customer` checkbox:
+```javascript
+window.onImportGroupToggle = function() {
+  // Re-parse _importParsed into grouped/ungrouped and re-render
+  // Simplest: re-read the file. Store the last FileReader result text in _lastCsvText.
+  if (_lastCsvText) {
+    _importParsed = parseCsvOrders(_lastCsvText);
+    renderImportPreview(_importParsed);
+  }
+};
+```
+Add `var _lastCsvText = '';` to module-level vars. Set it in `onImportFileChange`.
+
+### 6 — `submitCsvImport` — wire the status field (pre-existing omission)
+```javascript
+var orderStatus = (document.getElementById('import-order-status') || {}).value || 'ACTIVE';
+// In the payload map:
+status: orderStatus,
+```
+
+---
+
+## Matching Examples (with upgraded logic)
+
+| CSV Product Name | CSV SKU | Result |
+|---|---|---|
+| `Pizza Box 10" White 50pcs` | `` | Fuzzy: "10" = dimension +4, "white" = variant +3 → score 7 → **High** |
+| `Clay Coated Box \| CG2 Black \| 10 (50 pcs)` | `` | "cg2" +3, "black" +3, "10" +4 → score 10 → **High** |
+| `Some Random Name` | `PB10W` | SKU exact → `p.productCode = "PB10W"` → **High** (immediate) |
+| `Unknown Product XYZ` | `` | No dimension, no variant match → score < 2 → **None** |
+
+---
+
+## Verification
+1. Click "Download Template" → CSV file downloads with 8-column header + 1 example row
+2. Fill template with real orders, upload → preview shows orders parsed correctly (1 header row skipped, NOT 2)
+3. Unit price in each item row = CSV Total ÷ Qty (not inventory price)
+4. SKU column populated in template → matched product turns green immediately without name check
+5. Same customer name in 2 rows with different order numbers → check "Group same-customer orders" → preview merges into 1 row with 2 items; notes show both order numbers
+6. Uncheck grouping → 2 separate rows again
+7. Import → orders saved with correct pricing, customer names, platform detection
+8. Order status dropdown (Active / Delivered) — selected value is honoured in imported orders
+
+---
+
+# Session 40 — Set / Bundle Products
+
+## Context
+Certain products (e.g. "Cochinillo Top" + "Cochinillo Bottom", "Bilao Box Top" + "Bilao Box Bottom") must be tracked individually in inventory but are **always sold together as a paired set**. A customer orders one "Cochinillo Set" at one price — but the system must deduct 1× Top and 1× Bottom from the same warehouse simultaneously. Components are never sold individually. This session adds full "set product" support: data model, stock deduction logic, inventory UI, and order form awareness.
+
+---
+
+## Confirmed Requirements
+- Components (Top/Bottom) are **set-only** — never ordered individually
+- When a set is ordered from WH1, **all components deduct from WH1**
+- Bilao Box set = Top + Bottom (1:1 ratio)
+- Cochinillo set = Top + Bottom (1:1 ratio)
+- A set can have any number of components with custom `quantityPerSet` (supports future N-component sets)
+- The set product has its own `unitPrice`; components have no individual cost/price requirement
+
+---
+
+## Data Model — V26 Migration
+
+**New file:** `V26__product_set_components.sql`
+
+```sql
+-- Add is_set flag to products table
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_set BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- New table: maps a set product to its component products
+CREATE TABLE IF NOT EXISTS product_set_components (
+    id                  BIGSERIAL PRIMARY KEY,
+    set_product_id      BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    component_product_id BIGINT NOT NULL REFERENCES products(id),
+    quantity_per_set    INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (set_product_id, component_product_id)
+);
+CREATE INDEX idx_psc_set_id       ON product_set_components(set_product_id);
+CREATE INDEX idx_psc_component_id ON product_set_components(component_product_id);
+```
+
+---
+
+## Backend Changes
+
+### New: `ProductSetComponent.java`
+Simple entity — `id`, `setProductId` (Long), `componentProductId` (Long), `quantityPerSet` (Integer, default 1).
+No `@ManyToOne` / lazy refs — plain column IDs only.
+
+### New: `ProductSetComponentRepository.java`
+```java
+List<ProductSetComponent> findBySetProductId(Long setProductId);
+void deleteBySetProductId(Long setProductId);
+```
+
+### `Product.java`
+- Add `@Column(name = "is_set") private Boolean isSet = false;` + getter/setter
+- Add `@Transient private List<Map<String,Object>> components = new ArrayList<>();` — populated by controller before returning, **not persisted by JPA**
+
+### `ProductController.java`
+**GET `/api/products`** — after loading products, for each `isSet == true` product:
+- `productSetComponentRepository.findBySetProductId(p.getId())` → fetch components
+- For each component, look up product name from `productRepository.findById()`
+- Attach as `p.setComponents(List.of(Map{"componentProductId","componentProductName","quantityPerSet"}))` to the transient field
+
+**POST `/api/products`** — add to `createProduct` logic:
+- If `isSet == true` and `components` list provided → save each `ProductSetComponent`
+
+**PATCH `/api/products/{id}`** — add to `updateProduct` logic:
+- If `isSet` flag is being set/changed → handle components
+- If `components` list is in payload → `deleteBySetProductId(id)` then re-insert new components
+- Also inject `ProductSetComponentRepository` into `ProductController`
+
+### `InventoryService.java` — set-aware stock deduction
+Inject `ProductSetComponentRepository`. In `deductStockForOrder()`, where it processes each `OrderItem`:
+
+```
+if (product.isSet == true):
+    components = productSetComponentRepository.findBySetProductId(product.id)
+    for each component:
+        compProduct = productRepository.findById(component.componentProductId)
+        deductQty = orderItem.quantity × component.quantityPerSet
+        deduct deductQty from compProduct[warehouse]   ← same warehouse as order item
+        save compProduct
+        log "ORDER_OUT" for compProduct
+    // do NOT deduct from the set product itself (it has no own stock)
+else:
+    // existing single-product deduction logic unchanged
+```
+
+Stock validation also needs updating — before the order goes through, validate that each component has sufficient stock in the target warehouse.
+
+---
+
+## Frontend Changes
+
+### `index.html` — Add Product modal (`modal-addprod`)
+After existing fields, add:
+```html
+<!-- Set product toggle -->
+<div class="row mb-3" style="margin-top:8px;">
+  <div class="col-md-12">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+      <input type="checkbox" id="addprod-is-set" onchange="toggleSetSection('addprod')" />
+      <strong>This is a set product</strong>
+      <span style="color:var(--text-muted);font-size:11px;">— composed of multiple inventory items sold together</span>
+    </label>
+  </div>
+</div>
+<!-- Set components section (hidden unless checkbox checked) -->
+<div id="addprod-set-section" style="display:none;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px;">
+  <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--accent);">Components</div>
+  <div id="addprod-components-list"></div>
+  <button type="button" class="btn btn-secondary btn-sm" onclick="addSetComponentRow('addprod')">
+    <i class="ti ti-plus"></i> Add Component
+  </button>
+</div>
+```
+
+### `index.html` — Edit Product modal (`modal-editprod-form`)
+Same toggle + components section, IDs prefixed with `editprod-` instead of `addprod-`.
+
+### `app.js` — New functions
+
+**`toggleSetSection(prefix)`**
+- Shows/hides `#${prefix}-set-section` based on checkbox state
+- Clears component list when unchecked
+
+**`addSetComponentRow(prefix)`**
+- Appends a row to `#${prefix}-components-list`
+- Each row: product search input (filtered to `!p.isSet`) + `quantityPerSet` number input (default 1) + remove button
+- Uses existing `appState.cachedProducts` for the dropdown options
+
+**`getSetComponentsFromForm(prefix)`**
+- Reads all rows in `#${prefix}-components-list`
+- Returns `[{ componentProductId, quantityPerSet }]` or empty array
+
+### `app.js` — Modified functions
+
+**`submitAddProduct()`**
+- Read `addprod-is-set` checkbox
+- Call `getSetComponentsFromForm('addprod')`
+- Validate: if `isSet`, at least 2 components required
+- Include `isSet` and `components` in the POST body
+
+**`submitEditProduct()`**
+- Same pattern — read `editprod-is-set` + `getSetComponentsFromForm('editprod')`
+- Include in PATCH body
+
+**`openAddProductForm()`** — reset `addprod-is-set` checkbox and hide set section
+
+**`openEditProductModal(p)`**
+- If `p.isSet`, check the checkbox, show set section, populate component rows from `p.components`
+
+**`renderInventoryRows()`** / `applyInventoryFilters()`
+- For set products: show a `SET` badge (amber pill) next to product name
+- Effective stock display: compute `Math.floor(Math.min(...components.map(c => compProduct.totalStock / c.quantityPerSet)))` and show in parentheses e.g. `"4 sets available"`
+- Expand row or tooltip showing component names + their individual stocks
+
+**`renderProductDropdown(products, rowNum)`** (in New Order form)
+- For set products: show `[SET]` label and effective stock (computed from cached products)
+- Allows users to understand what they're ordering
+
+---
+
+## Effective Stock Calculation (frontend helper)
+
+```javascript
+function effectiveSetStock(setProduct) {
+  var products = appState.cachedProducts || [];
+  if (!setProduct.isSet || !setProduct.components || !setProduct.components.length) return null;
+  var min = Infinity;
+  setProduct.components.forEach(function(c) {
+    var comp = products.find(function(p){ return p.id === c.componentProductId; });
+    if (!comp) return;
+    var avail = Math.floor((comp.stockWh1 + comp.stockWh2 + comp.stockWh3) / c.quantityPerSet);
+    if (avail < min) min = avail;
+  });
+  return min === Infinity ? 0 : min;
+}
+```
+
+---
+
+## Files Modified
+
+| File | Change |
+|---|---|
+| **NEW** `V26__product_set_components.sql` | `is_set` column on products + `product_set_components` table |
+| **NEW** `ProductSetComponent.java` | Entity for set→component mapping |
+| **NEW** `ProductSetComponentRepository.java` | `findBySetProductId`, `deleteBySetProductId` |
+| `Product.java` | `isSet` field + `@Transient components` list |
+| `ProductController.java` | Inject repo; GET populates components; POST/PATCH save components |
+| `InventoryService.java` | Inject repo; set-aware deduction + validation |
+| `index.html` | Add/Edit Product modals: isSet checkbox + components builder section |
+| `app.js` | `toggleSetSection`, `addSetComponentRow`, `getSetComponentsFromForm`; update `submitAddProduct`, `submitEditProduct`, `openAddProductForm`, `openEditProductModal`, `renderInventoryRows`, `renderProductDropdown`; new `effectiveSetStock()` helper |
+
+## Verification
+1. Add new product "Cochinillo Set" with `isSet = true`, components = [Cochinillo Top ×1, Cochinillo Bottom ×1], set a unit price
+2. Inventory list shows "Cochinillo Set" with SET badge and effective stock = min of component stocks
+3. Place a new order for 2× Cochinillo Set from WH1 → verify Cochinillo Top (WH1) -2, Cochinillo Bottom (WH1) -2, Cochinillo Set stock unchanged
+4. Attempt to order more sets than available components → order fails with stock error
+5. Edit "Cochinillo Set" → components show pre-populated, can add/remove components and re-save
+
+---
+
+# Session 39 — E-commerce CSV Order Import
+
+## Context
+Encoding e-commerce orders (Shopee, TikTok, Lazada) one-by-one is very tedious for the business owner. Each platform exports a CSV file daily containing all orders with order numbers, courier tracking, product names, quantities, and totals. This feature adds a **CSV import modal** so an entire day's e-commerce orders can be uploaded and imported in one action instead of being manually encoded.
+
+---
+
+## CSV Structure (from real Shopee/TikTok/Lazada export)
+
+```
+Row 1:  Date header (e.g. "May 30 2024") → skip
+Row 2:  Column headers → skip
+Row 3+: Order No | Shipping (courier) | Tracking Number | Product Name | Quantity (packs) | Units (total pieces) | Total (₱ per line) | Seller Name
+```
+
+**Key rules:**
+- One row per product line. Orders with multiple products repeat the same Order No across rows.
+- `Seller Name` (customer) is only filled on the **first row** of each order — blank on subsequent rows.
+- `Quantity` (col 5) = number of packs/bundles ordered → this is the quantity to use in the order system.
+- `Total` (col 7) = ₱ price for that specific line item.
+- `Units` (col 6) = total pieces (e.g. 3 packs × 50pcs = 150) → not needed for order creation.
+
+**Platform detection logic** (from Shipping column + Order No format):
+
+| Shipping value | Platform |
+|---|---|
+| Contains "TikTok" | TIKTOK |
+| Contains "LZD" | LAZADA |
+| SPX | SHOPEE |
+| YTO / Flash / J&T (with Shopee-format order No.) | SHOPEE |
+| Fallback: Order No is 18+ digit number | TIKTOK |
+| Fallback: Order No is 15 digit number | LAZADA |
+| Fallback: Order No is alphanumeric | SHOPEE |
+
+---
+
+## Recommended Approach: Frontend CSV Parsing + Live Preview + Batch Backend Endpoint
+
+**Why this approach:**
+- No file storage on the server — CSV parsed entirely in the browser using `FileReader` + `split('\n')`
+- User sees a live preview table before committing — can catch errors and fix unmatched products
+- Product matching happens client-side against `appState.cachedProducts` (already loaded)
+- One new backend endpoint `POST /api/orders/batch` handles bulk insert; reuses existing `OrderService` / `OrderController.createOrder()` logic
+
+**Import defaults** (applied automatically, can be overridden in the modal header):
+- Status: **ACTIVE** (orders still need to be packed/shipped)
+- Payment mode: **COD** (most common for PH e-commerce; override available)
+- Source: **ECOMMERCE** (always)
+- Order type: **STANDARD**
+- Warehouse: **auto** (highest available stock, same as manual order creation)
+- Notes field: auto-populated with `"Tracking: {trackingNumber} via {courier}"`
+
+---
+
+## UI Flow
+
+### Entry Point
+- **"Import CSV" button** added to the Order List toolbar (small, secondary style, next to existing search/filter controls)
+
+### `modal-import-ecom` (700px wide, scrollable body)
+
+**Header section** (always visible):
+- File picker: `<input type="file" accept=".csv">` + "Browse" button
+- Payment Mode override: `<select>` defaulting to COD
+- Order Status: `<select>` defaulting to ACTIVE
+- Parse button: "Load Preview" — triggers CSV parsing
+
+**Preview table** (shown after parsing):
+- One collapsed row per order: Platform badge | Order No (monospace) | Courier | Customer | # Items | Order Total | Match Status chip
+- Expand row → shows line items: Product Name from CSV | Matched Product | Qty | Unit Price | Line Total
+- **Match Status chip**:
+  - 🟢 `Ready` — all items auto-matched
+  - 🟡 `Review` — 1+ items matched with low confidence (user should verify)
+  - 🔴 `Fix needed` — 1+ items have no match (blocks import of that order)
+- Unmatched items show an inline product search dropdown (same pattern as `addOrderItemRow()`)
+
+**Footer** (always visible):
+- Summary line: "X orders ready · Y need review · Z need fixing"
+- "Import Ready Orders" button (disabled if 0 ready)
+- "Skip unmatched & import rest" checkbox (optional)
+- Cancel button
+
+---
+
+## Product Name Matching Algorithm (`matchCsvProduct(csvName)`)
+
+1. Normalize both: `lower().replace(/[^a-z0-9\s]/g, ' ').trim()`
+2. Extract meaningful tokens: remove common filler words ("pcs", "bundle", "pack", "box", "corrugated", "inches", etc.)
+3. Score each product in `appState.cachedProducts` by token overlap
+4. Return best match if score ≥ threshold (2+ meaningful tokens match)
+5. Return `null` (unmatched) if score < threshold
+
+**Examples from real CSV data:**
+- `"Pizza Box Corrugated - Care for a slice Gen4/ 12 inches/ 50pcs"` → matches product containing "gen4" + "12"
+- `"Grease Proof Wax Paper | 10x10 100pcs"` → matches product containing "10x10" or "wax paper 10"
+- `"Clay Coated Pizza Box | Cg2 Black | 10 inches (50 pcs)"` → matches "cg2" + "black" + "10"
+
+---
+
+## Backend — New Batch Endpoint
+
+**File:** `OrderController.java`
+
+```java
+@PostMapping("/batch")
+public ResponseEntity<?> createOrderBatch(@RequestBody List<CreateOrderRequest> requests,
+                                           @RequestHeader("Authorization") String authHeader) {
+    // Extract token, validate user
+    int imported = 0, failed = 0;
+    List<Map<String, String>> errors = new ArrayList<>();
+    for (CreateOrderRequest req : requests) {
+        try {
+            createOrder(req, authHeader);  // delegate to existing single-order logic
+            imported++;
+        } catch (Exception e) {
+            failed++;
+            errors.add(Map.of("orderRef", req.getNotes() != null ? req.getNotes() : "?", "reason", e.getMessage()));
+        }
+    }
+    return ResponseEntity.ok(Map.of("imported", imported, "failed", failed, "errors", errors));
+}
+```
+
+- No new migration needed — orders are stored in the same `orders` table
+- Reuses all existing validation, stock deduction, activity logging from `createOrder()`
+- Partial success allowed — a bad row doesn't block the rest
+
+---
+
+## Files Modified
+
+| File | Change |
+|---|---|
+| `OrderController.java` | Add `POST /api/orders/batch` endpoint |
+| `index.html` | Add "Import CSV" button to Order List toolbar; add `modal-import-ecom` with file picker, payment/status controls, preview table structure, and footer |
+| `app.js` | New functions: `openImportModal()`, `parseCsvFile()`, `detectPlatform(orderNo, shipping)`, `groupCsvRows()`, `matchCsvProduct(name)`, `renderImportPreview(orders)`, `submitCsvImport()`; module-level `_importParsed = []` cache |
+
+---
+
+## Detailed `app.js` Function Descriptions
+
+### `parseCsvFile(file)`
+- Reads file via `FileReader.readAsText()`
+- Splits by newline, skips row 1 (date header) and row 2 (column headers)
+- Parses remaining rows: split by comma, but handle quoted fields
+- Groups rows by Order No (`groupCsvRows()`)
+- Returns array of order objects
+
+### `groupCsvRows(rows)`
+- Groups by Order No (col 0)
+- First row in group = `customerName` (Seller Name, col 7)
+- All rows in group = `items[]`
+- Order total = sum of all line totals in the group
+- Calls `detectPlatform()` to set `ecommercePlatform`
+
+### `detectPlatform(orderNo, shipping)`
+- Returns "SHOPEE", "TIKTOK", or "LAZADA" using the logic table above
+
+### `matchCsvProduct(csvName)`
+- Scores all products in `appState.cachedProducts`
+- Returns `{ product, confidence }` — confidence: "high" | "low" | null
+
+### `renderImportPreview(parsedOrders)`
+- Builds the preview table rows
+- Each order row: collapsed by default, expandable
+- Each item row: product name | match dropdown | qty | unit price | line total
+- Calls `updateImportSummary()` to update footer counts
+
+### `submitCsvImport()`
+- Collects all "ready" orders from `_importParsed`
+- Builds `CreateOrderRequest[]` array
+- POST to `/api/orders/batch`
+- On success: close modal, reload order list, show toast "X orders imported"
+- On partial failure: show error list in a summary section
+
+---
+
+## Verification
+1. Upload the May-30.csv file → preview should show ~20 orders grouped correctly
+2. Platform badges should show SHOPEE for SPX/YTO/J&T orders, TIKTOK for TikTok-J&T orders, LAZADA for LZD/LEX orders
+3. Multi-item orders (e.g. 240530MJEU1EB0 with 3 products) should appear as 1 row expandable to 3 items
+4. Product names should auto-match to inventory items (green chips); any unmatched show a red chip with a product dropdown
+5. Click "Import Ready Orders" → orders appear in the Order List with ECOMMERCE source and correct platform badges
+6. Each imported order's notes field should contain the tracking number and courier
+
+---
+
+# Session 38 — PO / Receive Stocks / Delivery Reports Improvements
+
+## Context
+Four linked improvements across the Purchase Orders, Receive Stocks, and Delivery Reports sections:
+1. **PO list** — Show which DR number(s) fulfilled each PO directly in the main list row
+2. **PO form QTY field** — Column is 70 px wide; 5-digit quantities are clipped
+3. **Receive Stocks** — Add an explicit, read-only PO number dropdown so admins link a delivery to a specific PO rather than relying only on implicit item-code matching
+4. **Delivery Reports** — Replace the narrow "Notes" button with a full detail modal showing all line items (ordered / received / rejected / unit cost) plus header metadata
+
+---
+
+## Changes Per Area
+
+### A — PO List: Add DR# Column
+
+**`index.html`** — `view-purchase-orders` thead:
+- Change colspan in empty-state row: 8 → 9
+- Add new `<th>DR #</th>` between Status and Actions
+
+**`app.js`** — `renderPoList()`:
+- Compute `drNumbers`: from `po.items`, filter `i.isFulfilled === true`, collect unique `i.drNumber` values, render as monospace chips (or comma-separated); show `—` if none fulfilled
+- Add the new cell in the row HTML
+- Update `buildPoDetailHtml()` colspan if it references the column count
+
+---
+
+### B — PO Form QTY Column Width
+
+**`index.html`** — items table in `modal-new-po`:
+- `<th style="width:70px;text-align:right;">Qty</th>` → `width:100px`
+
+**`app.js`** — `addPoItemRow()`:
+- Qty input style: add `min-width:90px;width:100%;` alongside existing `text-align:right;`
+
+---
+
+### C — Receive Stocks: PO Number Dropdown
+
+#### Backend
+**New file:** `V25__delivery_log_po_number.sql`
+```sql
+ALTER TABLE delivery_log ADD COLUMN IF NOT EXISTS po_number VARCHAR(30);
+```
+
+**`DeliveryLog.java`** — add field + getter/setter:
+```java
+@Column(name = "po_number")
+private String poNumber;
+// getter / setter
+```
+
+**`DeliveryRequest.java`** — add field:
+```java
+private String poNumber; // optional — links this DR to a specific PO
+```
+
+**`ProductController.java`** — delivery endpoint (after `log` is built, before save):
+- `log.setPoNumber(request.getPoNumber());`
+- Update PO matching: if `request.getPoNumber()` is non-blank, load that PO via `purchaseOrderRepository.findByPoNumber()`, then match each DR item to po_items on that specific PO (Java stream filter on `po.getItems()`); fall back to existing FIFO item-code logic only if `poNumber` is blank
+
+#### Frontend
+**`index.html`** — `view-delivery` form, add before the DR number field:
+```html
+<label class="form-label">Linked Purchase Order</label>
+<select class="form-select" id="delivery-po-number">
+  <option value="">— No linked PO (unlinked delivery) —</option>
+  <!-- populated by JS from incomplete POs -->
+</select>
+```
+
+**`app.js`** — `initDeliveryForm()`:
+- After clearing fields, fetch `GET /api/purchase-orders`, filter `status === 'INCOMPLETE'`, populate `#delivery-po-number` with `<option value="{po.poNumber}">{po.poNumber} — {po.vendorName}</option>`
+- Reset select to `""` on form clear
+
+**`app.js`** — `submitDeliveryReceipt()`:
+- Read `$('delivery-po-number').value` and include as `poNumber` in payload (empty string → send null)
+
+**Delivery Reports table** — add a "PO #" column (show `r.poNumber || '—'`); update colspan from 9 → 10.
+
+---
+
+### D — Delivery Reports: Full Detail Modal
+
+**`index.html`** — add `modal-delivery-detail` (560px, scrollable body):
+- Header info grid: Receipt # | Supplier | Date | PO # | Received By | Verified By | Encoded By | Notes
+- Items table columns: # | Product | Ordered | Received | Rejected | Unit Cost | Line Total
+- Footer summary row: totals for received / rejected / line total
+
+**`app.js`** — changes to `renderDeliveryReports()`:
+- Cache records: `var _deliveryRecords = [];` — assign after fetch
+- Change "Notes" column header to "Details"
+- Replace `notesCell` logic with a single "View Details" button per row: `onclick="openDeliveryDetail(r.id)"`
+- Update colspan for empty/error states (9 → 10 with PO# column)
+
+**`app.js`** — new `window.openDeliveryDetail(id)` function:
+- Look up record from `_deliveryRecords` by id
+- Populate modal header fields
+- Build items table: `receivedQty × unitCost` for line total (no `lineTotal` field in entity — computed client-side)
+- Open `modal-delivery-detail`
+
+**Note:** `DeliveryLogItem` already serializes `receivedQty`, `rejectedQty`, `unitCost` — no backend change needed for the modal data. The existing `GET /api/reports/deliveries` response already includes full item detail.
+
+---
+
+## Files Modified
+
+| File | Change |
+|---|---|
+| **NEW** `V25__delivery_log_po_number.sql` | Add `po_number VARCHAR(30)` to `delivery_log` |
+| `DeliveryLog.java` | Add `poNumber` field |
+| `DeliveryRequest.java` | Add `poNumber` field |
+| `ProductController.java` | Store `poNumber`; PO-specific matching when provided |
+| `index.html` | PO list thead; QTY col width; delivery form select; delivery reports thead + modal |
+| `app.js` | `renderPoList`; `addPoItemRow`; `initDeliveryForm`; `submitDeliveryReceipt`; `renderDeliveryReports`; `openDeliveryDetail` |
+
+## Verification
+1. **PO list DR#**: Create a PO, submit a delivery receipt linked to that PO → PO list row shows the DR number in the new column
+2. **QTY field**: Open New PO modal → type a 5-digit qty → field shows full number without clipping
+3. **Receive Stocks dropdown**: Open Receive Stock form → PO dropdown shows incomplete POs → select one → submit → Delivery Reports shows PO# on the new row
+4. **Delivery detail modal**: Delivery Reports → click "View Details" on any row → modal shows all items with received/rejected quantities, unit cost, computed line totals, and notes
+
+---
+
+# Bug Fix — Delivery Receipt Number VARCHAR(10) Too Short
+
+## Context
+When receiving stock, users cannot enter an 11-digit PO number as the DR number. The `delivery_log.receipt_number` column was defined as `VARCHAR(10)` in migration V5. Frontend and backend validation already accept 2–20 alphanumeric characters, and the HTML input has `maxlength="20"` — so the restriction is purely at the DB layer. Any DR number longer than 10 characters is rejected by PostgreSQL on INSERT.
+
+## Root Cause — Layer Audit
+| Layer | Current Setting | Status |
+|---|---|---|
+| DB `delivery_log.receipt_number` (V5 migration) | `VARCHAR(10)` | ❌ Too short |
+| Backend regex `ProductController.java` | `^[A-Za-z0-9\-]{2,20}$` | ✅ OK |
+| Frontend regex `submitDeliveryReceipt()` | `/^[A-Za-z0-9\-]{2,20}$/` | ✅ OK |
+| HTML input `maxlength` | `maxlength="20"` | ✅ OK |
+| `payables.receipt_number` (V17) | `VARCHAR(20)` | ✅ OK |
+| `po_items.dr_number` (V23) | `VARCHAR(100)` | ✅ OK |
+
+## Fix — One New Migration File
+
+**Create:** `D:\ClaudeProjects\rrbm_daily\rrbm-backend\src\main\resources\db\migration\V24__widen_delivery_receipt_number.sql`
+
+```sql
+-- Widen delivery_log.receipt_number from VARCHAR(10) to VARCHAR(30).
+-- Fixes: 11-digit PO numbers (and DR numbers > 10 chars) rejected at DB level.
+-- Frontend/backend validation already allows 2-20 chars; DB must be at least as wide.
+ALTER TABLE delivery_log ALTER COLUMN receipt_number TYPE VARCHAR(30);
+```
+
+VARCHAR(30) chosen (not 20) to give headroom beyond the current 20-char validation limit.
+
+**No other files need changing.**
+
+## Verification
+1. Restart Spring Boot — Flyway applies V24 automatically.
+2. Receive Stock → enter 11-digit DR number (e.g. `20260527001`) → submit → saves without error.
+3. Confirm DR number appears in Delivery Reports and linked Payable record.
+
+---
+
+# RRBM System — Full Audit & Implementation Roadmap
+
+## Context
+The business owner provided a comprehensive brief of what the RRBM web app should do. This plan audits every requested feature against what currently exists, answers the specific questions raised, and lays out a phased implementation plan organized by size and priority.
+
+---
+
+## Part 1 — Audit: What Exists vs. What's Missing
+
+### Dashboard
+| Feature | Status | Notes |
+|---|---|---|
+| Total Orders stat card | ✅ Exists | `stat-total-sales` with order count sub-text |
+| Active Orders stat card | ✅ Exists | `stat-active-orders` |
+| Expenses Today stat card | ✅ Exists | `stat-expenses-today` |
+| Low Stock alert panel | ✅ Exists | 5-row cap + full modal |
+| Pizza Box Quota indicator | ✅ Exists | 5,000 pcs, color-coded progress bar |
+| Top 5 products today | ✅ Exists | Inline bar chart |
+| Payment mode mini-cards | ✅ Exists | E-wallet/Online, Cash, Cancelled |
+| Cash on hand / expenses auto-deduct display | ✅ Exists | Cash stat card (`stat-cash`) + Expenses stat |
+| Weekly/Monthly tabs | ✅ Exists | But no "Week 1 / Week 2" label — just generic |
+| Monthly tab shows month name | ❌ Missing | Shows generic period label, not "Month of May" |
+| Week tab shows which week of the month | ❌ Missing | No "Week 1 / Week 2 / Week 3 / Week 4" indicator |
+| Direct Orders vs Ecommerce split (orders + sales) | ❌ Missing | No dashboard split; only exists in monthly reports |
+| Pizza Quota filled by Direct + Ecom separately shown | ❌ Missing | Shows combined total only |
+| Per-platform Ecommerce breakdown (Shopee/TikTok/Lazada) | ❌ Missing | Only in monthly reports, not dashboard |
+| Pending Payables summary card on dashboard | ❌ Missing | Payables exist in their own page but no dashboard card |
+| Pending/unpaid client orders (COD awaiting collection) | ❌ Missing | No dedicated display |
+
+### Orders
+| Feature | Status | Notes |
+|---|---|---|
+| Source field (Walk-in, Agent, Reseller, etc.) | ✅ Exists | All sources including Ecommerce platform sub-select |
+| Payment modes incl. Bank Deposit | ✅ Exists | Cash, GCash, PayMaya, Bank Transfer, Bank Deposit, Online, COD |
+| Order type (Standard, Pick Up, COD) | ✅ Exists | |
+| Address/location field | ✅ Exists | |
+| Delivery fee | ✅ Exists | |
+| Notes field | ✅ Exists | |
+| Discount — manual ₱ amount | ✅ Exists | |
+| Discount — percentage presets (3%, 5%, 10%, 50%) | ❌ Missing | Only manual ₱ input; no % preset buttons |
+| Order status flow (On Hold → Resume → Delivered) | ✅ Exists | |
+| Close Daily Sales | ✅ Exists | |
+| **Daily Reports page** (separate nav item, table of closed reports) | ❌ Missing | No such page/nav item |
+| Current Reports page renamed "Monthly Report" | ❌ Missing (rename only) | Currently just "Reports" |
+
+### Inventory
+| Feature | Status | Notes |
+|---|---|---|
+| Product listing with 3-warehouse stock | ✅ Exists | WH1, WH2, Santan columns |
+| Edit product info (price, cost, code, etc.) | ✅ Exists | |
+| HOT / SELLING / SLOW tags | ✅ Exists | |
+| Threshold monitoring (critical/low) | ✅ Exists | |
+| Stock updated only via deliveries (Receive Stock) | ✅ Exists | |
+| Delivery receipt with received/rejected qty | ✅ Exists | `receivedQty` + `rejectedQty` on DeliveryLogItem |
+| Rejected items transferred to payables | ✅ Exists | |
+| **Description field** on product | ❌ Missing | Not in Product entity or UI |
+| **Item Code field** (separate from Product Code, used for POs) | ❌ Missing | Only `productCode` (6-char) exists |
+| **Rejected Items page** (dedicated page with download) | ❌ Missing | `rejectedQty` is stored but no separate page/report |
+
+### Reports (Monthly)
+| Feature | Status | Notes |
+|---|---|---|
+| Total orders, revenue, items sold, expenses cards | ✅ Exists | 4 stat cards |
+| Daily revenue bar chart | ✅ Exists | |
+| Accounting summary (gross, refunds, net) | ✅ Exists | Not collapsible |
+| Daily accounting breakdown | ✅ Exists | Has collapsible toggle |
+| Month-over-Month comparison cards | ✅ Exists | |
+| Sales vs Expenses chart | ✅ Exists | |
+| Source breakdown + donut chart | ✅ Exists | |
+| E-commerce breakdown (Shopee/TikTok/Lazada) | ✅ Exists | |
+| Top Agents / Top Dates / Hot Selling | ✅ Exists | |
+| Delivery Fees / Expense Breakdown | ✅ Exists | |
+| **Pizza Box card — Direct vs Ecommerce split** | ❌ Missing | Shows total pizza boxes only; no channel split |
+| **Non-pizza box items card + click modal** | ❌ Missing | No such card |
+| **Direct vs Ecommerce breakdown for non-pizza items** | ❌ Missing | |
+| Top products: extend from 5 → 10 | ❌ Missing | Currently Top 5 only |
+| Daily order summary — add Direct, Ecom, Pizza Box columns | ❌ Missing | Currently just Date, Orders, Revenue |
+| Daily order summary — collapsible | ✅ Exists | Already has collapsible behavior |
+| Accounting summary — collapsible | ❌ Missing | Not collapsible, takes permanent space |
+
+### Permissions & Security
+| Feature | Status | Notes |
+|---|---|---|
+| Refund/Void gated by canManageOrders() | ✅ Exists | SUPER_ADMIN, ADMINISTRATOR, ADMIN |
+| Print button gated | ❌ Missing | Print available to ALL roles in order history |
+| Order History as a page permission | ❌ Missing | Not in `allowedPages` list |
+| Payable Mark-as-Paid requires security key | ❌ Missing | Direct PATCH with token only — no key prompt |
+| Payable Revert-to-Pending requires security key | ❌ Missing | Same — no key prompt |
+
+### Other
+| Feature | Status | Notes |
+|---|---|---|
+| **Purchase Order module** | ❌ Missing | Entire module — no backend, no frontend, no nav |
+
+---
+
+## Part 2 — Answers to Specific Questions
+
+**Q: Will the Super Admin account "Ryan Reyes" be deleted when deployed?**
+It should not be auto-deleted — it's seeded via Flyway V2 migration. After deployment, the owner should: (1) Log in as admin@rrbm.com, (2) Create a new SUPER_ADMIN with your real credentials, (3) Delete the Ryan Reyes account through the Employee / Settings page. We can add a Delete User function for Super Admins in a later session if not already present.
+
+**Q: How does the Pizza Box Summary work?**
+The `/api/reports/pizza-summary` endpoint queries `order_items` and filters rows where `product_name ILIKE '%Pizza Box%'` — a case-insensitive text match. Any product whose name contains the words "Pizza Box" is counted as a pizza box. It returns the total qty across all pizza box variants plus a top-5 breakdown by variant name.
+
+**Q: Assigned admins for Order History — Print/Cancel/Refund should be restricted.**
+Currently: Print and View Ledger are open to all roles; Refund/Void are gated to SUPER_ADMIN/ADMINISTRATOR/ADMIN. Plan: Add `"order-history"` to the `allowedPages` permission system (so Super Admin can assign which users can see Order History at all). Additionally, add a `"manage-orders"` permission key that gates the Print, Cancel, Refund, and Void buttons — only users with this key can act on orders, not just view them.
+
+**Q: Security key for Payable status change.**
+Currently no security check. Plan: Add a security key confirmation modal for both "Mark as Paid" and "Revert to Pending" — reuse the existing admin security key (BCrypt-verified personal key) pattern already used for Refund/Void.
+
+---
+
+## Part 3 — Implementation Plan (Phased)
+
+---
+
+### SESSION 29 — Quick Wins (frontend only, no migration)
+**Files:** `index.html`, `js/app.js`
+
+1. **Discount % presets on Order form**
+   - Add four quick-select buttons (3%, 5%, 10%, 50%) above the discount input
+   - Clicking a preset calculates `subtotal × pct` and populates `orderDiscount`; manual ₱ input remains
+   - Call `calculateOrderTotals()` after each preset click
+
+2. **Week tab label — "Week N of the Month"**
+   - In `loadDashboardData()` or wherever the weekly tab renders its heading, compute which week of the current month we're in: `Math.ceil(date.getDate() / 7)` → "Week 1", "Week 2", etc.
+   - Update the tab button label or a sub-label below "Week" to show e.g. "Week 3 of May"
+
+3. **Monthly tab label — "Month of [Month Name]"**
+   - The monthly tab heading/sub-label should read "Month of May" (using current month name)
+
+4. **Accounting Summary — make collapsible**
+   - Wrap in the same collapsible pattern already used for daily accounting breakdown
+   - Collapsed by default; toggle shows/hides all 4 stat cards
+
+5. **Top products: 5 → 10**
+   - Backend `getHotSelling` and `getTopProducts` endpoints: change `LIMIT 5` to `LIMIT 10`
+   - Frontend: update the reports card heading from "Top 5" to "Top 10"
+
+6. **Reports page rename → "Monthly Report"**
+   - `index.html`: nav item label + page heading changed from "Reports" to "Monthly Report"
+   - `app.js`: any `navigateTo` title strings updated accordingly
+
+---
+
+### SESSION 30 — Permissions & Security
+**Files:** `index.html`, `js/app.js`, `PayableController.java`
+
+1. **Add `"order-history"` to `allowedPages`**
+   - `index.html`: Employee add/edit modals — add "Order History" checkbox to the page-access grid
+   - `app.js`: `applyRoleRestrictions()` — add `nav-order-history` visibility gate; SUPER_ADMIN bypasses
+   - `app.js`: hide order history nav/section for users without `"order-history"` in allowedPages
+
+2. **Gate Print button behind `canManageOrders()`**
+   - `renderOrderHistoryRows()` in app.js: wrap Print button in same `canAdmin &&` guard already used for Refund/Void
+   - Same guard for Cancel button in Order List (today's orders)
+
+3. **Payable status change — require security key**
+   - `index.html`: Add a small confirmation modal (`modal-payable-paid`) with an admin security key input field; separate prompt text for "Mark as Paid" vs "Revert to Pending"
+   - `app.js`: `togglePayableStatus()` — open the key modal instead of calling PATCH directly; on confirm, BCrypt-verify the key via existing `POST /api/auth/verify-security-key` endpoint, then call PATCH
+   - `PayableController.java`: optionally add key verification server-side in the PATCH endpoint for belt-and-suspenders security
+
+---
+
+### SESSION 31 — Daily Reports Page
+**Files:** `index.html`, `js/app.js`
+
+**Goal:** New nav item "Daily Reports" showing a table of all closed daily_reports records.
+
+1. **Nav item**: Add `nav-daily-reports` between Order List and Reports in the sidebar
+2. **View section** (`id="view-daily-reports"`):
+   - Card with heading "Daily Reports"
+   - Table columns: Date | Closed At | Closed By | Total Orders | Net Sales | Actions
+   - "View" button per row opens `modal-daily-report-detail`
+3. **Modal** (`modal-daily-report-detail`):
+   - Pulls data from existing `/api/reports/insights-summary?month=` and `/api/reports/accounting-summary?month=` filtered to the specific day
+   - Shows: Total Orders, Revenue, Expenses, Net Sales, breakdown by source, top products for the day
+   - Since daily_reports table already stores `grossSales`, `netSales`, `totalTransactions`, `closedBy`, `closedAt` — use those directly
+4. **Backend**: Add `GET /api/reports/daily-reports-list` endpoint — returns paginated list of `DailyReport` records ordered by date desc (date, closedAt, closedByName, grossSales, netSales, totalOrders)
+5. **Flyway**: No migration needed — daily_reports table already exists with all needed columns
+
+---
+
+### SESSION 32 — Inventory: Description + Item Code Fields
+**Files:** `Product.java`, new migration `V22__product_description_and_item_code.sql`, `index.html`, `js/app.js`
+
+1. **V22 migration**: 
+   ```sql
+   ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;
+   ALTER TABLE products ADD COLUMN IF NOT EXISTS item_code VARCHAR(50);
+   CREATE UNIQUE INDEX IF NOT EXISTS idx_products_item_code ON products(item_code) WHERE item_code IS NOT NULL;
+   ```
+2. **Product.java**: Add `description` (String) and `itemCode` (String) fields with `@Column` annotations
+3. **ProductController.java / ProductRepository**: Include new fields in responses and PATCH endpoint
+4. **index.html**: 
+   - Add `description` textarea to Add Product modal and Edit Product modal
+   - Add `Item Code` text input to both modals (label: "Item Code — for Purchase Orders")
+   - Add `Item Code` column to inventory table (shown after Product Code, hidden on narrow screens)
+5. **app.js**: Update `renderInventoryRows()`, `openAddProductForm()`, `submitAddProduct()`, `openEditProductModal()`, `submitEditProduct()` to handle new fields
+
+---
+
+### SESSION 33 — Rejected Items Page
+**Files:** `index.html`, `js/app.js`, `PayableController.java` or new `RejectedItemsController.java`
+
+1. **Backend**: Add `GET /api/delivery/rejected-items` endpoint that queries `delivery_log_items WHERE rejected_qty > 0` joined with `delivery_log` for receipt number, date, received_by; returns list with: deliveryDate, receiptNumber, receivedBy, productName, rejectedQty, unitCost, lineTotal (rejectedQty × unitCost)
+2. **Nav item**: Add "Rejected Items" under Receive Stock in sidebar (visible to inventory-access roles)
+3. **Frontend page** (`id="view-rejected-items"`):
+   - Date range filter (defaults to current month)
+   - Table: Date | Receipt No. | Received By | Product | Rejected Qty | Unit Cost | Sub-total
+   - Footer row: Total rejected value
+   - "Download PDF" button — generates print window matching Expense PDF style with company header + table + total + footer
+
+---
+
+### SESSION 34 — Reports: Pizza Box Split + Non-Pizza Card + Daily Summary Columns
+**Files:** `ReportsController.java`, `index.html`, `js/app.js`
+
+1. **Pizza Box card — Direct vs Ecommerce split**
+   - Backend: Extend `/api/reports/pizza-summary` to also return `directQty`, `ecommerceQty`, `directRevenue`, `ecommerceRevenue` (split by `o.source = 'ECOMMERCE'` vs not)
+   - Frontend: Replace current pizza summary card with a 3-column card: Direct Qty | Ecommerce Qty | Total Qty; sub-row for revenue
+
+2. **Non-pizza box items card + modal**
+   - Backend: New `GET /api/reports/non-pizza-summary` endpoint — items where `product_name NOT ILIKE '%Pizza Box%'`; returns total qty sold, total revenue, breakdown by product (name, qty, revenue), split by direct vs ecommerce
+   - Frontend: New card below pizza summary with: Total Non-Pizza Items Sold (clickable badge → modal); modal shows full scrollable product list sorted by qty desc; separate columns for Direct Orders qty vs Ecommerce qty
+
+3. **Daily order summary — add columns**
+   - Backend: Extend `/api/reports/top-dates` (or new endpoint `daily-order-summary`) to return per-day: directOrders, ecomOrders, totalOrders, pizzaBoxQty, revenue
+   - Frontend: Extend daily summary table to 6 columns: Date | Direct | E-com | Total Orders | Pizza Boxes | Revenue
+
+---
+
+### SESSION 35 — Dashboard: Direct vs Ecommerce Split + Per-Platform Breakdown
+**Files:** `index.html`, `js/app.js`, `ReportsController.java` or `DashboardController.java`
+
+1. **Dashboard Direct vs Ecommerce stat cards**
+   - New backend endpoint `GET /api/reports/channel-summary?date=today` returning: directOrders, directRevenue, ecomOrders, ecomRevenue, directPizzaQty, ecomPizzaQty
+   - New 2-column dashboard section: "Direct Orders" card (orders count + revenue + pizza box qty) vs "Ecommerce Orders" card (same)
+
+2. **Per-platform ecommerce breakdown on dashboard**
+   - New small cards or a mini-table below the ecommerce card: Shopee / TikTok / Lazada each showing today's orders, pizza qty, other items qty
+
+3. **Pizza Quota — show Direct + Ecom fill separately**
+   - Extend pizza quota indicator: progress bar fills from left (Direct, amber) + right (Ecommerce, purple tint) meeting in the middle, both contributing to the 5,000 quota
+
+4. **Pending Payments summary on dashboard**
+   - New stat card: "Payables Outstanding" pulling from `/api/payables/summary` (total outstanding balance)
+   - Second badge: "COD Orders Pending" — count of today's orders with `paymentMode = 'COD'` and status not DELIVERED/COMPLETED
+
+---
+
+### SESSION 36 — Purchase Order Module (Dedicated Session)
+**Backend files:** New entities, new migration V23+, new controller  
+**Frontend files:** `index.html`, `js/app.js`
+
+**This is the largest feature — see outline below:**
+
+#### Backend
+- **V23 migration**: 
+  ```sql
+  CREATE TABLE purchase_orders (id, po_number VARCHAR(11), vendor_name, vendor_contact, vendor_address, ship_to_name, ship_to_contact, ship_to_address, notes, vat_type, shipping_arrangement, status, created_by, created_at, total_amount);
+  CREATE TABLE po_items (id, po_id FK, item_code, item_description, quantity_ordered, unit_price, line_total);
+  ```
+- **PurchaseOrder.java** + **PoItem.java** entities
+- **PurchaseOrderController.java**: `POST /api/purchase-orders`, `GET /api/purchase-orders`, `GET /api/purchase-orders/{id}`, `PATCH /api/purchase-orders/{id}/status`
+- Link to DeliveryLog: when a delivery receipt is saved, match its items by `itemCode` to open PO items; mark matched items as fulfilled; auto-mark PO as COMPLETE when all items fulfilled; store `drNumber` on matched po_item row
+
+#### Frontend
+- **Nav item**: "Purchase Orders" in sidebar (between Inventory and Receive Stock)
+- **PO List page**: collapsible rows per PO showing PO number, date, vendor, status badge (INCOMPLETE/COMPLETE); expanded view shows item rows color-coded (fulfilled = green highlight with DR number, unfulfilled = no highlight)
+- **New PO form modal**: company header auto-populated; manual PO number (11-digit); vendor fields; ship-to fields; item table (pulls from inventory via `itemCode` autocomplete); VAT toggle; shipping arrangement; notes; computed total
+- **PO PDF export**: printable PO document with RRBM logo, address, contact, email, all vendor/ship-to fields, itemized table, total, VAT note, signatures
+- **"Hide Completed" toggle** on PO list page
+
+---
+
+## Part 4 — Capitalization Consistency (Applies to All Sessions)
+
+As each session touches `index.html`, audit visible text in the modified sections:
+- Use Title Case for headings and card titles (e.g., "Total Orders", not "TOTAL ORDERS")
+- Use Sentence case for labels and descriptions (e.g., "All sources", not "ALL SOURCES")
+- Payment modes in display: "Cash", "GCash", "PayMaya", "Bank Transfer", "Bank Deposit", "Cash on Delivery" (already handled by `payDisplay` formatter added in Session 28)
+- Source names in display: "Walk-in", "Agent", "Reseller", "Distributor", "Facebook Page", "E-commerce" (handled by `srcDisplay` formatter)
+- Buttons: Title Case ("Add Product", "Mark as Paid", not "ADD PRODUCT")
+
+---
+
+## Part 5 — Files Modified Per Session (Summary)
+
+| Session | Backend | Frontend | Migration |
+|---|---|---|---|
+| 29 | `ReportsController.java` (LIMIT) | `index.html`, `app.js` | None |
+| 30 | `PayableController.java` | `index.html`, `app.js` | None |
+| 31 | New `GET /api/reports/daily-reports-list` in `ReportsController.java` | `index.html`, `app.js` | None |
+| 32 | `Product.java`, `ProductController.java` | `index.html`, `app.js` | V22 |
+| 33 | New endpoint in `DeliveryController` or new controller | `index.html`, `app.js` | None |
+| 34 | `ReportsController.java` (extend pizza, new non-pizza, extend daily-summary) | `index.html`, `app.js` | None |
+| 35 | New channel-summary endpoint | `index.html`, `app.js` | None |
+| 36 | New entities + controller | `index.html`, `app.js` | V23 |
+
+---
+
+## Part 6 — Verification Per Session
+
+- **Session 29**: Open Order form → click 5% preset → verify discount calculates correctly. Check Reports page title says "Monthly Report". Check Week tab shows "Week N of [Month]".
+- **Session 30**: Log in as a restricted ADMIN without `order-history` permission → Order History nav item should be hidden. Log in as admin WITH permission → History visible, Print/Cancel/Refund only shown if also has `manage-orders`. Open Payables → Mark as Paid → security key modal appears; wrong key = error; correct key = status changes.
+- **Session 31**: Close daily sales today → go to Daily Reports → today appears in table → click View → summary modal shows correct totals matching dashboard.
+- **Session 32**: Add a new product with Description and Item Code → verify saved and shown in inventory table. Edit existing product → set description → verify PATCH updates DB.
+- **Session 33**: Make a delivery receipt with rejected items → go to Rejected Items page → items appear with correct qty and cost. Click Download PDF → prints correctly.
+- **Session 34**: Go to Monthly Report → pizza card shows Direct + Ecommerce split. Non-pizza card shows clickable badge → modal with full product list. Daily summary table shows 6 columns.
+- **Session 35**: Dashboard shows Direct vs Ecommerce cards with today's live data. Pizza quota bar shows two-tone fill.
+- **Session 36**: Create a PO → mark one item as received via Receive Stock using the PO number → PO list shows that item fulfilled. All items fulfilled → PO status = COMPLETE, row changes color.
+
+---
+
+*Next action: Start with Session 29 (Quick Wins — no migration, no backend except LIMIT change). Estimated scope: ~90 min.*

@@ -1,31 +1,48 @@
 package rrbm_backend;
 
 import jakarta.persistence.*;
-import lombok.Data;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 
-/**
- * Records user actions for auditing and activity‑log purposes.
- * Each entry stores the acting user id, an action name, optional details, and a timestamp.
- */
-@Data
 @Entity
 @Table(name = "activity_log")
 public class ActivityLog {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "user_id", nullable = false)
-    private Long userId;
+    @Column(name = "user_id") private Long userId;
+    @Column(name = "user_name") private String userName;
+    @Column(name = "action", nullable = false) private String action;
+    @Column(name = "description") private String description;
+    @Column(name = "entity_type") private String entityType;
+    @Column(name = "entity_id") private String entityId;
+    @Column(name = "report_date") private LocalDate reportDate;
+    @Column(name = "is_closed") private boolean isClosed = false;
+    @Column(name = "created_at") private OffsetDateTime createdAt;
 
-    @Column(nullable = false, length = 100)
-    private String action;
+    @PrePersist
+    public void prePersist() {
+        if (createdAt == null) createdAt = OffsetDateTime.now();
+        if (reportDate == null) reportDate = LocalDate.now();
+    }
 
-    @Column(columnDefinition = "TEXT")
-    private String details;
-
-    @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    // --- Getters & Setters ---
+    public Long getId() { return id; }
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+    public String getUserName() { return userName; }
+    public void setUserName(String userName) { this.userName = userName; }
+    public String getAction() { return action; }
+    public void setAction(String action) { this.action = action; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public String getEntityType() { return entityType; }
+    public void setEntityType(String entityType) { this.entityType = entityType; }
+    public String getEntityId() { return entityId; }
+    public void setEntityId(String entityId) { this.entityId = entityId; }
+    public LocalDate getReportDate() { return reportDate; }
+    public void setReportDate(LocalDate reportDate) { this.reportDate = reportDate; }
+    public boolean isClosed() { return isClosed; }
+    public void setClosed(boolean closed) { isClosed = closed; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
 }

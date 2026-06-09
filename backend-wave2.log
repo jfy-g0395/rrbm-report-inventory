@@ -1,0 +1,619 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] -----------------------< com.rrbm:rrbm-backend >------------------------
+[INFO] Building  0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.5.14:run (default-cli) > test-compile @ rrbm-backend >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ rrbm-backend ---
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] Copying 36 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ rrbm-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 72 source files with javac [debug parameters release 21] to target\classes
+[WARNING] /D:/ClaudeProjects/rrbm_daily/rrbm-backend/src/main/java/rrbm_backend/MasterKeyService.java:[42,22] deprecated item is not annotated with @Deprecated
+[INFO] /D:/ClaudeProjects/rrbm_daily/rrbm-backend/src/main/java/rrbm_backend/AuthController.java: Some input files use or override a deprecated API.
+[INFO] /D:/ClaudeProjects/rrbm_daily/rrbm-backend/src/main/java/rrbm_backend/AuthController.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ rrbm-backend ---
+[INFO] skip non existing resourceDirectory D:\ClaudeProjects\rrbm_daily\rrbm-backend\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ rrbm-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 1 source file with javac [debug parameters release 21] to target\test-classes
+[INFO] 
+[INFO] <<< spring-boot:3.5.14:run (default-cli) < test-compile @ rrbm-backend <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.5.14:run (default-cli) @ rrbm-backend ---
+[INFO] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::               (v3.5.14)
+
+2026-06-01T22:23:41.435+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] rrbm_backend.RrbmBackendApplication      : Starting RrbmBackendApplication using Java 21.0.11 with PID 13372 (D:\ClaudeProjects\rrbm_daily\rrbm-backend\target\classes started by franc in D:\ClaudeProjects\rrbm_daily\rrbm-backend)
+2026-06-01T22:23:41.437+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] rrbm_backend.RrbmBackendApplication      : No active profile set, falling back to 1 default profile: "default"
+2026-06-01T22:23:41.468+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : Devtools property defaults active! Set 'spring.devtools.add-properties' to 'false' to disable
+2026-06-01T22:23:41.470+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : For additional web related logging consider setting the 'logging.level.web' property to 'DEBUG'
+2026-06-01T22:23:42.037+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-06-01T22:23:42.121+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 77 ms. Found 18 JPA repository interfaces.
+2026-06-01T22:23:42.588+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8080 (http)
+2026-06-01T22:23:42.601+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-06-01T22:23:42.602+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.54]
+2026-06-01T22:23:42.641+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-06-01T22:23:42.642+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1171 ms
+2026-06-01T22:23:42.814+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-06-01T22:23:42.968+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@131b3131
+2026-06-01T22:23:42.969+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-06-01T22:23:42.991+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://localhost:5432/rrbm_db (PostgreSQL 18.4)
+2026-06-01T22:23:43.002+08:00  WARN 13372 --- [rrbm-backend] [  restartedMain] o.f.c.internal.database.base.Database    : Flyway upgrade recommended: PostgreSQL 18.4 is newer than this version of Flyway and support has not been tested. The latest supported version of PostgreSQL is 17.
+2026-06-01T22:23:43.055+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.f.core.internal.command.DbValidate     : Successfully validated 36 migrations (execution time 00:00.042s)
+2026-06-01T22:23:43.104+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.f.core.internal.command.DbMigrate      : Current version of schema "public": 37
+2026-06-01T22:23:43.104+08:00  WARN 13372 --- [rrbm-backend] [  restartedMain] o.f.core.internal.command.DbMigrate      : outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-06-01T22:23:43.107+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.f.core.internal.command.DbMigrate      : Schema "public" is up to date. No migration necessary.
+2026-06-01T22:23:43.197+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.hibernate.jpa.internal.util.LogHelper  : HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-06-01T22:23:43.255+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] org.hibernate.Version                    : HHH000412: Hibernate ORM core version 6.6.49.Final
+2026-06-01T22:23:43.288+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.h.c.internal.RegionFactoryInitiator    : HHH000026: Second-level cache disabled
+2026-06-01T22:23:43.526+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-06-01T22:23:43.593+08:00  WARN 13372 --- [rrbm-backend] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: PostgreSQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-06-01T22:23:43.605+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HikariPool-1)']
+	Database driver: undefined/unknown
+	Database version: 18.4
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-06-01T22:23:44.634+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.h.e.t.j.p.i.JtaPlatformInitiator       : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-06-01T22:23:44.677+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-06-01T22:23:44.980+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.s.d.j.r.query.QueryEnhancerFactory     : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-06-01T22:23:45.919+08:00  WARN 13372 --- [rrbm-backend] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-06-01T22:23:46.318+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.s.b.d.a.OptionalLiveReloadServer       : LiveReload server is running on port 35729
+2026-06-01T22:23:46.347+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8080 (http) with context path '/'
+2026-06-01T22:23:46.354+08:00  INFO 13372 --- [rrbm-backend] [  restartedMain] rrbm_backend.RrbmBackendApplication      : Started RrbmBackendApplication in 5.253 seconds (process running for 5.616)
+Hibernate: 
+    select
+        count(*) 
+    from
+        master_keys mk1_0
+2026-06-01T22:30:20.908+08:00  INFO 13372 --- [rrbm-backend] [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-01T22:30:20.910+08:00  INFO 13372 --- [rrbm-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-06-01T22:30:20.912+08:00  INFO 13372 --- [rrbm-backend] [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 0 ms
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.email=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.email=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.email=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    update
+        users 
+    set
+        address=?,
+        admin_security_key=?,
+        allowed_pages=?,
+        birthdate=?,
+        contact_number=?,
+        designation=?,
+        email=?,
+        employee_id=?,
+        full_name=?,
+        last_login_at=?,
+        must_change_password=?,
+        password_hash=?,
+        profile_image=?,
+        role=?,
+        status=?,
+        updated_at=?,
+        username=? 
+    where
+        id=?
+Hibernate: 
+    insert 
+    into
+        activity_log
+        (action, created_at, description, entity_id, entity_type, is_closed, report_date, user_id, user_name) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.email=?
+Hibernate: 
+    select
+        dl1_0.id 
+    from
+        delivery_log dl1_0 
+    where
+        dl1_0.receipt_number=? 
+    fetch
+        first ? rows only
+Hibernate: 
+    select
+        p1_0.id,
+        p1_0.active,
+        p1_0.category,
+        p1_0.created_at,
+        p1_0.description,
+        p1_0.is_set,
+        p1_0.item_code,
+        p1_0.name,
+        p1_0.product_code,
+        p1_0.selling_tag,
+        p1_0.sku,
+        p1_0.stock_wh1,
+        p1_0.stock_wh2,
+        p1_0.stock_wh3,
+        p1_0.sub_category,
+        p1_0.threshold_critical,
+        p1_0.threshold_low,
+        p1_0.unit_cost,
+        p1_0.unit_price,
+        p1_0.updated_at 
+    from
+        products p1_0 
+    where
+        p1_0.id=?
+Hibernate: 
+    insert 
+    into
+        inventory_movements
+        (created_at, movement_type, product_id, quantity, reason, reference_id, user_id, warehouse) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    insert 
+    into
+        delivery_log
+        (created_at, encoded_by_name, encoded_by_user_id, notes, po_number, receipt_number, received_by, report_date, status, supplier_name, total_items, total_quantity, verified_by) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    insert 
+    into
+        delivery_log_items
+        (delivery_log_id, product_id, product_name, quantity, received_qty, rejected_qty, unit_cost, warehouse) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    select
+        pi1_0.id,
+        pi1_0.dr_number,
+        pi1_0.fulfilled_qty,
+        pi1_0.is_fulfilled,
+        pi1_0.item_code,
+        pi1_0.item_description,
+        pi1_0.line_total,
+        pi1_0.po_id,
+        pi1_0.quantity_ordered,
+        pi1_0.unit_price 
+    from
+        po_items pi1_0 
+    where
+        pi1_0.item_code=? 
+        and not(pi1_0.is_fulfilled)
+Hibernate: 
+    select
+        pi1_0.id,
+        pi1_0.dr_number,
+        pi1_0.fulfilled_qty,
+        pi1_0.is_fulfilled,
+        pi1_0.item_code,
+        pi1_0.item_description,
+        pi1_0.line_total,
+        pi1_0.po_id,
+        pi1_0.quantity_ordered,
+        pi1_0.unit_price 
+    from
+        po_items pi1_0 
+    where
+        upper(pi1_0.item_description)=upper(?) 
+        and not(pi1_0.is_fulfilled)
+Hibernate: 
+    insert 
+    into
+        payables
+        (amount_paid, created_at, created_by, delivery_log_id, notes, paid_at, paid_by, receipt_number, status, supplier_name, total_amount) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    insert 
+    into
+        activity_log
+        (action, created_at, description, entity_id, entity_type, is_closed, report_date, user_id, user_name) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    update
+        products 
+    set
+        active=?,
+        category=?,
+        created_at=?,
+        description=?,
+        is_set=?,
+        item_code=?,
+        name=?,
+        product_code=?,
+        selling_tag=?,
+        sku=?,
+        stock_wh1=?,
+        stock_wh2=?,
+        stock_wh3=?,
+        sub_category=?,
+        threshold_critical=?,
+        threshold_low=?,
+        unit_cost=?,
+        unit_price=?,
+        updated_at=? 
+    where
+        id=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.email=?
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.username=?
+Hibernate: 
+    update
+        users 
+    set
+        address=?,
+        admin_security_key=?,
+        allowed_pages=?,
+        birthdate=?,
+        contact_number=?,
+        designation=?,
+        email=?,
+        employee_id=?,
+        full_name=?,
+        last_login_at=?,
+        must_change_password=?,
+        password_hash=?,
+        profile_image=?,
+        role=?,
+        status=?,
+        updated_at=?,
+        username=? 
+    where
+        id=?
+Hibernate: 
+    insert 
+    into
+        activity_log
+        (action, created_at, description, entity_id, entity_type, is_closed, report_date, user_id, user_name) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    select
+        u1_0.id,
+        u1_0.address,
+        u1_0.admin_security_key,
+        u1_0.allowed_pages,
+        u1_0.birthdate,
+        u1_0.contact_number,
+        u1_0.created_at,
+        u1_0.designation,
+        u1_0.email,
+        u1_0.employee_id,
+        u1_0.full_name,
+        u1_0.last_login_at,
+        u1_0.must_change_password,
+        u1_0.password_hash,
+        u1_0.profile_image,
+        u1_0.role,
+        u1_0.status,
+        u1_0.updated_at,
+        u1_0.username 
+    from
+        users u1_0 
+    where
+        u1_0.email=?
+Hibernate: 
+    select
+        mk1_0.id,
+        mk1_0.created_at,
+        mk1_0.is_active,
+        mk1_0.key_hash,
+        mk1_0.label,
+        mk1_0.updated_by 
+    from
+        master_keys mk1_0 
+    where
+        mk1_0.is_active
+Hibernate: 
+    select
+        p1_0.id,
+        p1_0.active,
+        p1_0.category,
+        p1_0.created_at,
+        p1_0.description,
+        p1_0.is_set,
+        p1_0.item_code,
+        p1_0.name,
+        p1_0.product_code,
+        p1_0.selling_tag,
+        p1_0.sku,
+        p1_0.stock_wh1,
+        p1_0.stock_wh2,
+        p1_0.stock_wh3,
+        p1_0.sub_category,
+        p1_0.threshold_critical,
+        p1_0.threshold_low,
+        p1_0.unit_cost,
+        p1_0.unit_price,
+        p1_0.updated_at 
+    from
+        products p1_0 
+    where
+        p1_0.id=?
+Hibernate: 
+    insert 
+    into
+        inventory_movements
+        (created_at, movement_type, product_id, quantity, reason, reference_id, user_id, warehouse) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    insert 
+    into
+        activity_log
+        (action, created_at, description, entity_id, entity_type, is_closed, report_date, user_id, user_name) 
+    values
+        (?, ?, ?, ?, ?, ?, ?, ?, ?)
+Hibernate: 
+    update
+        products 
+    set
+        active=?,
+        category=?,
+        created_at=?,
+        description=?,
+        is_set=?,
+        item_code=?,
+        name=?,
+        product_code=?,
+        selling_tag=?,
+        sku=?,
+        stock_wh1=?,
+        stock_wh2=?,
+        stock_wh3=?,
+        sub_category=?,
+        threshold_critical=?,
+        threshold_low=?,
+        unit_cost=?,
+        unit_price=?,
+        updated_at=? 
+    where
+        id=?
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  30:00 min
+[INFO] Finished at: 2026-06-01T22:53:33+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.5.14:run (default-cli) on project rrbm-backend: Process terminated with exit code: -1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
