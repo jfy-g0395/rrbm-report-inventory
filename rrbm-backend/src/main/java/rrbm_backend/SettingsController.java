@@ -14,7 +14,6 @@ import java.util.Set;
  */
 @RestController
 @RequestMapping("/api/settings")
-@CrossOrigin(origins = "*")
 public class SettingsController {
 
     // Only these keys may be changed via the Settings page UI

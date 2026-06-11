@@ -12,7 +12,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/purchase-orders")
-@CrossOrigin(origins = "*")
 public class PurchaseOrderController {
 
     private final PurchaseOrderRepository poRepository;

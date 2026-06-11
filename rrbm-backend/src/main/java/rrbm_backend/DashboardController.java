@@ -30,7 +30,6 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/dashboard")
-@CrossOrigin(origins = "*")
 public class DashboardController {
 
     private final OrderRepository                orderRepository;

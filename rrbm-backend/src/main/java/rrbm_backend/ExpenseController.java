@@ -33,7 +33,6 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/expenses")
-@CrossOrigin(origins = "*")
 public class ExpenseController {
 
     private final ExpenseRepository            expenseRepository;

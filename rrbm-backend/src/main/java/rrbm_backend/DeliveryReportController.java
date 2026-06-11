@@ -8,7 +8,6 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/delivery-reports")
-@CrossOrigin(origins = "*")
 public class DeliveryReportController {
 
     private final DeliveryLogRepository    repo;

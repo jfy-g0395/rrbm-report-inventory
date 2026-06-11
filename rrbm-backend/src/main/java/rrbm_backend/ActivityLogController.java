@@ -9,7 +9,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/activity-log")
-@CrossOrigin(origins = "*")
 public class ActivityLogController {
 
     private final ActivityLogService service;

@@ -132,23 +132,23 @@
     // Cancelled for replacement — keep Cancelled badge, add replacement sub-line
     if (o.cancellationType === 'REPLACEMENT') {
       var replSub = o.replacementOrderId
-        ? '<div style="font-size:10px;color:#10B981;margin-top:2px;line-height:1.3;">Replaced by '
+        ? '<div style="font-size:10px;color:var(--accent-success);margin-top:2px;line-height:1.3;">Replaced by '
             + '<a href="#" onclick="event.preventDefault();jumpToOrder(\'' + o.replacementOrderId + '\')" '
-            + 'style="color:#10B981;font-weight:600;">' + o.replacementOrderId + '</a></div>'
-        : '<div style="font-size:10px;color:#9CA3AF;margin-top:2px;line-height:1.3;">Replacement pending</div>';
+            + 'style="color:var(--accent-success);font-weight:600;">' + o.replacementOrderId + '</a></div>'
+        : '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;line-height:1.3;">Replacement pending</div>';
       return base + replSub;
     }
 
     // Replacement order — keep normal status badge, add purple "Replacement for" sub-line
     if (o.originalOrderId) {
-      return base + '<div style="font-size:10px;color:#7C3AED;margin-top:2px;line-height:1.3;">Replacement for '
+      return base + '<div style="font-size:10px;color:var(--accent-info);margin-top:2px;line-height:1.3;">Replacement for '
         + '<a href="#" onclick="event.preventDefault();jumpToOrder(\'' + o.originalOrderId + '\')" '
-        + 'style="color:#7C3AED;font-weight:600;">' + o.originalOrderId + '</a></div>';
+        + 'style="color:var(--accent-info);font-weight:600;">' + o.originalOrderId + '</a></div>';
     }
 
     // Partially voided — keep normal status badge, add amber sub-line
     if (Number(o.voidedAmount || 0) > 0 && o.status !== 'CANCELLED') {
-      return base + '<div style="font-size:10px;color:#F59E0B;margin-top:2px;line-height:1.3;">⚠ Partial void</div>';
+      return base + '<div style="font-size:10px;color:var(--accent-warn);margin-top:2px;line-height:1.3;">⚠ Partial void</div>';
     }
 
     // Standard — no change
@@ -408,13 +408,13 @@
     const tb = $('orders-tbody');
     if (!tb) return;
     const token = localStorage.getItem('rrbm_token');
-    if (!token) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+    if (!token) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
     try {
       const res = await fetch('' + API_BASE + '/api/orders/today', { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!res.ok) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Failed to load orders</td></tr>'; return; }
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Failed to load orders</td></tr>'; return; }
       const orders = await res.json();
-      if (orders.length === 0) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">No orders today yet</td></tr>'; return; }
+      if (orders.length === 0) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">No orders today yet</td></tr>'; return; }
 
       tb.innerHTML = orders.map(function (o) {
         const first = o.items && o.items[0];
@@ -434,7 +434,7 @@
           + '</tr>';
       }).join('');
     } catch (err) {
-      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Connection error</td></tr>';
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
     }
   }
 
@@ -445,19 +445,19 @@
     const tb = $('list-tbody');
     if (!tb) return;
     const token = localStorage.getItem('rrbm_token');
-    if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+    if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
 
     try {
       const res = await fetch('' + API_BASE + '/api/orders/today', { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!res.ok) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Failed to load orders</td></tr>'; return; }
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Failed to load orders</td></tr>'; return; }
       appState.allOrders = await res.json();
       const search = $('order-search');
       if (search) search.value = '';
       if ($('order-source-filter')) $('order-source-filter').value = '';
     } catch (err) {
-      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Connection error</td></tr>';
+      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
       return;
     }
 
@@ -506,7 +506,7 @@
     const tb = $('list-tbody');
     if (!tb) return;
     if (orders.length === 0) {
-      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:24px;">No results found</td></tr>';
+      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px;">No results found</td></tr>';
       return;
     }
 
@@ -541,7 +541,7 @@
           + '<button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel"><i class="ti ti-x"></i></button>';
       } else if (o.status === 'DELIVERED') {
         const safeTotal = Number(o.total || 0).toFixed(2);
-        actions = '<span style="color:#10B981;font-size:12px;"><i class="ti ti-check"></i> Done</span>';
+        actions = '<span style="color:var(--accent-success);font-size:12px;"><i class="ti ti-check"></i> Done</span>';
         if (canManageOrders()) {
           actions += ivmBtn;
           actions += ' <button class="btn btn-sm" onclick="openReturnModal(\'' + safeId + '\')" title="Process Return" style="background:#F59E0B;color:#fff;margin-left:4px;"><i class="ti ti-arrow-back-up"></i></button>';
@@ -551,34 +551,34 @@
         if (canManageOrders() && o.cancellationType === 'REPLACEMENT' && !o.replacementOrderId) {
           actions = '<button class="btn btn-sm" onclick="openReplacementForm(\'' + safeId + '\')" title="Create Replacement Order" style="background:#10B981;color:#fff;"><i class="ti ti-replace"></i> Create Replacement</button>';
         } else if (o.cancellationType === 'REPLACEMENT' && o.replacementOrderId) {
-          actions = '<span style="color:#10B981;font-size:12px;font-weight:600;"><i class="ti ti-check"></i> Replaced</span>';
+          actions = '<span style="color:var(--accent-success);font-size:12px;font-weight:600;"><i class="ti ti-check"></i> Replaced</span>';
         } else {
-          actions = '<span style="color:#999;font-size:12px;">Cancelled</span>';
+          actions = '<span style="color:var(--text-muted);font-size:12px;">Cancelled</span>';
         }
       } else if (o.status === 'PENDING_COLLECTION') {
-        actions = '<span style="color:#7C3AED;font-size:12px;font-weight:600;"><i class="ti ti-clock-dollar"></i> Pending Collection</span>';
+        actions = '<span style="color:var(--accent-info);font-size:12px;font-weight:600;"><i class="ti ti-clock-dollar"></i> Pending Collection</span>';
       }
 
       let srcDisplay = formatSource(o.source);
-      if (o.source === 'AGENT' && o.agentName) srcDisplay += ' <span style="color:#666;font-size:11px;">(' + o.agentName + ')</span>';
-      if ((o.source === 'RESELLER' || o.source === 'DISTRIBUTOR') && o.agentName) srcDisplay += ' <span style="color:#666;font-size:11px;">(' + o.agentName + ')</span>';
+      if (o.source === 'AGENT' && o.agentName) srcDisplay += ' <span style="color:var(--text-secondary);font-size:11px;">(' + o.agentName + ')</span>';
+      if ((o.source === 'RESELLER' || o.source === 'DISTRIBUTOR') && o.agentName) srcDisplay += ' <span style="color:var(--text-secondary);font-size:11px;">(' + o.agentName + ')</span>';
       if (o.source === 'ECOMMERCE' && o.ecommercePlatform) {
         var _platMap = { SHOPEE: 'Shopee', TIKTOK: 'TikTok', LAZADA: 'Lazada' };
         var _platLabel = _platMap[o.ecommercePlatform] || (o.ecommercePlatform.charAt(0) + o.ecommercePlatform.slice(1).toLowerCase());
-        srcDisplay += ' <span style="color:#666;font-size:11px;">/ ' + _platLabel + '</span>';
+        srcDisplay += ' <span style="color:var(--text-secondary);font-size:11px;">/ ' + _platLabel + '</span>';
       }
-      if (o.source === 'FACEBOOK_PAGE' && o.fbPage) srcDisplay += ' <span style="color:#666;font-size:11px;">(' + o.fbPage + ')</span>';
+      if (o.source === 'FACEBOOK_PAGE' && o.fbPage) srcDisplay += ' <span style="color:var(--text-secondary);font-size:11px;">(' + o.fbPage + ')</span>';
 
       const payBadge = o.paymentMode === 'COD'
-        ? '<span style="color:#7C3AED;font-weight:600;font-size:11px;">COD</span>'
+        ? '<span style="color:var(--accent-info);font-weight:600;font-size:11px;">COD</span>'
         : formatPaymentMode(o.paymentMode);
 
       const cancelNote = (o.status === 'CANCELLED' && o.cancellationReason)
-        ? '<div style="font-size:10px;color:#ef4444;margin-top:3px;white-space:normal;max-width:130px;line-height:1.3;">'
+        ? '<div style="font-size:10px;color:var(--accent-danger);margin-top:3px;white-space:normal;max-width:130px;line-height:1.3;">'
             + escapeHtml(o.cancellationReason) + '</div>'
         : '';
       const cancelMeta = (o.status === 'CANCELLED' && o.cancelledByName)
-        ? '<div style="font-size:10px;color:#9CA3AF;line-height:1.3;">by ' + escapeHtml(o.cancelledByName)
+        ? '<div style="font-size:10px;color:var(--text-muted);line-height:1.3;">by ' + escapeHtml(o.cancelledByName)
             + (o.cancelledAt ? ' &middot; ' + new Date(o.cancelledAt).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '')
             + '</div>'
         : '';
@@ -872,9 +872,9 @@
     const tb = $('order-history-tbody');
     if (!tb) return;
     const token = localStorage.getItem('rrbm_token');
-    if (!token) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+    if (!token) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
 
     const start = ($('history-start') || {}).value;
     const end   = ($('history-end')   || {}).value;
@@ -887,13 +887,13 @@
 
     try {
       const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!res.ok) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Failed to load</td></tr>'; return; }
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Failed to load</td></tr>'; return; }
       appState.orderHistoryAll = await res.json();
       if ($('history-search')) $('history-search').value = '';
       if ($('history-source-filter')) $('history-source-filter').value = '';
       renderOrderHistoryRows(appState.orderHistoryAll);
     } catch (err) {
-      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">Connection error</td></tr>';
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
     }
   };
 
@@ -901,7 +901,7 @@
     const tb = $('order-history-tbody');
     if (!tb) return;
     if (!orders.length) {
-      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;padding:24px;">No orders found for this date range</td></tr>';
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">No orders found for this date range</td></tr>';
       return;
     }
     const canAdmin = canManageOrders();
@@ -939,16 +939,16 @@
         ? ' <span class="badge badge-info" style="font-size:10px;vertical-align:middle;">Imported</span>'
         : '';
       const cancelReasonHtml = (o.status === 'CANCELLED' && o.cancellationReason)
-        ? '<div style="font-size:10px;color:#ef4444;margin-top:3px;max-width:140px;white-space:normal;line-height:1.3;">'
+        ? '<div style="font-size:10px;color:var(--accent-danger);margin-top:3px;max-width:140px;white-space:normal;line-height:1.3;">'
             + escapeHtml(o.cancellationReason) + '</div>'
         : '';
       const cancelMetaHtml = (o.status === 'CANCELLED' && o.cancelledByName)
-        ? '<div style="font-size:10px;color:#9CA3AF;line-height:1.3;">by ' + escapeHtml(o.cancelledByName)
+        ? '<div style="font-size:10px;color:var(--text-muted);line-height:1.3;">by ' + escapeHtml(o.cancelledByName)
             + (o.cancelledAt ? ' &middot; ' + new Date(o.cancelledAt).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '')
             + '</div>'
         : '';
       const collectedMetaHtml = o.collectedAt
-        ? '<div style="font-size:10px;color:#9CA3AF;line-height:1.3;">collected by ' + escapeHtml(o.collectedBy || '—')
+        ? '<div style="font-size:10px;color:var(--text-muted);line-height:1.3;">collected by ' + escapeHtml(o.collectedBy || '—')
             + ' &middot; ' + new Date(o.collectedAt).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})
             + '</div>'
         : '';
@@ -1676,11 +1676,11 @@
     const tb = $('inv-tbody');
     if (!tb) return;
     const token = localStorage.getItem('rrbm_token');
-    if (!token) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+    if (!token) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
     const catSel = $('inv-category-filter');
     const prevCat = catSel ? catSel.value : '';
-    tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#999;">Loading inventory…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">Loading inventory…</td></tr>';
 
     try {
       const headers = { 'Authorization': 'Bearer ' + token };
@@ -1689,13 +1689,13 @@
         fetch('' + API_BASE + '/api/products/all', { headers })
       ]);
       if (catRes.ok) populateInvCategoryDropdown(await catRes.json(), prevCat);
-      if (!prodRes.ok) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#999;">Failed to load inventory</td></tr>'; return; }
+      if (!prodRes.ok) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">Failed to load inventory</td></tr>'; return; }
       appState.inventoryAllProducts = await prodRes.json();
       const curCat = catSel ? catSel.value : '';
       populateInvSubCategoryDropdown(curCat);
       applyInventoryFilters();
     } catch (err) {
-      tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#999;">Connection error</td></tr>';
+      tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
     }
   }
 
@@ -1728,7 +1728,7 @@
     });
 
     if (products.length === 0) {
-      tb.innerHTML = '<tr><td colspan="' + (canEdit ? '12' : '11') + '" style="text-align:center;color:#999;padding:20px;">No products found</td></tr>';
+      tb.innerHTML = '<tr><td colspan="' + (canEdit ? '12' : '11') + '" style="text-align:center;color:var(--text-muted);padding:20px;">No products found</td></tr>';
       return;
     }
 
@@ -2417,9 +2417,9 @@
     const tb = $('delivery-rep-tbody');
     if (!tb) return;
     const token = localStorage.getItem('rrbm_token');
-    if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+    if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
 
     let url = '' + API_BASE + '/api/reports/deliveries';
     if (!all) {
@@ -2429,10 +2429,10 @@
 
     try {
       const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!res.ok) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#999;">Failed to load</td></tr>'; return; }
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">Failed to load</td></tr>'; return; }
       const records = await res.json();
       _deliveryRecords = Array.isArray(records) ? records : [];
-      if (!_deliveryRecords.length) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:20px;">No deliveries found</td></tr>'; return; }
+      if (!_deliveryRecords.length) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">No deliveries found</td></tr>'; return; }
 
       tb.innerHTML = _deliveryRecords.map(function (r) {
         var isCancelled = r.status === 'CANCELLED';
@@ -2458,7 +2458,7 @@
           + '</tr>';
       }).join('');
     } catch (err) {
-      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Connection error</td></tr>';
+      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
     }
   };
 
@@ -3113,9 +3113,9 @@
     const tb = $('activity-log-tbody');
     if (!tb) return;
     const token = localStorage.getItem('rrbm_token');
-    if (!token) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+    if (!token) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
 
     let url;
     if (today) {
@@ -3131,9 +3131,9 @@
 
     try {
       const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!res.ok) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">Failed to load</td></tr>'; return; }
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Failed to load</td></tr>'; return; }
       const logs = await res.json();
-      if (!logs.length) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">No activity for this date</td></tr>'; return; }
+      if (!logs.length) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No activity for this date</td></tr>'; return; }
 
       const actionBadge = function (action) {
         const map = {
@@ -3184,7 +3184,7 @@
           + '</tr>';
       }).join('');
     } catch (err) {
-      tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">Connection error</td></tr>';
+      tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
     }
   };
 
@@ -3934,13 +3934,13 @@
     const tb = $('emp-tbody');
     if (!tb) return;
     const token = localStorage.getItem('rrbm_token');
-    if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+    if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
 
     try {
       const res = await fetch('' + API_BASE + '/api/users', { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!res.ok) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Failed to load users</td></tr>'; return; }
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Failed to load users</td></tr>'; return; }
       appState.allUsers = await res.json();
       const myId   = String(currentUserId());
       const canMgr = canManageEmployees();
@@ -3979,7 +3979,7 @@
           + '</tr>';
       }).join('');
     } catch (err) {
-      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;">Connection error</td></tr>';
+      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
     }
   }
 
@@ -10296,14 +10296,14 @@
   window.loadAgents = async function (queryParams) {
     var grid = $('agents-grid');
     if (!grid) return;
-    grid.innerHTML = '<div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">Loading…</div>';
+    grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">Loading…</div>';
     try {
       var url = API_BASE + '/api/agents' + (queryParams || '');
       var res = await fetch(url, { headers: authHeaders() });
-      if (!res.ok) { grid.innerHTML = '<div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">Failed to load agents.</div>'; return; }
+      if (!res.ok) { grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">Failed to load agents.</div>'; return; }
       var agents = await res.json();
       if (!Array.isArray(agents) || agents.length === 0) {
-        grid.innerHTML = '<div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">No agents found.</div>';
+        grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">No agents found.</div>';
         return;
       }
       grid.innerHTML = agents.map(function (a) {
@@ -10726,7 +10726,7 @@
           '<td>' + statusBadge(p.status) + '</td>' +
           '<td style="display:flex;gap:4px;">' + closeBtn + releaseBtn + '</td>' +
           '</tr>';
-      }).join('') : '<tr><td colspan="4" style="text-align:center;color:#999;padding:16px;">No commission periods found.</td></tr>';
+      }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No commission periods found.</td></tr>';
 
       var newForm = focusNew
         ? '<div id="period-new-form" style="margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">' +
@@ -10942,15 +10942,15 @@
   window.loadImportHistory = async function () {
     var tb = $('import-history-tbody');
     if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:24px;">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
     var token = localStorage.getItem('rrbm_token');
-    if (!token) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">Please login first</td></tr>'; return; }
+    if (!token) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
     try {
       var res = await fetch(API_BASE + '/api/import/history', { headers: { Authorization: 'Bearer ' + token } });
-      if (!res.ok) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">Failed to load history</td></tr>'; return; }
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Failed to load history</td></tr>'; return; }
       var rows = await res.json();
       _importHistoryData = rows;
-      if (!rows.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:24px;">No import history yet</td></tr>'; return; }
+      if (!rows.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">No import history yet</td></tr>'; return; }
       tb.innerHTML = rows.map(function (r, idx) {
         return '<tr>'
           + '<td>' + (r.importDate || '—') + '</td>'
@@ -10963,7 +10963,7 @@
           + '</tr>';
       }).join('');
     } catch (e) {
-      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">Connection error</td></tr>';
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
     }
   };
 
@@ -12483,7 +12483,7 @@
 
     var tbody = $('ledger-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:24px;">Loading…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
 
     var params = '?start=' + start + '&end=' + end + (type ? '&type=' + encodeURIComponent(type) : '');
     try {
@@ -12524,7 +12524,7 @@
       }
       var txns = await lRes.json();
       if (!Array.isArray(txns) || txns.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;padding:24px;">No transactions in this range.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">No transactions in this range.</td></tr>';
         return;
       }
       var typeColors = { SALE: '#10B981', VOID: '#EF4444', RETURN: '#F59E0B', REFUND: '#F59E0B', ADJUSTMENT: '#6366F1', DISCOUNT: '#F59E0B' };

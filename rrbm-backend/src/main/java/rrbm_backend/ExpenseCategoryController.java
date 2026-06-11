@@ -16,7 +16,6 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/expense-categories")
-@CrossOrigin(origins = "*")
 public class ExpenseCategoryController {
 
     private final ExpenseCategoryRepository categoryRepository;

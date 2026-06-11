@@ -3,7 +3,7 @@
    Main Stylesheet
    ================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Public+Sans:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&family=Public+Sans:wght@400;600&display=swap');
 
 /* ----------------------------------------------------------------
    CSS Variables — Brand Colors & Theme Tokens
@@ -41,6 +41,10 @@
   --badge-low-text: #92400E;
   --badge-crit: #FEE2E2;
   --badge-crit-text: #991B1B;
+  --accent-success: #10B981;
+  --accent-warn: #F59E0B;
+  --accent-danger: #EF4444;
+  --accent-info: #7C3AED;
   --row-hot: #FFFDE7;
   --row-crit: #FFF0F0;
   --row-oos: #F5F5F5;
@@ -66,6 +70,10 @@
   --badge-low-text: #FBB040;
   --badge-crit: #4A0000;
   --badge-crit-text: #F87171;
+  --accent-success: #34D399;
+  --accent-warn: #FBB040;
+  --accent-danger: #F87171;
+  --accent-info: #A78BFA;
   --row-hot: #2A1D00;
   --row-crit: #3A0808;
   --row-oos: #1A1A1A;

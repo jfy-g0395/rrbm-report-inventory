@@ -33,6 +33,16 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       RRBM_JWT_SECRET:            ${RRBM_JWT_SECRET}
       RRBM_INITIAL_MASTER_KEY:    ${RRBM_INITIAL_MASTER_KEY}
+      # M-2.4 / M-2.2 production hardening
+      RRBM_CORS_ALLOWED_ORIGINS:        ${RRBM_CORS_ALLOWED_ORIGINS}
+      RRBM_FAIL_ON_DEFAULT_JWT_SECRET:  "true"
+    # M-4.3: readiness gate — busybox wget ships in the temurin-alpine runtime image
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health | grep -q UP || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   # ── Nginx frontend ─────────────────────────────────────────────────────────
   frontend:
@@ -40,7 +50,8 @@ services:
     container_name: rrbm_frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "80:80"
 

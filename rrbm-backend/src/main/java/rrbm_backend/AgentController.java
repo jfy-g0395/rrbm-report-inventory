@@ -23,7 +23,6 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/agents")
-@CrossOrigin(origins = "*")
 public class AgentController {
 
     private final AgentRepository              agentRepository;

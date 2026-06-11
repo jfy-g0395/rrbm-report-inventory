@@ -10,7 +10,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/settings/notification-emails")
-@CrossOrigin(origins = "*")
 public class NotificationEmailController {
 
     private final NotificationEmailRepository repo;

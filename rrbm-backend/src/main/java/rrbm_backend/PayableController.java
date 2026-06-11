@@ -12,7 +12,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/payables")
-@CrossOrigin(origins = "*")
 public class PayableController {
 
     private final PayableRepository          payableRepo;

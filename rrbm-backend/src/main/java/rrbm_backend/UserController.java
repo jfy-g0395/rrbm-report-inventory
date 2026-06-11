@@ -13,7 +13,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/users")
-@CrossOrigin(origins = "*")
 public class UserController {
 
     private final UserRepository userRepository;
@@ -40,24 +39,48 @@ public class UserController {
         return jwtUtil.extractUserId(authHeader.substring(7));
     }
 
+    /** Resolve the calling User from the Authorization header, or null if absent/invalid. */
+    private User callerFromHeader(String authHeader) {
+        Long callerId = userIdFromHeader(authHeader);
+        return callerId != null ? userRepository.findById(callerId).orElse(null) : null;
+    }
+
+    /** Account management (create/edit) is limited to Super Admin and Administrator. */
+    private static boolean isManager(User u) {
+        return u != null && ("SUPER_ADMIN".equals(u.getRole()) || "ADMINISTRATOR".equals(u.getRole()));
+    }
+
     // ---------------------------------------------------------------
     // GET /api/users — list all users
     // ---------------------------------------------------------------
     @GetMapping
-    public ResponseEntity<List<UserDto>> listUsers() {
+    public ResponseEntity<?> listUsers(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // M-2.1: full staff list (incl. PII) is limited to account managers.
+        if (!isManager(callerFromHeader(authHeader)))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Super Admin or Administrator can list users"));
         return ResponseEntity.ok(
             userRepository.findAll().stream().map(this::toDto).collect(Collectors.toList())
         );
     }
 
     // ---------------------------------------------------------------
-    // GET /api/users/{id} — single user
+    // GET /api/users/{id} — single user (managers, or the user themselves)
     // ---------------------------------------------------------------
     @GetMapping("/{id}")
-    public ResponseEntity<?> getUser(@PathVariable Long id) {
+    public ResponseEntity<?> getUser(@PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        // M-2.1: a caller may read their own record; otherwise manager-only.
+        User caller = callerFromHeader(authHeader);
+        if (caller == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Unauthorized"));
+        if (!isManager(caller) && !caller.getId().equals(id))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "You can only view your own profile"));
         return userRepository.findById(id)
-            .map(u -> ResponseEntity.ok(toDto(u)))
-            .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(null));
+            .<ResponseEntity<?>>map(u -> ResponseEntity.ok(toDto(u)))
+            .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "User not found")));
     }
 
     // ---------------------------------------------------------------
@@ -71,6 +94,13 @@ public class UserController {
             @RequestBody Map<String, String> body,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         Long userId          = userIdFromHeader(authHeader);
+
+        // M-1.1: only Super Admin / Administrator may create accounts.
+        User caller = callerFromHeader(authHeader);
+        if (!isManager(caller))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Super Admin or Administrator can create accounts"));
+
         String fullName      = trim(body.get("fullName"));
         String email         = trim(body.get("email"));
         String password      = body.get("password");
@@ -85,6 +115,10 @@ public class UserController {
             return bad("Password must be at least 6 characters");
         if (!VALID_ROLES.contains(role))
             return bad("Invalid role: " + role);
+        // M-1.1: an Administrator may not mint a Super Admin (privilege escalation).
+        if (!"SUPER_ADMIN".equals(caller.getRole()) && "SUPER_ADMIN".equals(role))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Super Admin can assign the Super Admin role"));
         if (userRepository.existsByEmail(email.toLowerCase()))
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Email is already registered"));
 
@@ -130,7 +164,20 @@ public class UserController {
         Long userId          = userIdFromHeader(authHeader);
         String changedByName = body.getOrDefault("changedByName", "Admin");
 
+        // M-1.1: only Super Admin / Administrator may edit accounts.
+        User caller = callerFromHeader(authHeader);
+        if (!isManager(caller))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Super Admin or Administrator can edit accounts"));
+        boolean callerIsSuper = "SUPER_ADMIN".equals(caller.getRole());
+
         return userRepository.findById(id).map(user -> {
+            // M-1.1: an Administrator may not edit a Super Admin account
+            // (blocks password reset / demotion of a Super Admin by a lower role).
+            if (!callerIsSuper && "SUPER_ADMIN".equals(user.getRole()))
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("message", "Only Super Admin can edit a Super Admin account"));
+
             // Email uniqueness check (if changing)
             String newEmail = trim(body.get("email"));
             if (newEmail != null && !newEmail.equalsIgnoreCase(user.getEmail())) {
@@ -160,6 +207,10 @@ public class UserController {
             if (newRole != null && !newRole.isBlank()) {
                 if (!VALID_ROLES.contains(newRole))
                     return bad("Invalid role: " + newRole);
+                // M-1.1: an Administrator may not promote anyone to Super Admin.
+                if (!callerIsSuper && "SUPER_ADMIN".equals(newRole))
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("message", "Only Super Admin can assign the Super Admin role"));
                 user.setRole(newRole);
             }
 

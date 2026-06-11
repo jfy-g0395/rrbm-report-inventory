@@ -10,7 +10,6 @@ import java.util.*;
 
 @RestController
 @RequestMapping("/api/suppliers")
-@CrossOrigin(origins = "*")
 public class SupplierController {
 
     private final SupplierRepository               supplierRepository;

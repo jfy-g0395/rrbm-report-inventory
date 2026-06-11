@@ -1,5 +1,6 @@
 package rrbm_backend;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -30,6 +31,13 @@ public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
 
+    /**
+     * M-2.4: comma-separated list of allowed browser origins. Defaults to local dev only;
+     * set RRBM_CORS_ALLOWED_ORIGINS to the exact production domain(s) in .env.
+     */
+    @Value("${rrbm.cors.allowed-origins:http://localhost,http://localhost:80,http://127.0.0.1,http://localhost:5500}")
+    private List<String> allowedOrigins;
+
     public SecurityConfig(JwtAuthFilter jwtAuthFilter) {
         this.jwtAuthFilter = jwtAuthFilter;
     }
@@ -50,6 +58,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // CORS pre-flight must always pass through unauthenticated
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                // M-4.3: container/orchestrator readiness probe — no token required
+                .requestMatchers("/actuator/health").permitAll()
                 // Login is the only open auth endpoint
                 .requestMatchers("/api/auth/login").permitAll()
                 // Reference data — no token needed
@@ -73,13 +83,14 @@ public class SecurityConfig {
     }
 
     /**
-     * Global CORS policy — allows the local frontend (and any origin during dev).
-     * In production, replace allowedOriginPatterns with the exact domain(s).
+     * Global CORS policy — restricted to the configured origins (no wildcard).
+     * M-2.4: wildcard origin + credentials let any site make credentialed calls;
+     * origins are now driven by rrbm.cors.allowed-origins (RRBM_CORS_ALLOWED_ORIGINS).
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

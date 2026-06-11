@@ -24,7 +24,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/commissions")
-@CrossOrigin(origins = "*")
 public class CommissionController {
 
     private final CommissionPeriodRepository     periodRepository;

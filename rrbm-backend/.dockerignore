@@ -1,0 +1,13 @@
+# M-2.3: keep dev secrets and build cruft out of the image build context.
+# application-local.properties holds local DB/mail credentials and lives under
+# src/main/resources, so without this it gets packaged into app.jar.
+src/main/resources/application-local.properties
+
+# Build output / IDE / local env — never needed inside the image
+target/
+.idea/
+.vscode/
+*.iml
+.env
+.env.*
+*.log

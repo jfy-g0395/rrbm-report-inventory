@@ -13,7 +13,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "*")
 public class AuthController {
 
     private final AuthService authService;
@@ -21,24 +20,39 @@ public class AuthController {
     private final MasterKeyService masterKeyService;
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
+    private final LoginAttemptService loginAttemptService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public AuthController(AuthService authService,
                           ActivityLogService activityLogService,
                           MasterKeyService masterKeyService,
                           JwtUtil jwtUtil,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          LoginAttemptService loginAttemptService) {
         this.authService = authService;
         this.activityLogService = activityLogService;
         this.masterKeyService = masterKeyService;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
+        this.loginAttemptService = loginAttemptService;
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+        String identifier = request.getEmail() != null ? request.getEmail() : "";
+
+        // M-4.1: brute-force lockout — reject before touching the credential check.
+        if (loginAttemptService.isBlocked(identifier)) {
+            long secs = loginAttemptService.secondsUntilUnlock(identifier);
+            return ResponseEntity
+                    .status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(new ErrorResponse("Too many failed login attempts. Try again in "
+                            + ((secs + 59) / 60) + " minute(s)."));
+        }
+
         try {
             LoginResponse response = authService.login(request);
+            loginAttemptService.recordSuccess(identifier);
             activityLogService.log(
                 response.getUser().getId(),
                 response.getUser().getFullName(),
@@ -49,6 +63,7 @@ public class AuthController {
             );
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            loginAttemptService.recordFailure(identifier);
             return ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body(new ErrorResponse(e.getMessage()));

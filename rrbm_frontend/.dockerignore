@@ -1,0 +1,6 @@
+# Build context is ./rrbm_frontend; the Dockerfile does
+# `COPY rrbm-frontend /usr/share/nginx/html`. Keep internal docs and runtime
+# logs out of the public nginx web root (they'd otherwise be served at the
+# site root — information disclosure).
+rrbm-frontend/docs/
+**/*.log
