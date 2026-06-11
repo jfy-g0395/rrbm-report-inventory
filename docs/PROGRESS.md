@@ -3712,3 +3712,403 @@ Scope:
 ### Verification
 - No code changes this session — planning only
 - `node --check app.js` — no syntax errors (unchanged file)
+
+---
+
+## Session U20 — Jun 10 2026 (Agent Page Bug Fixes)
+
+**Goal:** Fix two bugs on the Agent page per `docs/PLAN-agent-page-bugfixes.md`.
+
+**Files modified:**
+- `rrbm_frontend/rrbm-frontend/js/app.js` — fixed `downloadStatement()` URL prefix (line 10666: added `/api/`); added `toggleAgentStatus()` function (~20 lines); modified `loadAgents()` status `<td>` to include toggle button
+- `rrbm_frontend/rrbm-frontend/css/styles.css` — added `.rc-agent-toggle` style (6 lines)
+
+**No backend changes. No migration.**
+
+**Issue 1 — Statement Export (HIGH):** `downloadStatement()` was calling `/commissions/periods/...` instead of `/api/commissions/periods/...`. nginx returned SPA HTML instead of proxying to backend. Fixed by adding `/api/` prefix. 1 line change.
+
+**Issue 2 — Agent Status Toggle (MEDIUM):** Backend `PATCH /api/agents/{id}/status` existed but had no frontend UI. Added a toggle button (right-arrow/left-arrow icon) next to each agent's status badge in the table. Clicking it shows a confirmation dialog, then calls the endpoint to flip ACTIVE ↔ INACTIVE, and refreshes the table. ~20 lines JS + 6 lines CSS.
+
+**Issue 3 — N+1 Queries (LOW):** Deferred per plan — not critical until 50+ agents.
+
+**Verification:**
+- `node --check app.js` — no syntax errors ✅
+- `mvn test` — **142/142 green**, BUILD SUCCESS ✅
+
+---
+
+## Session U21 — Jun 10 2026 (Agent Registry Redesign — S1: Backend Orders Endpoint)
+
+**Goal:** Add backend endpoint to list orders for a specific agent, as part of the Agent Registry redesign.
+
+**Files modified:**
+- `rrbm-backend/src/main/java/rrbm_backend/OrderRepository.java` — added `findByAgentIdWithItems()` query method
+- `rrbm-backend/src/main/java/rrbm_backend/AgentController.java` — injected `OrderRepository` and `CommissionPeriodRepository`; added `GET /api/agents/{id}/orders?periodId=` endpoint
+
+**Changes:**
+1. **OrderRepository** — new JPQL query: `SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.agentId = :agentId ORDER BY o.createdAt DESC`
+2. **AgentController** — new endpoint `GET /api/agents/{id}/orders`:
+   - Optional `periodId` query param filters orders to that commission period's date range
+   - Returns `{ orders: [...], summary: { totalOrders, totalRevenue, totalOp } }`
+   - Each order includes items with `productName`, `quantity`, `unitPrice`, `basePrice`, `opPerUnit`, `opSubtotal`
+   - Requires auth header
+
+**Verification:**
+- `mvn test` — **142/142 green**, BUILD SUCCESS ✅
+
+---
+
+## Session U22 — Jun 10 2026 (Agent Registry Redesign — S2: Commission Summary)
+
+**Goal:** Evaluate whether a new commission summary endpoint is needed.
+
+**Decision:** SKIPPED — existing endpoints already provide all needed data:
+- `GET /api/agents/{id}` — agent info
+- `GET /api/agents/{id}/performance` — period summaries (commissionSummary array)
+- `GET /api/commissions/agents/{id}/commissions/breakdown?periodId=` — order-level detail
+
+No backend changes. No frontend changes. Frontend will reuse existing endpoints in S3-S9.
+
+**Files modified:** None
+
+---
+
+## Session U23 — Jun 10 2026 (Agent Registry Redesign — S3+S4: Panel CSS + Card Grid)
+
+**Goal:** Add slide-out panel CSS/HTML and convert agent table to card grid.
+
+**Files modified:**
+- `rrbm_frontend/rrbm-frontend/css/styles.css` — added slide-out panel CSS (~80 lines) and agent card grid CSS (~60 lines)
+- `rrbm_frontend/rrbm-frontend/index.html` — added slide-out panel HTML structure; replaced agent `<table>` with `<div class="agent-grid">`
+- `rrbm_frontend/rrbm-frontend/js/app.js` — updated `loadAgents()` to render cards instead of table rows
+
+**Changes:**
+1. **S3 — Slide-out Panel CSS/HTML:**
+   - `.slide-panel-overlay` — semi-transparent backdrop, z-index 1000
+   - `.slide-panel` — 600px panel slides from right, z-index 1001, flex column layout
+   - `.slide-panel.open` — triggers right:0 for slide-in animation
+   - `.slide-panel-header` — top bar with close button, title, action buttons
+   - `.slide-panel-body` — scrollable content area
+   - `.slide-panel-tabs` / `.slide-panel-tab` — tab navigation (Orders, Commission)
+   - `.slide-panel-info` / `.slide-panel-stats` — agent info and stats display
+   - HTML: overlay + panel with header and body, placed after last modal
+
+2. **S4 — Agent Card Grid:**
+   - `.agent-grid` — CSS grid with auto-fill, minmax(280px, 1fr)
+   - `.agent-card` — bordered card with hover effect, click handler
+   - `.agent-card-top` — code (left) + status badge (right)
+   - `.agent-card-name` — bold name
+   - `.agent-card-territory` — muted territory
+   - `.agent-card-stats` — 3-column stats: Orders, Pending, Lifetime
+   - HTML: replaced `<table>` with `<div class="agent-grid" id="agents-grid">`
+   - JS: `loadAgents()` now renders cards with `onclick="openAgentPanel(id)"`
+
+**Verification:**
+- No backend changes — no `mvn test` needed
+- `node --check app.js` — no syntax errors ✅
+
+---
+
+## Session U24 — Jun 10 2026 (Agent Registry Redesign — S5: Panel JS)
+
+**Goal:** Add slide-out panel JavaScript functions (open/close, tab switching, data loading).
+
+**Files modified:**
+- `rrbm_frontend/rrbm-frontend/js/app.js` — added ~200 lines of new JS functions after `clearAgentFilters()`
+
+**Changes:**
+1. **State variables:**
+   - `_currentAgentId` — tracks which agent is open in the panel
+   - `_currentAgentData` — stores the full agent data for the open panel
+
+2. **Core panel functions:**
+   - `openAgentPanel(agentId)` — fetches agent info, populates panel header + body with info/stats/tabs, opens overlay + panel, loads orders tab by default
+   - `closeAgentPanel()` — removes `.open` class from overlay and panel, clears state
+   - `switchAgentTab(tab)` — highlights active tab button, calls `loadAgentOrders()` or `loadAgentCommission()`
+
+3. **Helper functions:**
+   - `editCurrentAgent()` — calls existing `openEditAgentModal(_currentAgentId)`
+   - `toggleCurrentAgentStatus()` — calls existing `toggleAgentStatus()` then refreshes panel + agent list
+
+4. **Data loading functions:**
+   - `loadAgentOrders(agentId, periodId)` — fetches `GET /api/agents/{id}/orders`, renders order cards with expandable item tables
+   - `loadAgentCommission(agentId)` — fetches `GET /api/agents/{id}/performance`, renders commission period table
+
+**Verification:**
+- No backend changes — no `mvn test` needed
+- `node --check app.js` — no syntax errors ✅
+
+---
+
+## Session U25 — Jun 10 2026 (Agent Registry Redesign — S7: Orders Tab Period Filter)
+
+**Goal:** Add period dropdown filter to the Orders tab in the slide-out panel.
+
+**Files modified:**
+- `rrbm_frontend/rrbm-frontend/js/app.js` — modified `openAgentPanel()`, `loadAgentOrders()`, `closeAgentPanel()`
+
+**Changes:**
+1. **State:** Added `_currentAgentPeriods = []` to store periods data
+
+2. **`openAgentPanel()`:**
+   - After fetching agent info, fetches periods from `GET /api/agents/{id}/performance`
+   - Stores periods in `_currentAgentPeriods`
+
+3. **`loadAgentOrders()`:**
+   - Builds a period dropdown grouped by year (newest first)
+   - Uses `<optgroup>` elements for year groups
+   - Default option: "All Periods"
+   - Selecting a period calls `loadAgentOrders(agentId, periodId)` to filter orders
+   - Dropdown persists when orders load, errors occur, or no orders found
+
+4. **`closeAgentPanel()`:**
+   - Clears `_currentAgentPeriods` on close
+
+**Verification:**
+- No backend changes — no `mvn test` needed
+- `node --check app.js` — no syntax errors ✅
+
+---
+
+## Session U26 — Jun 10 2026 (Agent Registry Redesign — S8: Commission Tab + Export)
+
+**Goal:** Add period dropdown filter and export buttons to the Commission tab in the slide-out panel.
+
+**Files modified:**
+- `rrbm_frontend/rrbm-frontend/js/app.js` — modified `loadAgentCommission()`, `switchAgentTab()`, added `downloadCommissionStatement()`, added `_currentAgentExportFormat` state
+
+**Changes:**
+1. **State:** Added `_currentAgentExportFormat = 'pdf'` to track selected export format
+
+2. **`loadAgentCommission(agentId, periodId)`:**
+   - Now accepts optional `periodId` param (same as `loadAgentOrders`)
+   - Builds period dropdown grouped by year (same pattern as Orders tab)
+   - Added export format selector dropdown (PDF/CSV/Excel)
+   - Added export button per row in commission table
+   - Filters summary by periodId when provided
+   - Dropdown persists when data loads, errors occur, or no data found
+
+3. **`switchAgentTab(tab)`:**
+   - Updated to pass `null` periodId to `loadAgentCommission()`
+
+4. **`downloadCommissionStatement(agentId, periodId)`:**
+   - New function that uses `_currentAgentExportFormat` for format selection
+   - Calls existing `GET /api/commissions/periods/{id}/agents/{agentId}/statement/export` endpoint
+   - Handles PDF (opens in new tab), CSV/Excel (downloads file)
+
+**Verification:**
+- No backend changes — no `mvn test` needed
+- `node --check app.js` — no syntax errors ✅
+
+---
+
+## Session U27 — Jun 10 2026 (Agent Registry Redesign — S9: Cleanup)
+
+**Goal:** Remove old modals and functions that are no longer used.
+
+**Files modified:**
+- `rrbm_frontend/rrbm-frontend/index.html` — removed 2 old modals
+- `rrbm_frontend/rrbm-frontend/js/app.js` — removed 4 old functions
+
+**Changes:**
+1. **HTML — Removed modals:**
+   - `modal-agent-performance` (11 lines)
+   - `modal-commission-breakdown` (14 lines)
+
+2. **JS — Removed functions:**
+   - `openAgentPerformanceModal(agentId)` (68 lines)
+   - `openCommissionBreakdownModal(agentId)` (30 lines)
+   - `loadCommissionBreakdown(agentId, periodId)` (64 lines)
+   - `downloadStatement(agentId, periodId)` (31 lines)
+
+**Verification:**
+- `node --check app.js` — no syntax errors ✅
+- `mvn test` — 142/142 tests green ✅
+
+---
+
+## Session U28 — Jun 10 2026 (Commission Period Gap — Investigation & Planning)
+
+**Goal:** Investigate and document the commission period gap bug, create fix plan.
+
+**Issue Discovered:**
+Orders placed before a commission period is opened don't get commission entries, causing agents to miss commissions.
+
+**Investigation Findings:**
+1. **Root Cause:** `CommissionService.createEntriesForOrder()` line 57 — `if (period == null) return;` silently drops entries when no OPEN period exists
+2. **No Backfill:** When a new period is opened, existing orders are NOT retroactively processed
+3. **Silent Failure:** Orders without an OPEN period are dropped with no warning
+4. **Batch Import Risk:** Import controller catches and ignores commission entry failures
+
+**Files Created:**
+- `docs/COMMISSION-PERIOD-BUG-REPORT.md` — Full investigation report + implementation plan
+- `docs/superpowers/plans/2026-06-10-commission-period-backfill.md` — Detailed fix plan
+
+**Planned Fix:**
+- Add `backfillEntriesForPeriod()` method to `CommissionService`
+- Call backfill after period creation in `CommissionController`
+- Return backfill statistics in API response
+- Show toast notification in frontend
+
+**Estimated Time:** ~70 min for implementation
+
+**Status:** PLANNED — Ready for next session
+
+---
+
+## Session U29 — Jun 10 2026 (Commission Period Gap — Bug 1 + Bug 4 Fix)
+
+**Goal:** Fix period dropdown showing only released periods + eliminate NPE risk on `releasedAt`.
+
+**Root Cause:**
+The performance endpoint queried `agent_commissions` table, which only contains rows after period release. Unreleased periods (OPEN/CLOSED) had no entries → dropdown showed nothing → frontend `data.get("currentPeriod").get("netCommission")` threw NPE.
+
+**Files modified:**
+- `rrbm-backend/src/main/java/rrbm_backend/CommissionEntryRepository.java` — added `sumByPeriodIdAndAgentId()` query
+- `rrbm-backend/src/main/java/rrbm_backend/AgentController.java` — rewrote `getAgentPerformance()`, added `CommissionAdjustmentRepository` dependency
+
+**Changes:**
+1. **CommissionEntryRepository** — New JPQL query:
+   ```java
+   List<Object[]> sumByPeriodIdAndAgentId(Long periodId, Long agentId);
+   ```
+   Returns `[agentId, SUM(opAmount), COUNT(DISTINCT orderId)]` per period.
+
+2. **AgentController.getAgentPerformance()** — Rewrote to:
+   - Query `commission_periods` table directly (all OPEN/CLOSED/RELEASED periods)
+   - Join with `commission_entries` for op/order counts
+   - Join with `commission_adjustments` for bonus/deduction
+   - Compute netCommission per period: totalOp + totalBonus − totalDeduction
+   - Null-safe sort: periods with null `releasedAt` sort last
+   - Kept `agent_commissions` lookup for payment status fields (paidAt, paymentMethod, etc.)
+
+**Verification:**
+- `mvn compile` — clean ✅
+- `mvn test` — 142/142 tests green ✅ (AgentA6Test 4/4 pass)
+- Root cause of AgentA6Test failure: `Optional<Object[]>` caused Hibernate to unwrap array to length-1; fixed by using `List<Object[]>` instead
+
+**Remaining bugs (next session):**
+- Bug 2 + Bug 5: Backfill existing orders when period opens + logging
+- Bug 6: Import silent failure in ImportController line 1073
+
+---
+
+## Session U30 — Jun 10 2026 (Commission Period Gap — Bug 2 + Bug 5 + Bug 6 Fix)
+
+**Goal:** Add backfill for existing orders when period opens, add logging for silent failures, fix import silent catch.
+
+**Root Cause:**
+- **Bug 2:** When a new period is opened, existing orders within the date range have no commission entries
+- **Bug 5:** `CommissionService.createEntriesForOrder()` line 57 silently returns when no OPEN period exists — no logging
+- **Bug 6:** `ImportController.java` line 1073-1074: `catch (Exception ignored) {}` swallows commission entry failures during import
+
+**Files modified:**
+- `rrbm-backend/src/main/java/rrbm_backend/CommissionService.java` — added `backfillEntriesForPeriod()` method, injected `OrderRepository`, added SLF4J logging
+- `rrbm-backend/src/main/java/rrbm_backend/OrderRepository.java` — added `findOrdersWithoutCommissionEntries()` and `findAgentIdsWithOrdersInRange()` queries
+- `rrbm-backend/src/main/java/rrbm_backend/CommissionController.java` — injected `CommissionService`, call backfill after period creation, return stats in response
+- `rrbm-backend/src/main/java/rrbm_backend/ImportController.java` — added SLF4J logger, replaced silent `catch (Exception ignored) {}` with `log.warn(...)`
+
+**Changes:**
+1. **CommissionService** — New `backfillEntriesForPeriod()` method:
+   - Scans orders in period date range without commission entries
+   - Creates entries for each qualifying order item
+   - Returns `Map<String, Object>` with `agentsProcessed`, `ordersProcessed`, `entriesCreated`
+   - Added `OrderRepository` dependency to constructor
+   - Added `log.warn(...)` when no OPEN period exists for an order
+
+2. **OrderRepository** — Two new queries:
+   - `findOrdersWithoutCommissionEntries(agentId, start, end)` — finds orders without entries
+   - `findAgentIdsWithOrdersInRange(start, end)` — finds distinct agent IDs with orders
+
+3. **CommissionController** — Updated `createPeriod()`:
+   - Injected `CommissionService`
+   - After saving period, calls `commissionService.backfillEntriesForPeriod(saved)`
+   - Includes backfill stats in API response
+
+4. **ImportController** — Fixed silent failure:
+   - Added SLF4J logger
+   - Replaced `catch (Exception ignored) {}` with `log.warn("Failed to create commission entries for imported order {}: {}", ...)`
+
+**Verification:**
+- `mvn compile` — clean ✅
+- `mvn test` — 142/142 tests green ✅
+
+**All commission period gap bugs now fixed:**
+- ✅ Bug 1: Period dropdown shows all periods (not just released)
+- ✅ Bug 2: Backfill creates entries for existing orders when period opens
+- ✅ Bug 4: NPE risk eliminated with null-safe sort
+- ✅ Bug 5: Silent failures now logged
+- ✅ Bug 6: Import silent catch now logs warnings
+
+---
+
+## Session U31 — Jun 10 2026 (Commission Entry Logging — Remaining Silent Catches)
+
+**Goal:** Fix remaining silent catches for commission entry creation in OrderController and OrderService.
+
+**Root Cause:**
+Two more places where commission entry creation silently ignores exceptions:
+- `OrderController.java:547` — when collecting an order (PENDING_COLLECTION → ACTIVE)
+- `OrderService.java:844` — same scenario, different code path
+
+**Files modified:**
+- `rrbm-backend/src/main/java/rrbm_backend/OrderController.java` — added SLF4J logger, replaced silent catch with `log.warn(...)`
+- `rrbm-backend/src/main/java/rrbm_backend/OrderService.java` — added SLF4J logger, replaced silent catch with `log.warn(...)`
+
+**Changes:**
+1. **OrderController** — Added logger, replaced:
+   ```java
+   try { commissionService.createEntriesForOrder(order, userId); } catch (Exception ignored) {}
+   ```
+   with:
+   ```java
+   try { commissionService.createEntriesForOrder(order, userId); }
+   catch (Exception e) {
+       log.warn("Failed to create commission entries for order {}: {}", order.getId(), e.getMessage());
+   }
+   ```
+
+2. **OrderService** — Same pattern applied
+
+**Verification:**
+- `mvn compile` — clean ✅
+- `mvn test` — 142/142 tests green ✅
+
+**All commission entry creation points now log warnings on failure:**
+- ✅ `CommissionService.createEntriesForOrder()` — logs when no OPEN period exists
+- ✅ `ImportController` — logs on import commission entry failure
+- ✅ `OrderController` — logs on collection commission entry failure
+- ✅ `OrderService` — logs on collection commission entry failure
+
+---
+
+## Session U32 — Jun 10 2026 (Pending Commission Card Display Diagnosis)
+
+**Goal:** Investigate and fix Pending Commission showing ₱0.00 on agent list cards despite having orders in an OPEN period.
+
+**Root Cause:**
+Stale deployment — the running Spring Boot server (PID 13476, started 7:14 PM) was using outdated compiled classes. The `target/classes` directory had been updated (9:34 PM) but Spring DevTools did not trigger a restart. The code and DB data were correct throughout.
+
+**Investigation findings:**
+1. **DB data verified** — 6 commission entries, all `status = PENDING`:
+   - Agent 833 (Toni): ₱830.00 total (4 entries: ₱150 + ₱330 + ₱250 + ₱100)
+   - Agent 939 (Juan Dela Cruz): ₱217.50 total (2 entries: ₱100 + ₱117.50)
+2. **Query verified** — `sumPendingOpAmountByAgentId()` in `CommissionEntryRepository.java:42-44` correctly filters `WHERE e.agentId = :agentId AND e.status = 'PENDING'` with `COALESCE(SUM(e.opAmount), 0)`
+3. **Controller verified** — `toMap()` in `AgentController.java:469` correctly calls the query and returns result as `pendingCommission`
+4. **Frontend verified** — `app.js:10312` correctly reads `a.pendingCommission || 0`
+5. **Performance endpoint verified** — Commission tab uses `sumByPeriodIdAndAgentId()` (no status filter), which is why it showed correct amounts independently
+
+**Key insight:** Two different queries serve different purposes:
+- Card: `sumPendingOpAmountByAgentId` — filters `status = 'PENDING'`
+- Commission tab: `sumByPeriodIdAndAgentId` — no status filter (shows all entries in a period)
+
+**Resolution:** User restarted the backend server manually. Pending Commission now displays correctly.
+
+**Remaining issues noted:**
+- **Lifetime Commission discrepancy** — Panel header uses `AgentCommission` table (only RELEASED periods), Commission tab sums ALL periods from `commission_entries`. User confirmed this is confusing.
+- **Release button location** — Only in Commission Period Management Modal ("Periods" button), not on agent panel.
+
+**Verification:**
+- `mvn compile` — clean ✅
+- `mvn test` — 142/142 tests green ✅
+- Browser test — Agent cards show correct Pending Commission amounts ✅

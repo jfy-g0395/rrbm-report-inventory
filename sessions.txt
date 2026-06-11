@@ -2356,3 +2356,135 @@ As each session touches `index.html`, audit visible text in the modified section
 ---
 
 *Next action: Start with Session 29 (Quick Wins — no migration, no backend except LIMIT change). Estimated scope: ~90 min.*
+
+---
+
+# Session 54 — Commission Period Gap Bug Fix (Bug 1 + Bug 4)
+
+## Context
+The commission system had a critical bug: the performance endpoint queried `agent_commissions` table (only populated on release), so the period dropdown showed nothing for OPEN/CLOSED periods. The frontend then threw NPE when accessing `currentPeriod.netCommission`.
+
+## Changes
+
+### Backend
+- **CommissionEntryRepository.java** — Added `sumByPeriodIdAndAgentId()` query returning `[agentId, SUM(opAmount), COUNT(DISTINCT orderId)]` per period
+- **AgentController.java** — Rewrote `getAgentPerformance()`:
+  - Queries `commission_periods` directly (shows all OPEN/CLOSED/RELEASED periods)
+  - Joins with `commission_entries` for op/order counts
+  - Joins with `commission_adjustments` for bonus/deduction
+  - Computes netCommission per period: totalOp + totalBonus − totalDeduction
+  - Null-safe sort: null `releasedAt` values sort last
+  - Kept `agent_commissions` lookup for payment status fields
+
+### Bug encountered during implementation
+- `Optional<Object[]>` caused Hibernate to unwrap the array to length-1
+- Fixed by changing return type to `List<Object[]>`
+
+## Verification
+- `mvn compile` — clean ✅
+- `mvn test` — 142/142 tests green ✅
+
+## Remaining
+- Bug 2 + Bug 5: Backfill existing orders when period opens + logging
+- Bug 6: Import silent failure in ImportController line 1073
+
+---
+
+# Session 55 — Commission Period Gap Bug Fix (Bug 2 + Bug 5 + Bug 6)
+
+## Context
+Three remaining commission bugs: (1) no backfill when period opens, (2) silent failure when no OPEN period exists, (3) import controller silently swallows commission entry failures.
+
+## Changes
+
+### Backend
+- **CommissionService.java** — Added `backfillEntriesForPeriod()` method:
+  - Scans orders in period date range without commission entries
+  - Creates entries for each qualifying order item
+  - Returns stats: `agentsProcessed`, `ordersProcessed`, `entriesCreated`
+  - Added `OrderRepository` dependency
+  - Added `log.warn(...)` when no OPEN period exists for an order
+
+- **OrderRepository.java** — Added two queries:
+  - `findOrdersWithoutCommissionEntries(agentId, start, end)`
+  - `findAgentIdsWithOrdersInRange(start, end)`
+
+- **CommissionController.java** — Updated `createPeriod()`:
+  - Injected `CommissionService`
+  - Calls backfill after period creation
+  - Returns backfill stats in API response
+
+- **ImportController.java** — Fixed silent failure:
+  - Added SLF4J logger
+  - Replaced `catch (Exception ignored) {}` with `log.warn(...)`
+
+## Verification
+- `mvn compile` — clean ✅
+- `mvn test` — 142/142 tests green ✅
+
+## Summary
+All commission period gap bugs now fixed:
+- ✅ Bug 1: Period dropdown shows all periods
+- ✅ Bug 2: Backfill creates entries for existing orders
+- ✅ Bug 4: NPE risk eliminated
+- ✅ Bug 5: Silent failures now logged
+- ✅ Bug 6: Import silent catch now logs warnings
+
+---
+
+# Session 56 — Commission Entry Logging (Remaining Silent Catches)
+
+## Context
+Two more places where commission entry creation silently ignores exceptions: OrderController.java:547 and OrderService.java:844. Same pattern as the ImportController bug fixed in Session 55.
+
+## Changes
+
+### Backend
+- **OrderController.java** — Added SLF4J logger, replaced `catch (Exception ignored) {}` with `log.warn(...)` for commission entry creation during order collection
+- **OrderService.java** — Added SLF4J logger, replaced `catch (Exception ignored) {}` with `log.warn(...)` for commission entry creation during order collection
+
+## Verification
+- `mvn compile` — clean ✅
+- `mvn test` — 142/142 tests green ✅
+
+## Summary
+All commission entry creation points now log warnings on failure:
+- ✅ CommissionService.createEntriesForOrder() — logs when no OPEN period exists
+- ✅ ImportController — logs on import commission entry failure
+- ✅ OrderController — logs on collection commission entry failure
+- ✅ OrderService — logs on collection commission entry failure
+
+---
+
+# Session 57 — Pending Commission Card Display Diagnosis
+
+## Context
+Agent list cards showed ₱0.00 for Pending Commission despite agents having orders in an OPEN period. The Commission tab inside the agent panel showed correct amounts, creating a confusing mismatch.
+
+## Investigation
+
+### Database
+All 6 commission entries verified correct with `status = PENDING`:
+- Agent 833 (Toni): ₱830.00 (4 entries: ₱150 + ₱330 + ₱250 + ₱100)
+- Agent 939 (Juan Dela Cruz): ₱217.50 (2 entries: ₱100 + ₱117.50)
+
+### Two Different Queries
+- **Card** uses `sumPendingOpAmountByAgentId()` — JPQL `WHERE status = 'PENDING'`
+- **Commission tab** uses `sumByPeriodIdAndAgentId()` — no status filter (shows all entries)
+
+Both queries are correct. The mismatch was not a code bug.
+
+### Root Cause
+Stale deployment. The running Spring Boot server (PID 13476, started 7:14 PM) was using outdated compiled classes. The `target/classes` directory was updated at 9:34 PM but Spring DevTools did not trigger a restart. The server was serving stale responses.
+
+## Resolution
+User restarted the backend server manually. Pending Commission now displays correctly on agent cards.
+
+## Remaining Issues Noted
+- **Lifetime Commission discrepancy** — Panel header uses `AgentCommission` table (only RELEASED periods), Commission tab sums ALL periods from `commission_entries`. User confirmed this is confusing.
+- **Release button location** — Only in Commission Period Management Modal ("Periods" button), not on agent panel.
+
+## Verification
+- `mvn compile` — clean ✅
+- `mvn test` — 142/142 tests green ✅
+- Browser test — Agent cards show correct Pending Commission amounts ✅

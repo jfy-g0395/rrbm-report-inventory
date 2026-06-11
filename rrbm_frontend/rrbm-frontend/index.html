@@ -2003,25 +2003,8 @@
                 <button class="btn btn-sm btn-outline" onclick="clearAgentFilters()" style="font-size:12px;padding:5px 12px;">Clear</button>
               </div>
             </div>
-            <div class="table-scroll">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Agent Code</th>
-                    <th>Name</th>
-                    <th>Contact</th>
-                    <th>Territory</th>
-                    <th>Status</th>
-                    <th style="text-align:right;">Total Orders</th>
-                    <th style="text-align:right;">Pending Commission</th>
-                    <th style="text-align:right;">Lifetime Commission</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="agents-tbody">
-                  <tr><td colspan="9" style="text-align:center;color:#999;padding:24px;">Loading…</td></tr>
-                </tbody>
-              </table>
+            <div class="agent-grid" id="agents-grid">
+              <div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">Loading…</div>
             </div>
           </div>
         </section>
@@ -2420,33 +2403,6 @@
   <!-- ============================================================
        MODAL: AGENT PERFORMANCE
        ============================================================ -->
-  <div class="modal-overlay" id="modal-agent-performance">
-    <div class="modal-box" style="max-width:820px;max-height:90vh;display:flex;flex-direction:column;">
-      <div class="modal-header">
-        <div style="font-size:14px;font-weight:600;"><i class="ti ti-chart-line" style="margin-right:6px;"></i>Agent Performance</div>
-        <button class="icon-btn" onclick="closeModal('modal-agent-performance')"><i class="ti ti-x"></i></button>
-      </div>
-      <div class="modal-body" style="overflow-y:auto;flex:1;" id="agent-performance-modal-body">
-        <div style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       MODAL: COMMISSION BREAKDOWN (per-order detail)
-       ============================================================ -->
-  <div class="modal-overlay" id="modal-commission-breakdown">
-    <div class="modal-box" style="max-width:860px;max-height:90vh;display:flex;flex-direction:column;">
-      <div class="modal-header">
-        <div style="font-size:14px;font-weight:600;"><i class="ti ti-coin" style="margin-right:6px;"></i>Commission Detail</div>
-        <button class="icon-btn" onclick="closeModal('modal-commission-breakdown')"><i class="ti ti-x"></i></button>
-      </div>
-      <div class="modal-body" style="overflow-y:auto;flex:1;" id="commission-breakdown-modal-body">
-        <div style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</div>
-      </div>
-    </div>
-  </div>
-
   <!-- ============================================================
        MODAL: COMMISSION PERIOD MANAGEMENT
        ============================================================ -->
@@ -4442,6 +4398,24 @@
           <i class="ti ti-trash"></i> Delete
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SLIDE-OUT PANEL: AGENT DETAILS
+       ============================================================ -->
+  <div class="slide-panel-overlay" id="agent-panel-overlay" onclick="closeAgentPanel()"></div>
+  <div class="slide-panel" id="agent-slide-panel">
+    <div class="slide-panel-header">
+      <button class="icon-btn" onclick="closeAgentPanel()"><i class="ti ti-x"></i></button>
+      <div class="panel-title" id="agent-panel-title">Agent Details</div>
+      <div class="panel-actions">
+        <button class="btn btn-sm btn-outline" style="font-size:11px;" onclick="editCurrentAgent()"><i class="ti ti-edit"></i> Edit</button>
+        <button class="btn btn-sm btn-outline" style="font-size:11px;" onclick="toggleCurrentAgentStatus()"><i class="ti ti-toggle-right"></i></button>
+      </div>
+    </div>
+    <div class="slide-panel-body" id="agent-panel-body">
+      <div style="text-align:center;color:var(--text-muted);padding:24px;">Select an agent to view details.</div>
     </div>
   </div>
 

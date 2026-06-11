@@ -10294,40 +10294,60 @@
   // ================================================================
 
   window.loadAgents = async function (queryParams) {
-    var tbody = $('agents-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;padding:24px;">Loading…</td></tr>';
+    var grid = $('agents-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">Loading…</div>';
     try {
       var url = API_BASE + '/api/agents' + (queryParams || '');
       var res = await fetch(url, { headers: authHeaders() });
-      if (!res.ok) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:24px;">Failed to load agents.</td></tr>'; return; }
+      if (!res.ok) { grid.innerHTML = '<div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">Failed to load agents.</div>'; return; }
       var agents = await res.json();
       if (!Array.isArray(agents) || agents.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#999;padding:24px;">No agents found.</td></tr>';
+        grid.innerHTML = '<div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">No agents found.</div>';
         return;
       }
-      tbody.innerHTML = agents.map(function (a) {
-        var statusBadgeCls = a.status === 'ACTIVE' ? 'background:#D1FAE5;color:#065F46;' : 'background:#F3F4F6;color:#6B7280;';
+      grid.innerHTML = agents.map(function (a) {
+        var statusBg = a.status === 'ACTIVE' ? '#D1FAE5' : '#F3F4F6';
+        var statusFg = a.status === 'ACTIVE' ? '#065F46' : '#6B7280';
         var pending  = '₱' + Number(a.pendingCommission  || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         var lifetime = '₱' + Number(a.lifetimeNetCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return '<tr>' +
-          '<td><code style="font-size:11px;">' + escapeHtml(a.agentCode || '') + '</code></td>' +
-          '<td style="font-weight:500;">' + escapeHtml(a.fullName || '') + '</td>' +
-          '<td>' + escapeHtml(a.contactNumber || '') + '</td>' +
-          '<td>' + escapeHtml(a.territory || '') + '</td>' +
-          '<td><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;' + statusBadgeCls + '">' + escapeHtml(a.status || '') + '</span></td>' +
-          '<td style="text-align:right;">' + (a.totalOrders || 0) + '</td>' +
-          '<td style="text-align:right;">' + pending + '</td>' +
-          '<td style="text-align:right;font-weight:600;">' + lifetime + '</td>' +
-          '<td style="display:flex;gap:4px;flex-wrap:wrap;">' +
-            '<button class="btn btn-sm btn-outline" style="font-size:11px;" onclick="openEditAgentModal(' + a.id + ')"><i class="ti ti-edit"></i> Edit</button>' +
-            '<button class="btn btn-sm btn-outline" style="font-size:11px;" onclick="openAgentPerformanceModal(' + a.id + ')"><i class="ti ti-chart-line"></i> History</button>' +
-            '<button class="btn btn-sm btn-outline" style="font-size:11px;" onclick="openCommissionBreakdownModal(' + a.id + ')"><i class="ti ti-coin"></i> Comm</button>' +
-          '</td>' +
-          '</tr>';
+        return '<div class="agent-card" onclick="openAgentPanel(' + a.id + ')">' +
+          '<div class="agent-card-top">' +
+            '<span class="agent-card-code">' + escapeHtml(a.agentCode || '') + '</span>' +
+            '<span class="agent-card-status" style="background:' + statusBg + ';color:' + statusFg + ';">' + escapeHtml(a.status || '') + '</span>' +
+          '</div>' +
+          '<div class="agent-card-name">' + escapeHtml(a.fullName || '') + '</div>' +
+          '<div class="agent-card-territory">' + escapeHtml(a.territory || '') + '</div>' +
+          '<div class="agent-card-stats">' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value">' + (a.totalOrders || 0) + '</div><div class="agent-card-stat-label">Orders</div></div>' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value">' + pending + '</div><div class="agent-card-stat-label">Pending</div></div>' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value">' + lifetime + '</div><div class="agent-card-stat-label">Lifetime</div></div>' +
+          '</div>' +
+        '</div>';
       }).join('');
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:red;padding:24px;">Error loading agents.</td></tr>';
+      grid.innerHTML = '<div style="text-align:center;color:red;padding:24px;grid-column:1/-1;">Error loading agents.</div>';
+    }
+  };
+
+  window.toggleAgentStatus = async function (agentId, currentStatus) {
+    var newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    var confirmMsg = newStatus === 'INACTIVE'
+      ? 'Deactivate this agent? They will not appear in the order form agent dropdown.'
+      : 'Reactivate this agent?';
+    if (!confirm(confirmMsg)) return;
+    try {
+      var res = await fetch(API_BASE + '/api/agents/' + agentId + '/status', {
+        method: 'PATCH',
+        headers: Object.assign({}, authHeaders(), { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) { showToast('Failed to update status (' + res.status + ')', 'error'); return; }
+      showToast('Agent ' + (newStatus === 'ACTIVE' ? 'activated' : 'deactivated'), 'success');
+      loadAgents();
+    } catch (err) {
+      console.error('toggleAgentStatus', err);
+      showToast('Error updating status', 'error');
     }
   };
 
@@ -10365,168 +10385,311 @@
     loadAgents();
   };
 
-  window.openAgentPerformanceModal = async function (agentId) {
-    var modalBody = $('agent-performance-modal-body');
-    if (!modalBody) return;
-    modalBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</div>';
-    openModal('modal-agent-performance');
-    try {
-      var res = await fetch(API_BASE + '/api/agents/' + agentId + '/performance', { headers: authHeaders() });
-      if (!res.ok) { modalBody.innerHTML = '<div style="color:red;padding:16px;">Failed to load performance data.</div>'; return; }
-      var d = await res.json();
-      var summary = d.commissionSummary || [];
-      var lifetimeFormatted = '₱' + Number(d.lifetimeNetCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // ================================================================
+  // Agent Slide-out Panel
+  // ================================================================
 
-      var headerHtml =
-        '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border);">' +
-          '<div><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Agent Code</div><div style="font-weight:700;font-size:14px;">' + escapeHtml(d.agentCode || '') + '</div></div>' +
-          '<div><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Name</div><div style="font-weight:600;font-size:14px;">' + escapeHtml(d.fullName || '') + '</div></div>' +
-          '<div><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Total Orders</div><div style="font-weight:600;font-size:14px;">' + (d.totalOrders || 0) + '</div></div>' +
-          '<div><div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">Lifetime Commission</div><div style="font-weight:700;font-size:14px;color:#10B981;">' + lifetimeFormatted + '</div></div>' +
+  var _currentAgentId = null;
+  var _currentAgentData = null;
+  var _currentAgentPeriods = [];
+  var _currentAgentExportFormat = 'pdf';
+
+  window.openAgentPanel = async function (agentId) {
+    var panelBody = $('agent-panel-body');
+    var panelTitle = $('agent-panel-title');
+    if (!panelBody) return;
+
+    _currentAgentId = agentId;
+    panelBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</div>';
+    if (panelTitle) panelTitle.textContent = 'Agent Details';
+
+    // Open overlay + panel
+    var overlay = $('agent-panel-overlay');
+    var panel = $('agent-slide-panel');
+    if (overlay) overlay.classList.add('open');
+    if (panel) panel.classList.add('open');
+
+    try {
+      var res = await fetch(API_BASE + '/api/agents/' + agentId, { headers: authHeaders() });
+      if (!res.ok) { panelBody.innerHTML = '<div style="color:red;padding:16px;">Failed to load agent.</div>'; return; }
+      var a = await res.json();
+      _currentAgentData = a;
+
+      if (panelTitle) panelTitle.textContent = a.fullName || 'Agent Details';
+
+      // Fetch periods for the dropdown
+      try {
+        var perfRes = await fetch(API_BASE + '/api/agents/' + agentId + '/performance', { headers: authHeaders() });
+        if (perfRes.ok) {
+          var perfData = await perfRes.json();
+          _currentAgentPeriods = perfData.commissionSummary || [];
+        } else {
+          _currentAgentPeriods = [];
+        }
+      } catch (e) {
+        _currentAgentPeriods = [];
+      }
+
+      var statusBg = a.status === 'ACTIVE' ? '#D1FAE5' : '#F3F4F6';
+      var statusFg = a.status === 'ACTIVE' ? '#065F46' : '#6B7280';
+      var pending  = '₱' + Number(a.pendingCommission  || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      var lifetime = '₱' + Number(a.lifetimeNetCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      var html =
+        '<div class="slide-panel-info">' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Agent Code</span><span class="slide-panel-info-value" style="font-family:monospace;">' + escapeHtml(a.agentCode || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Contact</span><span class="slide-panel-info-value">' + escapeHtml(a.contactNumber || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Territory</span><span class="slide-panel-info-value">' + escapeHtml(a.territory || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Status</span><span class="slide-panel-info-value"><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + statusBg + ';color:' + statusFg + ';">' + escapeHtml(a.status || '') + '</span></span></div>' +
+        '</div>' +
+        '<div class="slide-panel-stats">' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + (a.totalOrders || 0) + '</div><div class="slide-panel-stat-label">Orders</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + pending + '</div><div class="slide-panel-stat-label">Pending Commission</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value" style="color:#10B981;">' + lifetime + '</div><div class="slide-panel-stat-label">Lifetime Commission</div></div>' +
+        '</div>' +
+        '<div class="slide-panel-tabs">' +
+          '<button class="slide-panel-tab active" onclick="switchAgentTab(\'orders\')">Orders</button>' +
+          '<button class="slide-panel-tab" onclick="switchAgentTab(\'commission\')">Commission</button>' +
+        '</div>' +
+        '<div id="agent-tab-content">' +
+          '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading orders…</div>' +
         '</div>';
 
-      var tableHtml;
-      if (summary.length === 0) {
-        tableHtml = '<div style="text-align:center;color:var(--text-muted);padding:24px;font-size:13px;">No released periods yet.</div>';
-      } else {
-        var agId = d.agentId;
-        var rows = summary.map(function (r) {
-          var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-          var relAt = r.releasedAt ? r.releasedAt.replace('T', ' ').substring(0, 19) : '';
-          var pId = r.periodId || 0;
-          return '<tr>' +
-            '<td><code style="font-size:11px;">' + escapeHtml(r.periodCode || '') + '</code></td>' +
-            '<td>' + escapeHtml(r.startDate || '') + '</td>' +
-            '<td>' + escapeHtml(r.endDate   || '') + '</td>' +
-            '<td style="text-align:right;">' + fmt(r.totalOp)          + '</td>' +
-            '<td style="text-align:right;color:#10B981;">' + fmt(r.totalBonus)      + '</td>' +
-            '<td style="text-align:right;color:#EF4444;">' + fmt(r.totalDeduction)  + '</td>' +
-            '<td style="text-align:right;font-weight:700;">' + fmt(r.netCommission) + '</td>' +
-            '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(relAt) + '</td>' +
-            '<td><button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="downloadStatement(' + agId + ',' + pId + ')"><i class="ti ti-download"></i></button></td>' +
-            '</tr>';
-        }).join('');
-        var fmtBar =
-          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
-          '<span style="font-size:12px;color:var(--text-muted);">Download format:</span>' +
-          '<select id="stmt-export-format" class="form-control" style="width:auto;padding:3px 8px;font-size:12px;">' +
-          '<option value="pdf">PDF</option>' +
-          '<option value="csv">CSV</option>' +
-          '<option value="excel">Excel</option>' +
-          '</select></div>';
-        tableHtml = fmtBar + '<div class="table-scroll"><table class="table">' +
-          '<thead><tr>' +
-            '<th>Period</th><th>Start</th><th>End</th>' +
-            '<th style="text-align:right;">O.P.</th>' +
-            '<th style="text-align:right;">Bonus</th>' +
-            '<th style="text-align:right;">Deduction</th>' +
-            '<th style="text-align:right;">Net</th>' +
-            '<th>Released At</th>' +
-            '<th>Export</th>' +
-          '</tr></thead>' +
-          '<tbody>' + rows + '</tbody>' +
-          '</table></div>';
-      }
+      panelBody.innerHTML = html;
 
-      modalBody.innerHTML = headerHtml + tableHtml;
+      // Load orders tab by default
+      loadAgentOrders(agentId, null);
+
     } catch (err) {
-      modalBody.innerHTML = '<div style="color:red;padding:16px;">Error loading performance data.</div>';
+      panelBody.innerHTML = '<div style="color:red;padding:16px;">Error loading agent.</div>';
+      console.error('openAgentPanel', err);
     }
   };
 
-  window.openCommissionBreakdownModal = async function (agentId) {
-    var modalBody = $('commission-breakdown-modal-body');
-    if (!modalBody) return;
-    modalBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading periods…</div>';
-    openModal('modal-commission-breakdown');
-    try {
-      var res = await fetch(API_BASE + '/api/commissions/periods', { headers: authHeaders() });
-      if (!res.ok) { modalBody.innerHTML = '<div style="color:red;padding:16px;">Failed to load periods.</div>'; return; }
-      var periods = await res.json();
-      if (!Array.isArray(periods) || periods.length === 0) {
-        modalBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">No commission periods found.</div>';
-        return;
-      }
-      var periodOpts = periods.map(function (p) {
-        return '<option value="' + p.id + '">' + escapeHtml(p.periodCode) + ' (' + p.startDate + ' — ' + p.endDate + ')</option>';
-      }).join('');
-      var html =
-        '<div style="margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-          '<label style="font-size:12px;font-weight:600;color:var(--text-muted);">Period:</label>' +
-          '<select id="breakdown-period-select" class="form-control" style="width:auto;min-width:220px;padding:5px 8px;font-size:12px;" onchange="loadCommissionBreakdown(' + agentId + ', this.value)">' +
-            '<option value="">— Select period —</option>' + periodOpts +
-          '</select>' +
-        '</div>' +
-        '<div id="breakdown-results"><div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px;">Select a period above to view commission detail.</div></div>';
-      modalBody.innerHTML = html;
-    } catch (err) {
-      modalBody.innerHTML = '<div style="color:red;padding:16px;">Error loading periods.</div>';
-      console.error('openCommissionBreakdownModal', err);
+  window.closeAgentPanel = function () {
+    var overlay = $('agent-panel-overlay');
+    var panel = $('agent-slide-panel');
+    if (overlay) overlay.classList.remove('open');
+    if (panel) panel.classList.remove('open');
+    _currentAgentId = null;
+    _currentAgentData = null;
+    _currentAgentPeriods = [];
+  };
+
+  window.switchAgentTab = function (tab) {
+    // Update tab buttons
+    var tabs = document.querySelectorAll('.slide-panel-tab');
+    tabs.forEach(function (t) { t.classList.remove('active'); });
+    if (tab === 'orders') {
+      if (tabs[0]) tabs[0].classList.add('active');
+    } else {
+      if (tabs[1]) tabs[1].classList.add('active');
+    }
+
+    var content = $('agent-tab-content');
+    if (!content || !_currentAgentId) return;
+
+    if (tab === 'orders') {
+      loadAgentOrders(_currentAgentId, null);
+    } else {
+      loadAgentCommission(_currentAgentId, null);
     }
   };
 
-  window.loadCommissionBreakdown = async function (agentId, periodId) {
-    var resultsDiv = $('breakdown-results');
-    if (!resultsDiv || !periodId) return;
-    resultsDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</div>';
+  window.editCurrentAgent = function () {
+    if (_currentAgentId) openEditAgentModal(_currentAgentId);
+  };
+
+  window.toggleCurrentAgentStatus = async function () {
+    if (!_currentAgentId || !_currentAgentData) return;
+    var currentStatus = _currentAgentData.status;
+    var newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    var confirmMsg = newStatus === 'INACTIVE'
+      ? 'Deactivate this agent? They will not appear in the order form agent dropdown.'
+      : 'Reactivate this agent?';
+    if (!confirm(confirmMsg)) return;
     try {
-      var url = API_BASE + '/api/commissions/agents/' + agentId + '/commissions/breakdown?periodId=' + encodeURIComponent(periodId);
+      var res = await fetch(API_BASE + '/api/agents/' + _currentAgentId + '/status', {
+        method: 'PATCH',
+        headers: Object.assign({}, authHeaders(), { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) { showToast('Failed to update status (' + res.status + ')', 'error'); return; }
+      showToast('Agent ' + (newStatus === 'ACTIVE' ? 'activated' : 'deactivated'), 'success');
+      // Refresh panel and agent list
+      openAgentPanel(_currentAgentId);
+      loadAgents();
+    } catch (err) {
+      console.error('toggleCurrentAgentStatus', err);
+      showToast('Error updating status', 'error');
+    }
+  };
+
+  window.loadAgentOrders = async function (agentId, periodId) {
+    var content = $('agent-tab-content');
+    if (!content) return;
+
+    // Build period dropdown grouped by year
+    var periods = _currentAgentPeriods || [];
+    var periodDropdown = '<div style="margin-bottom:12px;">' +
+      '<label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Period</label>' +
+      '<select id="agent-panel-period-select" class="form-control" style="width:auto;min-width:220px;padding:5px 8px;font-size:12px;" onchange="loadAgentOrders(' + agentId + ', this.value || null)">' +
+      '<option value="">All Periods</option>';
+
+    if (periods.length > 0) {
+      // Group by year
+      var grouped = {};
+      periods.forEach(function (p) {
+        var year = p.startDate ? p.startDate.substring(0, 4) : 'Unknown';
+        if (!grouped[year]) grouped[year] = [];
+        grouped[year].push(p);
+      });
+
+      // Sort years descending
+      var years = Object.keys(grouped).sort(function (a, b) { return b - a; });
+      years.forEach(function (year) {
+        periodDropdown += '<optgroup label="' + year + '">';
+        grouped[year].forEach(function (p) {
+          var selected = (periodId && periodId == p.periodId) ? ' selected' : '';
+          periodDropdown += '<option value="' + p.periodId + '"' + selected + '>' + escapeHtml(p.periodCode || '') + ' (' + (p.startDate || '') + ' — ' + (p.endDate || '') + ')</option>';
+        });
+        periodDropdown += '</optgroup>';
+      });
+    }
+    periodDropdown += '</select></div>';
+
+    content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading orders…</div>';
+    try {
+      var url = API_BASE + '/api/agents/' + agentId + '/orders' + (periodId ? '?periodId=' + periodId : '');
       var res = await fetch(url, { headers: authHeaders() });
-      if (!res.ok) { resultsDiv.innerHTML = '<div style="color:red;padding:16px;">Failed to load commission data.</div>'; return; }
+      if (!res.ok) { content.innerHTML = '<div style="color:red;padding:16px;">Failed to load orders.</div>'; return; }
       var d = await res.json();
       var orders = d.orders || [];
+      var summary = d.summary || {};
+
       if (orders.length === 0) {
-        resultsDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">No commissions for this period.</div>';
+        content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">No orders found.</div>';
         return;
       }
-      var orderCards = orders.map(function (o) {
-        var dateStr = o.date || '';
-        var customer = escapeHtml(o.customer || '—');
-        var orderId = escapeHtml(o.orderId || '');
+
+      var html = periodDropdown + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">' + summary.totalOrders + ' orders — ₱' + Number(summary.totalRevenue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' revenue</div>';
+      html += orders.map(function (o) {
         var items = (o.items || []).map(function (it) {
-          var prod = escapeHtml(it.productName || '');
-          var qty = it.quantity || 0;
-          var price = Number(it.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          var opu  = Number(it.opPerUnit || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-          var subt = Number(it.opSubtotal || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           return '<tr>' +
-            '<td>' + prod + '</td>' +
-            '<td style="text-align:center;">' + qty + '</td>' +
-            '<td style="text-align:right;">' + price + '</td>' +
-            '<td style="text-align:right;">' + opu + '</td>' +
-            '<td style="text-align:right;font-weight:600;">' + subt + '</td>' +
-            '</tr>';
+            '<td>' + escapeHtml(it.productName || '') + '</td>' +
+            '<td style="text-align:center;">' + (it.quantity || 0) + '</td>' +
+            '<td style="text-align:right;">₱' + Number(it.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
+            '<td style="text-align:right;">₱' + Number(it.opPerUnit || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
+            '<td style="text-align:right;font-weight:600;">₱' + Number(it.opSubtotal || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
+          '</tr>';
         }).join('');
-        var totalOp = Number(o.totalOp || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        var totalComm = Number(o.totalCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return '<div style="margin-bottom:14px;border:1px solid var(--border);border-radius:6px;overflow:hidden;">' +
-          '<div style="padding:8px 12px;background:var(--card-bg);border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;">' +
-            '<span><i class="ti ti-receipt" style="margin-right:4px;"></i>#' + orderId + '</span>' +
-            '<span>' + customer + '</span>' +
-            '<span style="color:var(--text-muted);font-weight:400;">' + dateStr + '</span>' +
+        return '<div style="margin-bottom:12px;border:1px solid var(--border);border-radius:6px;overflow:hidden;">' +
+          '<div style="padding:8px 12px;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;justify-content:space-between;">' +
+            '<span><i class="ti ti-receipt" style="margin-right:4px;"></i>#' + escapeHtml(o.orderId || '') + '</span>' +
+            '<span style="color:var(--text-muted);font-weight:400;">' + (o.date || '') + '</span>' +
           '</div>' +
-          '<div class="table-scroll"><table class="table" style="margin:0;">' +
-            '<thead><tr>' +
-              '<th>Product</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Price</th>' +
-              '<th style="text-align:right;">OP/Unit</th><th style="text-align:right;">Amount</th>' +
-            '</tr></thead>' +
+          '<div style="overflow-x:auto;"><table class="table" style="margin:0;">' +
+            '<thead><tr><th>Product</th><th style="text-align:center;">Qty</th><th style="text-align:right;">Price</th><th style="text-align:right;">OP/Unit</th><th style="text-align:right;">Total</th></tr></thead>' +
             '<tbody>' + items + '</tbody>' +
           '</table></div>' +
-          '<div style="padding:6px 12px;border-top:1px solid var(--border);font-size:12px;display:flex;justify-content:flex-end;gap:20px;background:var(--card-bg);">' +
-            '<span>Total OP: <strong>₱' + totalOp + '</strong></span>' +
-            '<span>Commission: <strong style="color:#10B981;">₱' + totalComm + '</strong></span>' +
+          '<div style="padding:6px 12px;border-top:1px solid var(--border);font-size:12px;display:flex;justify-content:flex-end;gap:16px;background:var(--bg-secondary);">' +
+            '<span>Total OP: <strong>₱' + Number(o.totalOp || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</strong></span>' +
           '</div>' +
-          '</div>';
-      }).join('');
-      var grandTotal = Number(d.totalCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      var grandHtml =
-        '<div style="padding:10px 0 4px;border-top:2px solid var(--border);margin-top:4px;display:flex;justify-content:flex-end;">' +
-          '<span style="font-size:14px;font-weight:700;">Total Commission: <span style="color:#10B981;">₱' + grandTotal + '</span></span>' +
         '</div>';
-      resultsDiv.innerHTML = orderCards + grandHtml;
+      }).join('');
+
+      content.innerHTML = html;
     } catch (err) {
-      resultsDiv.innerHTML = '<div style="color:red;padding:16px;">Error loading commission data.</div>';
-      console.error('loadCommissionBreakdown', err);
+      content.innerHTML = periodDropdown + '<div style="color:red;padding:16px;">Error loading orders.</div>';
+      console.error('loadAgentOrders', err);
+    }
+  };
+
+  window.loadAgentCommission = async function (agentId, periodId) {
+    var content = $('agent-tab-content');
+    if (!content) return;
+
+    // Build period dropdown grouped by year
+    var periods = _currentAgentPeriods || [];
+    var periodDropdown = '<div style="margin-bottom:12px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">' +
+      '<div>' +
+      '<label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Period</label>' +
+      '<select id="agent-panel-commission-period-select" class="form-control" style="width:auto;min-width:220px;padding:5px 8px;font-size:12px;" onchange="loadAgentCommission(' + agentId + ', this.value || null)">' +
+      '<option value="">All Periods</option>';
+
+    if (periods.length > 0) {
+      var grouped = {};
+      periods.forEach(function (p) {
+        var year = p.startDate ? p.startDate.substring(0, 4) : 'Unknown';
+        if (!grouped[year]) grouped[year] = [];
+        grouped[year].push(p);
+      });
+      var years = Object.keys(grouped).sort(function (a, b) { return b - a; });
+      years.forEach(function (year) {
+        periodDropdown += '<optgroup label="' + year + '">';
+        grouped[year].forEach(function (p) {
+          var selected = (periodId && periodId == p.periodId) ? ' selected' : '';
+          periodDropdown += '<option value="' + p.periodId + '"' + selected + '>' + escapeHtml(p.periodCode || '') + ' (' + (p.startDate || '') + ' — ' + (p.endDate || '') + ')</option>';
+        });
+        periodDropdown += '</optgroup>';
+      });
+    }
+    periodDropdown += '</select></div>';
+
+    // Export format selector
+    periodDropdown += '<div>' +
+      '<label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Export Format</label>' +
+      '<select id="agent-panel-export-format" class="form-control" style="width:auto;min-width:100px;padding:5px 8px;font-size:12px;" onchange="_currentAgentExportFormat = this.value;">' +
+      '<option value="pdf">PDF</option>' +
+      '<option value="csv">CSV</option>' +
+      '<option value="excel">Excel</option>' +
+      '</select></div>' +
+      '</div>';
+
+    content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading commission data…</div>';
+    try {
+      var res = await fetch(API_BASE + '/api/agents/' + agentId + '/performance', { headers: authHeaders() });
+      if (!res.ok) { content.innerHTML = periodDropdown + '<div style="color:red;padding:16px;">Failed to load commission data.</div>'; return; }
+      var d = await res.json();
+      var summary = d.commissionSummary || [];
+
+      if (summary.length === 0) {
+        content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">No commission periods found.</div>';
+        return;
+      }
+
+      var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+      var statusBadgeMini = function (s) {
+        var m = { OPEN: 'background:#DBEAFE;color:#1E40AF;', CLOSED: 'background:#FEF3C7;color:#92400E;', RELEASED: 'background:#D1FAE5;color:#065F46;' };
+        return '<span style="padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;' + (m[s] || 'background:#F3F4F6;color:#6B7280;') + '">' + (s || '—') + '</span>';
+      };
+      var filtered = periodId ? summary.filter(function (r) { return r.periodId == periodId; }) : summary;
+      var rows = filtered.map(function (r) {
+        var relAt = r.releasedAt ? r.releasedAt.replace('T', ' ').substring(0, 19) : '';
+        var releaseBtn = r.status === 'CLOSED'
+          ? '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;margin-right:4px;" onclick="releaseFromAgentPanel(' + r.periodId + ',' + agentId + ')"><i class="ti ti-affiliate"></i> Release</button>'
+          : '';
+        return '<tr>' +
+          '<td><code style="font-size:11px;">' + escapeHtml(r.periodCode || '') + '</code></td>' +
+          '<td>' + (r.startDate || '') + '</td>' +
+          '<td>' + (r.endDate || '') + '</td>' +
+          '<td style="text-align:right;">' + fmt(r.totalOp) + '</td>' +
+          '<td style="text-align:right;color:#10B981;">' + fmt(r.netCommission) + '</td>' +
+          '<td>' + statusBadgeMini(r.status) + '</td>' +
+          '<td style="font-size:11px;color:var(--text-muted);">' + relAt + '</td>' +
+          '<td style="text-align:center;">' + releaseBtn + '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="downloadCommissionStatement(' + agentId + ',' + r.periodId + ')"><i class="ti ti-download"></i></button></td>' +
+        '</tr>';
+      }).join('');
+
+      var html = '<div class="table-scroll"><table class="table">' +
+        '<thead><tr><th>Period</th><th>Start</th><th>End</th><th style="text-align:right;">O.P.</th><th style="text-align:right;">Net Commission</th><th>Status</th><th>Released At</th><th style="text-align:center;">Actions</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table></div>';
+
+      content.innerHTML = periodDropdown + html;
+    } catch (err) {
+      content.innerHTML = periodDropdown + '<div style="color:red;padding:16px;">Error loading commission data.</div>';
+      console.error('loadAgentCommission', err);
     }
   };
 
@@ -10617,6 +10780,9 @@
       var data = await res.json();
       if (!res.ok) { showToast(data.message || 'Failed to create period.', 'error'); return; }
       showToast('Period ' + (data.periodCode||'') + ' created.', 'success');
+      if (data.backfill && data.backfill.ordersProcessed > 0) {
+        showToast('Backfilled ' + data.backfill.ordersProcessed + ' order(s) from ' + data.backfill.agentsProcessed + ' agent(s) — ' + data.backfill.entriesCreated + ' commission entries created.', 'info');
+      }
       var container = $('commission-period-modal-body');
       if (container) renderPeriodList(container, false);
     } catch (err) {
@@ -10661,9 +10827,28 @@
     }
   };
 
-  window.downloadStatement = async function (agentId, periodId) {
-    var fmt = (document.getElementById('stmt-export-format') || {}).value || 'pdf';
-    var url = API_BASE + '/commissions/periods/' + periodId + '/agents/' + agentId +
+  window.releaseFromAgentPanel = async function (periodId, agentId) {
+    var key = prompt('Enter your admin security key to release this period:');
+    if (!key) return;
+    try {
+      var res = await fetch(API_BASE + '/api/commissions/periods/' + periodId + '/release', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ adminSecurityKey: key })
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast(data.message || 'Failed to release period.', 'error'); return; }
+      showToast('Period released.', 'success');
+      await loadAgentCommission(agentId, null);
+    } catch (err) {
+      showToast('Error releasing period.', 'error');
+      console.error('releaseFromAgentPanel', err);
+    }
+  };
+
+  window.downloadCommissionStatement = async function (agentId, periodId) {
+    var fmt = _currentAgentExportFormat || 'pdf';
+    var url = API_BASE + '/api/commissions/periods/' + periodId + '/agents/' + agentId +
               '/statement/export?format=' + encodeURIComponent(fmt);
     try {
       var res = await fetch(url, { headers: authHeaders() });
@@ -10688,7 +10873,7 @@
         URL.revokeObjectURL(burl);
       }
     } catch (err) {
-      console.error('downloadStatement', err);
+      console.error('downloadCommissionStatement', err);
       showToast('Export failed', 'error');
     }
   };

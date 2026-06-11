@@ -24,6 +24,10 @@ public interface AgentRepository extends JpaRepository<Agent, Long> {
     @Query("SELECT COUNT(o) FROM Order o WHERE o.agentId = :agentId")
     long countOrdersByAgentId(@Param("agentId") Long agentId);
 
+    // Bulk order count for a list of agents — returns [agentId, count] rows.
+    @Query("SELECT o.agentId, COUNT(o) FROM Order o WHERE o.agentId IN :agentIds GROUP BY o.agentId")
+    List<Object[]> countOrdersByAgentIds(@Param("agentIds") List<Long> agentIds);
+
     // Max 4-digit sequence number already used for a given year prefix (e.g. 'AGENT-2026-%').
     // SUBSTRING position 12 extracts NNNN from "AGENT-YYYY-NNNN" (positions 1-11 = "AGENT-YYYY-").
     // Native query: Hibernate JPQL CAST of a string SUBSTRING is fragile across versions.

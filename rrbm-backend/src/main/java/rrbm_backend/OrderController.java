@@ -1,5 +1,7 @@
 package rrbm_backend;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +27,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/orders")
 @CrossOrigin(origins = "*")
 public class OrderController {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderController.class);
 
     private final OrderService orderService;
     private final JwtUtil jwtUtil;
@@ -544,7 +548,10 @@ public class OrderController {
                 transactionService.recordCollectionSale(order, userId);
 
                 // Create commission entries — safe (idempotent via existsByOrderId guard)
-                try { commissionService.createEntriesForOrder(order, userId); } catch (Exception ignored) {}
+                try { commissionService.createEntriesForOrder(order, userId); }
+                catch (Exception e) {
+                    log.warn("Failed to create commission entries for order {}: {}", order.getId(), e.getMessage());
+                }
 
                 dailyReportRepository.findByReportDate(originalDate).ifPresent(report -> {
                     BigDecimal amount = order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO;

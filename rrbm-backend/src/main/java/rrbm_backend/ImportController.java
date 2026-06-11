@@ -1,5 +1,7 @@
 package rrbm_backend;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +39,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/import")
 @CrossOrigin(origins = "*")
 public class ImportController {
+
+    private static final Logger log = LoggerFactory.getLogger(ImportController.class);
 
     // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -1071,7 +1075,10 @@ public class ImportController {
                 // If blank/null → leave as ACTIVE (default), commission created below
 
                 try { commissionService.createEntriesForOrder(savedOrder, userId); }
-                catch (Exception ignored) {}
+                catch (Exception e) {
+                    log.warn("Failed to create commission entries for imported order {}: {}",
+                             savedOrder.getId(), e.getMessage());
+                }
 
                 committed++;
 

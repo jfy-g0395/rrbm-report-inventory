@@ -1,5 +1,7 @@
 package rrbm_backend;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,8 @@ import rrbm_backend.dto.VoidOrderRequest;
 
 @Service
 public class OrderService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     private static final Set<String> VALID_SOURCES = Set.of(
         "WALK_IN", "AGENT", "ECOMMERCE", "FACEBOOK_PAGE", "RESELLER", "DISTRIBUTOR"
@@ -841,7 +845,10 @@ public class OrderService {
 
                 if ("PENDING_COLLECTION".equals(status)) {
                     transactionService.recordCollectionSale(order, userId);
-                    try { commissionService.createEntriesForOrder(order, userId); } catch (Exception ignored) {}
+                    try { commissionService.createEntriesForOrder(order, userId); }
+                    catch (Exception e) {
+                        log.warn("Failed to create commission entries for order {}: {}", order.getId(), e.getMessage());
+                    }
 
                     Optional<DailyReport> reportOpt = dailyReportRepository.findByReportDate(originalDate);
                     if (reportOpt.isPresent()) {

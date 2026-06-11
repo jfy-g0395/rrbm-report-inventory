@@ -43,6 +43,26 @@ public interface CommissionEntryRepository extends JpaRepository<CommissionEntry
            "WHERE e.agentId = :agentId AND e.status = 'PENDING'")
     BigDecimal sumPendingOpAmountByAgentId(@Param("agentId") Long agentId);
 
+    /** Sum of ALL opAmount for a specific agent across all periods and statuses. */
+    @Query("SELECT COALESCE(SUM(e.opAmount), 0) FROM CommissionEntry e WHERE e.agentId = :agentId")
+    BigDecimal sumAllOpAmountByAgentId(@Param("agentId") Long agentId);
+
+    /** Bulk lifetime commission for a list of agents — returns [agentId, sum] rows. */
+    @Query("SELECT e.agentId, SUM(e.opAmount) FROM CommissionEntry e " +
+           "WHERE e.agentId IN :agentIds GROUP BY e.agentId")
+    List<Object[]> sumAllOpAmountByAgentIds(@Param("agentIds") List<Long> agentIds);
+
+    /** Bulk pending commission for a list of agents — returns [agentId, sum] rows. */
+    @Query("SELECT e.agentId, SUM(e.opAmount) FROM CommissionEntry e " +
+           "WHERE e.agentId IN :agentIds AND e.status = 'PENDING' GROUP BY e.agentId")
+    List<Object[]> sumPendingOpAmountByAgentIds(@Param("agentIds") List<Long> agentIds);
+
     /** True if at least one commission entry exists for this order (idempotency guard). */
     boolean existsByOrderId(String orderId);
+
+    /** Per-agent sum of opAmount and distinct order count for a single period — used by performance endpoint. */
+    @Query("SELECT e.agentId, SUM(e.opAmount), COUNT(DISTINCT e.orderId) FROM CommissionEntry e " +
+           "WHERE e.periodId = :periodId AND e.agentId = :agentId GROUP BY e.agentId")
+    List<Object[]> sumByPeriodIdAndAgentId(@Param("periodId") Long periodId,
+                                           @Param("agentId") Long agentId);
 }

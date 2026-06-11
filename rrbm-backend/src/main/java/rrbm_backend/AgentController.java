@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -25,22 +26,31 @@ import java.util.stream.Collectors;
 @CrossOrigin(origins = "*")
 public class AgentController {
 
-    private final AgentRepository           agentRepository;
-    private final AgentCommissionRepository agentCommissionRepository;
-    private final CommissionEntryRepository commissionEntryRepository;
-    private final UserRepository            userRepository;
-    private final ActivityLogService        activityLogService;
-    private final JwtUtil                   jwtUtil;
+    private final AgentRepository              agentRepository;
+    private final AgentCommissionRepository    agentCommissionRepository;
+    private final CommissionEntryRepository    commissionEntryRepository;
+    private final CommissionPeriodRepository   commissionPeriodRepository;
+    private final CommissionAdjustmentRepository adjustmentRepository;
+    private final OrderRepository              orderRepository;
+    private final UserRepository               userRepository;
+    private final ActivityLogService           activityLogService;
+    private final JwtUtil                      jwtUtil;
 
     public AgentController(AgentRepository agentRepository,
                            AgentCommissionRepository agentCommissionRepository,
                            CommissionEntryRepository commissionEntryRepository,
+                           CommissionPeriodRepository commissionPeriodRepository,
+                           CommissionAdjustmentRepository adjustmentRepository,
+                           OrderRepository orderRepository,
                            UserRepository userRepository,
                            ActivityLogService activityLogService,
                            JwtUtil jwtUtil) {
         this.agentRepository           = agentRepository;
         this.agentCommissionRepository = agentCommissionRepository;
         this.commissionEntryRepository = commissionEntryRepository;
+        this.commissionPeriodRepository = commissionPeriodRepository;
+        this.adjustmentRepository      = adjustmentRepository;
+        this.orderRepository           = orderRepository;
         this.userRepository            = userRepository;
         this.activityLogService        = activityLogService;
         this.jwtUtil                   = jwtUtil;
@@ -139,9 +149,21 @@ public class AgentController {
                     .collect(Collectors.toList());
         }
 
-        // Build result maps — triggers lifetimeNetCommission N+1 per agent.
+        // Bulk-fetch all three aggregates in 3 queries instead of N×3.
+        List<Long> agentIds = agents.stream().map(Agent::getId).collect(Collectors.toList());
+
+        Map<Long, Long> orderCounts = new HashMap<>();
+        for (Object[] row : agentRepository.countOrdersByAgentIds(agentIds)) {
+            orderCounts.put((Long) row[0], (Long) row[1]);
+        }
+        Map<Long, BigDecimal> lifetimeComms  = toDecimalMap(commissionEntryRepository.sumAllOpAmountByAgentIds(agentIds));
+        Map<Long, BigDecimal> pendingAmounts = toDecimalMap(commissionEntryRepository.sumPendingOpAmountByAgentIds(agentIds));
+
         List<Map<String, Object>> result = agents.stream()
-                .map(a -> toMap(a, agentRepository.countOrdersByAgentId(a.getId())))
+                .map(a -> toMap(a,
+                        orderCounts.getOrDefault(a.getId(), 0L),
+                        lifetimeComms.getOrDefault(a.getId(), BigDecimal.ZERO),
+                        pendingAmounts.getOrDefault(a.getId(), BigDecimal.ZERO)))
                 .collect(Collectors.toList());
 
         // Commission range filter applied after lifetimeNetCommission is computed.
@@ -252,48 +274,83 @@ public class AgentController {
         Agent agent = agentRepository.findById(id).orElse(null);
         if (agent == null) return ResponseEntity.status(404).body(Map.of("error", "Agent not found"));
 
-        List<AgentCommission> allCommissions = agentCommissionRepository.findByAgentId(id);
+        // Query ALL periods (not just released) — fixes dropdown showing only RELEASED periods.
+        List<CommissionPeriod> allPeriods = commissionPeriodRepository.findAll();
 
-        // Lifetime net commission is always all-time regardless of filter.
-        BigDecimal lifetimeNetCommission = allCommissions.stream()
-                .map(AgentCommission::getNetCommission)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal lifetimeNetCommission = BigDecimal.ZERO;
+        List<Map<String, Object>> commissionSummary = new ArrayList<>();
+
+        for (CommissionPeriod p : allPeriods) {
+            // Sum entries for this agent in this period
+            List<Object[]> entrySums = commissionEntryRepository
+                    .sumByPeriodIdAndAgentId(p.getId(), id);
+
+            if (entrySums.isEmpty()) continue; // Agent has no entries in this period
+
+            Object[] entrySum = entrySums.get(0);
+            BigDecimal totalOp = entrySum[1] != null ? (BigDecimal) entrySum[1] : BigDecimal.ZERO;
+            long orderCount = entrySum[2] != null ? ((Number) entrySum[2]).longValue() : 0L;
+
+            // Sum adjustments (bonus/deduction) for this agent in this period
+            List<CommissionAdjustment> adjs = adjustmentRepository.findByPeriodIdAndAgentId(p.getId(), id);
+            BigDecimal totalBonus = adjs.stream()
+                    .filter(a -> "BONUS".equals(a.getAdjustmentType()))
+                    .map(CommissionAdjustment::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalDeduction = adjs.stream()
+                    .filter(a -> "DEDUCTION".equals(a.getAdjustmentType()))
+                    .map(CommissionAdjustment::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            BigDecimal netCommission = totalOp.add(totalBonus).subtract(totalDeduction);
+            lifetimeNetCommission = lifetimeNetCommission.add(netCommission);
+
+            // Check payment status (only exists for RELEASED periods via agent_commissions)
+            AgentCommission ac = agentCommissionRepository
+                    .findByAgentIdAndPeriodId(id, p.getId()).orElse(null);
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("periodId",         p.getId());
+            row.put("periodCode",       p.getPeriodCode());
+            row.put("startDate",        p.getStartDate().toString());
+            row.put("endDate",          p.getEndDate().toString());
+            row.put("totalOp",          totalOp);
+            row.put("totalBonus",       totalBonus);
+            row.put("totalDeduction",   totalDeduction);
+            row.put("netCommission",    netCommission);
+            row.put("orderCount",       orderCount);
+            row.put("releasedAt",       p.getReleasedAt() != null ? p.getReleasedAt().toString() : null);
+            row.put("status",           ac != null ? ac.getStatus() : p.getStatus());
+            row.put("paymentMethod",    ac != null ? ac.getPaymentMethod() : null);
+            row.put("paymentReference", ac != null ? ac.getPaymentReference() : null);
+            row.put("paymentDate",      ac != null && ac.getPaymentDate() != null ? ac.getPaymentDate().toString() : null);
+            row.put("paidAt",           ac != null && ac.getPaidAt() != null ? ac.getPaidAt().toString() : null);
+
+            commissionSummary.add(row);
+        }
 
         // Apply optional period overlap filter for commissionSummary.
-        List<AgentCommission> filtered;
         if (year != null && month != null) {
             LocalDate firstDay = LocalDate.of(year, month, 1);
             LocalDate lastDay  = firstDay.withDayOfMonth(firstDay.lengthOfMonth());
-            filtered = allCommissions.stream()
-                    .filter(ac -> !ac.getEndDate().isBefore(firstDay) && !ac.getStartDate().isAfter(lastDay))
+            commissionSummary = commissionSummary.stream()
+                    .filter(row -> {
+                        LocalDate start = LocalDate.parse((String) row.get("startDate"));
+                        LocalDate end   = LocalDate.parse((String) row.get("endDate"));
+                        return !end.isBefore(firstDay) && !start.isAfter(lastDay);
+                    })
                     .collect(Collectors.toList());
-        } else {
-            filtered = new ArrayList<>(allCommissions);
         }
 
-        // Newest first (releasedAt DESC).
-        filtered.sort((a, b) -> b.getReleasedAt().compareTo(a.getReleasedAt()));
-
-        List<Map<String, Object>> commissionSummary = filtered.stream()
-                .map(ac -> {
-                    Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("periodId",       ac.getPeriodId());
-                    row.put("periodCode",     ac.getPeriodCode());
-                    row.put("startDate",      ac.getStartDate().toString());
-                    row.put("endDate",        ac.getEndDate().toString());
-                    row.put("totalOp",        ac.getTotalOp());
-                    row.put("totalBonus",     ac.getTotalBonus());
-                    row.put("totalDeduction", ac.getTotalDeduction());
-                    row.put("netCommission",  ac.getNetCommission());
-                    row.put("releasedAt",     ac.getReleasedAt().toString());
-                    row.put("status",         ac.getStatus());
-                    row.put("paymentMethod",  ac.getPaymentMethod());
-                    row.put("paymentReference", ac.getPaymentReference());
-                    row.put("paymentDate",    ac.getPaymentDate() != null ? ac.getPaymentDate().toString() : null);
-                    row.put("paidAt",         ac.getPaidAt() != null ? ac.getPaidAt().toString() : null);
-                    return row;
-                })
-                .collect(Collectors.toList());
+        // Sort newest first (null releasedAt sorts last)
+        commissionSummary.sort((a, b) -> {
+            String ra = (String) a.get("releasedAt");
+            String rb = (String) b.get("releasedAt");
+            if (ra == null && rb == null) return 0;
+            if (ra == null) return 1;   // nulls sort last
+            if (rb == null) return -1;
+            return rb.compareTo(ra);
+        });
 
         long totalOrders = agentRepository.countOrdersByAgentId(id);
 
@@ -304,6 +361,83 @@ public class AgentController {
         result.put("totalOrders",           totalOrders);
         result.put("commissionSummary",     commissionSummary);
         result.put("lifetimeNetCommission", lifetimeNetCommission);
+
+        return ResponseEntity.ok(result);
+    }
+
+    // ── GET /api/agents/{id}/orders?periodId= ──────────────────────────────
+
+    @GetMapping("/{id}/orders")
+    public ResponseEntity<?> getAgentOrders(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @PathVariable Long id,
+            @RequestParam(value = "periodId", required = false) Long periodId) {
+
+        Long adminId = userIdFromHeader(authHeader);
+        if (adminId == null) return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+
+        Agent agent = agentRepository.findById(id).orElse(null);
+        if (agent == null) return ResponseEntity.status(404).body(Map.of("error", "Agent not found"));
+
+        List<Order> allOrders = orderRepository.findByAgentIdWithItems(id);
+
+        // If periodId is provided, filter orders whose orderDate falls within that period.
+        if (periodId != null) {
+            CommissionPeriod period = commissionPeriodRepository.findById(periodId).orElse(null);
+            if (period == null)
+                return ResponseEntity.status(404).body(Map.of("error", "Commission period not found"));
+
+            LocalDate pStart = period.getStartDate();
+            LocalDate pEnd   = period.getEndDate();
+            allOrders = allOrders.stream()
+                    .filter(o -> o.getCreatedAt() != null
+                            && !o.getCreatedAt().toLocalDate().isBefore(pStart)
+                            && !o.getCreatedAt().toLocalDate().isAfter(pEnd))
+                    .collect(Collectors.toList());
+        }
+
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+        BigDecimal totalOp      = BigDecimal.ZERO;
+
+        List<Map<String, Object>> ordersList = new ArrayList<>();
+        for (Order o : allOrders) {
+            totalRevenue = totalRevenue.add(o.getTotal() != null ? o.getTotal() : BigDecimal.ZERO);
+
+            List<Map<String, Object>> itemsList = new ArrayList<>();
+            BigDecimal orderOp = BigDecimal.ZERO;
+            for (var item : o.getItems()) {
+                BigDecimal opSubtotal = item.getOpAmount() != null ? item.getOpAmount() : BigDecimal.ZERO;
+                orderOp = orderOp.add(opSubtotal);
+                itemsList.add(Map.of(
+                        "productName",  item.getProductName() != null ? item.getProductName() : "",
+                        "quantity",     item.getQuantity() != null ? item.getQuantity() : 0,
+                        "unitPrice",    item.getUnitPrice()  != null ? item.getUnitPrice()  : BigDecimal.ZERO,
+                        "basePrice",    item.getBasePrice()  != null ? item.getBasePrice()  : BigDecimal.ZERO,
+                        "opPerUnit",    item.getOpPerUnit()  != null ? item.getOpPerUnit()  : BigDecimal.ZERO,
+                        "opSubtotal",   opSubtotal
+                ));
+            }
+            totalOp = totalOp.add(orderOp);
+
+            ordersList.add(Map.of(
+                    "orderId",   o.getId(),
+                    "date",      o.getCreatedAt() != null ? o.getCreatedAt().toLocalDate().toString() : "",
+                    "customer",  o.getCustomerName() != null ? o.getCustomerName() : "",
+                    "source",    o.getSource()    != null ? o.getSource()    : "",
+                    "status",    o.getStatus()    != null ? o.getStatus()    : "",
+                    "items",     itemsList,
+                    "total",     o.getTotal()     != null ? o.getTotal()     : BigDecimal.ZERO,
+                    "totalOp",   orderOp
+            ));
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("orders", ordersList);
+        result.put("summary", Map.of(
+                "totalOrders",  allOrders.size(),
+                "totalRevenue", totalRevenue,
+                "totalOp",      totalOp
+        ));
 
         return ResponseEntity.ok(result);
     }
@@ -321,9 +455,18 @@ public class AgentController {
     }
 
     private BigDecimal lifetimeNetCommission(Long agentId) {
-        return agentCommissionRepository.findByAgentId(agentId).stream()
-                .map(AgentCommission::getNetCommission)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return commissionEntryRepository.sumAllOpAmountByAgentId(agentId);
+    }
+
+    private Map<Long, BigDecimal> toDecimalMap(List<Object[]> rows) {
+        Map<Long, BigDecimal> map = new HashMap<>();
+        for (Object[] row : rows) {
+            BigDecimal val = row[1] instanceof BigDecimal
+                    ? (BigDecimal) row[1]
+                    : new BigDecimal(row[1].toString());
+            map.put((Long) row[0], val);
+        }
+        return map;
     }
 
     private Map<String, Object> toMap(Agent agent, long totalOrders) {
@@ -331,6 +474,12 @@ public class AgentController {
     }
 
     private Map<String, Object> toMap(Agent agent, long totalOrders, BigDecimal lifetimeNet) {
+        return toMap(agent, totalOrders, lifetimeNet,
+                commissionEntryRepository.sumPendingOpAmountByAgentId(agent.getId()));
+    }
+
+    private Map<String, Object> toMap(Agent agent, long totalOrders,
+                                      BigDecimal lifetimeNet, BigDecimal pending) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id",                     agent.getId());
         m.put("agentCode",              agent.getAgentCode());
@@ -344,7 +493,7 @@ public class AgentController {
         m.put("notes",                  agent.getNotes());
         m.put("totalOrders",            totalOrders);
         m.put("lifetimeNetCommission",  lifetimeNet);
-        m.put("pendingCommission",      commissionEntryRepository.sumPendingOpAmountByAgentId(agent.getId()));
+        m.put("pendingCommission",      pending);
         return m;
     }
 }

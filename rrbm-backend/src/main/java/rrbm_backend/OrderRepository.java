@@ -73,6 +73,10 @@ public interface OrderRepository extends JpaRepository<Order, String> {
     @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.importRef = :importRef")
     Optional<Order> findByImportRefWithItems(@Param("importRef") String importRef);
 
+    // Orders for a specific agent, newest first, with items eagerly fetched.
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.agentId = :agentId ORDER BY o.createdAt DESC")
+    List<Order> findByAgentIdWithItems(@Param("agentId") Long agentId);
+
     // All orders needing payment collection: only PENDING_COLLECTION status.
     // PENDING (on-hold) orders are excluded — they are visible in the Order List
     // and will resume to ACTIVE via the normal hold-resume flow. Mixing them into
@@ -81,4 +85,25 @@ public interface OrderRepository extends JpaRepository<Order, String> {
            "WHERE o.status = 'PENDING_COLLECTION' " +
            "ORDER BY o.createdAt ASC")
     List<Order> findPendingCollections();
+
+    // Find orders for an agent in a date range that don't have commission entries yet.
+    // Used by backfill when a new period is opened.
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items " +
+           "WHERE o.agentId = :agentId " +
+           "AND CAST(o.createdAt AS date) BETWEEN :start AND :end " +
+           "AND o.id NOT IN (SELECT e.orderId FROM CommissionEntry e WHERE e.agentId = :agentId) " +
+           "ORDER BY o.createdAt ASC")
+    List<Order> findOrdersWithoutCommissionEntries(
+        @Param("agentId") Long agentId,
+        @Param("start") LocalDate start,
+        @Param("end") LocalDate end);
+
+    // Find distinct agent IDs that have orders in a date range.
+    // Used by backfill to know which agents to process.
+    @Query("SELECT DISTINCT o.agentId FROM Order o " +
+           "WHERE o.agentId IS NOT NULL " +
+           "AND CAST(o.createdAt AS date) BETWEEN :start AND :end")
+    List<Long> findAgentIdsWithOrdersInRange(
+        @Param("start") LocalDate start,
+        @Param("end") LocalDate end);
 }

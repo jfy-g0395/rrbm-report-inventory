@@ -35,6 +35,7 @@ public class CommissionController {
     private final OrderRepository                orderRepository;
     private final UserRepository                 userRepository;
     private final ActivityLogService             activityLogService;
+    private final CommissionService              commissionService;
     private final JwtUtil                        jwtUtil;
     private final BCryptPasswordEncoder          passwordEncoder = new BCryptPasswordEncoder();
 
@@ -46,6 +47,7 @@ public class CommissionController {
                                 OrderRepository orderRepository,
                                 UserRepository userRepository,
                                 ActivityLogService activityLogService,
+                                CommissionService commissionService,
                                 JwtUtil jwtUtil) {
         this.periodRepository          = periodRepository;
         this.entryRepository           = entryRepository;
@@ -55,6 +57,7 @@ public class CommissionController {
         this.orderRepository           = orderRepository;
         this.userRepository            = userRepository;
         this.activityLogService        = activityLogService;
+        this.commissionService         = commissionService;
         this.jwtUtil                   = jwtUtil;
     }
 
@@ -118,7 +121,12 @@ public class CommissionController {
         period.setCreatedBy(userId);
         CommissionPeriod saved = periodRepository.save(period);
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(periodToMap(saved, true));
+        // Backfill commission entries for existing orders in this period's date range
+        Map<String, Object> backfillStats = commissionService.backfillEntriesForPeriod(saved);
+
+        Map<String, Object> response = periodToMap(saved, true);
+        response.put("backfill", backfillStats);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     // ── GET /api/commissions/periods — list all periods with totals ───────────

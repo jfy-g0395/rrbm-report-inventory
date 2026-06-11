@@ -1,8 +1,8 @@
 # Plan: Agent Page Bug Fixes + Performance Optimization
 
-**Session:** U20 (planned)
+**Session:** U20 (completed)
 **Date:** Jun 10, 2026
-**Status:** PLANNED
+**Status:** COMPLETE
 
 ## Goal
 Fix two bugs on the Agent page and plan a performance optimization for the agent list endpoint.
@@ -71,6 +71,8 @@ var url = API_BASE + '/api/commissions/periods/' + periodId + '/agents/' + agent
 - `node --check app.js` — no syntax errors
 - Browser test: open Agent page → click History → click download button → statement opens/downloads
 
+### Status: ✅ FIXED (U20)
+
 ---
 
 ## Issue 2: No Agent Status Toggle UI
@@ -96,20 +98,16 @@ If an agent leaves or is created by mistake, there is no way to deactivate them 
 - Validates status is ACTIVE or INACTIVE
 - Returns updated agent as JSON
 
-### Fix — Two options
+### Fix — Option A: Status toggle in the agent table (Implemented)
 
-#### Option A: Status toggle in the agent table (Recommended)
-
-Add a toggle button next to the status badge in each agent row. Clicking it calls `PATCH /api/agents/{id}/status` to flip between ACTIVE ↔ INACTIVE.
+Added a toggle button next to the status badge in each agent row. Clicking it calls `PATCH /api/agents/{id}/status` to flip between ACTIVE ↔ INACTIVE.
 
 **File:** `js/app.js` — `loadAgents()` (~line 10318)
 
-After the status badge `<span>`, add a small toggle button:
+After the status badge `<span>`, added a small toggle button:
 
 ```javascript
-// Inside the status <td>, after the badge span:
-'<button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 6px;margin-left:4px;" ' +
-  'onclick="toggleAgentStatus(' + a.id + ', \'' + a.status + '\')" title="Toggle status">' +
+'<button class="btn btn-sm btn-outline rc-agent-toggle" onclick="toggleAgentStatus(' + a.id + ', \'' + a.status + '\')" title="Toggle status">' +
   '<i class="ti ti-toggle-' + (a.status === 'ACTIVE' ? 'right' : 'left') + '"></i>' +
 '</button>'
 ```
@@ -131,7 +129,7 @@ window.toggleAgentStatus = async function (agentId, currentStatus) {
     });
     if (!res.ok) { showToast('Failed to update status (' + res.status + ')', 'error'); return; }
     showToast('Agent ' + (newStatus === 'ACTIVE' ? 'activated' : 'deactivated'), 'success');
-    loadAgents(); // refresh table
+    loadAgents();
   } catch (err) {
     console.error('toggleAgentStatus', err);
     showToast('Error updating status', 'error');
@@ -139,23 +137,25 @@ window.toggleAgentStatus = async function (agentId, currentStatus) {
 };
 ```
 
-**CSS:** Add a small style for the toggle button:
+**CSS:** Added `.rc-agent-toggle` style in `styles.css`:
 
 ```css
-.rc-agent-toggle { font-size: 10px; padding: 2px 6px; margin-left: 4px; }
+.rc-agent-toggle {
+  font-size: 10px;
+  padding: 2px 6px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
 ```
 
-**Scope:** ~15 lines JS + ~1 line CSS. No backend changes.
-
-#### Option B: Status field in Edit Agent modal
-
-Add a status dropdown (`ACTIVE` / `INACTIVE`) to the edit modal. This is a bigger change (modify modal HTML, `openEditAgentModal()`, `submitEditAgent()`) and is less intuitive than a one-click toggle.
-
-**Recommendation:** Option A — simpler, faster, matches the payables status toggle pattern.
+**Scope:** ~20 lines JS + 6 lines CSS. No backend changes.
 
 ### Verification
 - `node --check app.js` — no syntax errors
+- `mvn test` — 142/142 green, BUILD SUCCESS
 - Browser test: Agent page → click toggle → confirm dialog → status badge updates → refresh persists
+
+### Status: ✅ FIXED (U20)
 
 ---
 
@@ -224,18 +224,53 @@ Low — defer until agent count approaches 50+. Current N+1 is acceptable for ty
 
 ## Implementation Order
 
-1. **Issue 1** (statement export) — 1 line fix, do first
-2. **Issue 2** (status toggle) — ~15 lines, do second
+1. **Issue 1** (statement export) — 1 line fix ✅
+2. **Issue 2** (status toggle) — ~20 lines ✅
 3. **Issue 3** (N+1) — defer, document only
 
-## Files to modify
+## Files Modified
 
 | File | Changes |
 |------|---------|
-| `js/app.js` | Fix `downloadStatement()` URL prefix (line 10666); add `toggleAgentStatus()` function; modify `loadAgents()` to render toggle button |
-| `css/styles.css` | Add `.rc-agent-toggle` style (optional, can inline) |
+| `js/app.js` | Fixed `downloadStatement()` URL prefix (line 10666); added `toggleAgentStatus()` function; modified `loadAgents()` to render toggle button |
+| `css/styles.css` | Added `.rc-agent-toggle` style |
 
 ## Verification
 
-- `node --check app.js` — no syntax errors
-- `mvn test` — no regression (no backend changes)
+- `node --check app.js` — no syntax errors ✅
+- `mvn test` — 142/142 green, BUILD SUCCESS ✅
+
+---
+
+## Issue 4: Pending Commission Shows ₱0.00 on Agent Cards
+
+### What's happening
+Agent list cards display ₱0.00 for Pending Commission despite agents having orders in an OPEN period. The Commission tab inside the agent panel shows correct amounts.
+
+### Root cause
+Stale deployment — the running Spring Boot server was using outdated compiled classes. Spring DevTools did not trigger a restart when `target/classes` was updated. The code and database were correct throughout.
+
+### Investigation
+1. **DB verified** — 6 PENDING entries: Agent 833 (₱830.00), Agent 939 (₱217.50)
+2. **Query verified** — `sumPendingOpAmountByAgentId()` filters `status = 'PENDING'` correctly
+3. **Controller verified** — `toMap()` returns `pendingCommission` field correctly
+4. **Frontend verified** — `app.js:10312` reads `a.pendingCommission || 0` correctly
+
+### Two different queries (by design)
+- **Card** → `sumPendingOpAmountByAgentId()` — filters `status = 'PENDING'`
+- **Commission tab** → `sumByPeriodIdAndAgentId()` — no status filter
+
+### Resolution
+User restarted the backend server. Pending Commission now displays correctly.
+
+### Status: ✅ RESOLVED (U32)
+
+---
+
+## Remaining Issues
+
+### Lifetime Commission discrepancy
+Panel header "Lifetime Commission" sums `AgentCommission` table (only RELEASED periods). Commission tab sums ALL periods from `commission_entries`. User confirmed this is confusing. Needs UX decision on which value to show.
+
+### Release button location
+Release button is only in the Commission Period Management Modal (opened via "Periods" button on Agent Registry page header), not accessible from the agent panel itself.
