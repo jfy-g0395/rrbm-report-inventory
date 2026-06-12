@@ -5763,11 +5763,10 @@
       $('cancel-master-key-input').value = '';
       $('cancel-disposition-rows').innerHTML = '';
     }
-    // Disposition section only for CFR on a DELIVERED order
+    // Disposition/warehouse section shown for all CFR modes
     var order = appState.cancelTargetOrder;
-    var isDelivered = order && order.status === 'DELIVERED';
-    $('cancel-disposition-section').style.display = (isCfr && isDelivered) ? '' : 'none';
-    if (isCfr && isDelivered && order) window.renderCfrDispositions(order);
+    $('cancel-disposition-section').style.display = isCfr ? '' : 'none';
+    if (isCfr && order) window.renderCfrDispositions(order);
     // Update submit button label and lock state
     $('cancel-submit-btn').textContent = isCfr ? 'Confirm — Cancel for Replacement' : 'Cancel Order';
     $('cancel-submit-btn').className = isCfr ? 'btn btn-warning' : 'btn btn-danger';
@@ -5779,8 +5778,9 @@
     }
   };
 
-  // Build per-item disposition rows for cancel-for-replacement on a DELIVERED order
+  // Build per-item rows for cancel-for-replacement
   window.renderCfrDispositions = function (order) {
+    var isDelivered = order && order.status === 'DELIVERED';
     var activeItems = (order.items || []).filter(function(it) {
       return (it.quantity - (it.voidedQuantity || 0)) > 0;
     });
@@ -5791,23 +5791,42 @@
     }
     var html = activeItems.map(function(it) {
       var effQty = it.quantity - (it.voidedQuantity || 0);
-      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);" data-item-id="' + it.id + '">'
+      // Warehouse select is visible immediately for non-DELIVERED (auto-SELLABLE);
+      // hidden for DELIVERED until Sellable button is clicked.
+      var whDisplay = isDelivered ? 'none' : '';
+      return '<div style="padding:7px 0;border-bottom:1px solid var(--border);" data-item-id="' + it.id + '">'
+        + '<div style="display:flex;align-items:center;gap:8px;">'
         + '<div style="flex:1;font-size:12px;">' + escapeHtml(it.productName || '') + ' <span style="color:var(--text-muted);">×' + effQty + '</span></div>'
-        + '<div style="display:flex;gap:4px;">'
-        + '<button type="button" class="btn btn-sm cfr-disp-btn" data-item="' + it.id + '" data-val="SELLABLE"'
-        + ' onclick="onCfrDispositionChange(this)" style="font-size:11px;padding:2px 10px;">Sellable</button>'
-        + '<button type="button" class="btn btn-sm cfr-disp-btn" data-item="' + it.id + '" data-val="REJECTED"'
-        + ' onclick="onCfrDispositionChange(this)" style="font-size:11px;padding:2px 10px;">Rejected</button>'
-        + '</div></div>';
+        + (isDelivered
+            ? '<div style="display:flex;gap:4px;">'
+              + '<button type="button" class="btn btn-sm cfr-disp-btn" data-item="' + it.id + '" data-val="SELLABLE"'
+              + ' onclick="onCfrDispositionChange(this)" style="font-size:11px;padding:2px 10px;">Sellable</button>'
+              + '<button type="button" class="btn btn-sm cfr-disp-btn" data-item="' + it.id + '" data-val="REJECTED"'
+              + ' onclick="onCfrDispositionChange(this)" style="font-size:11px;padding:2px 10px;">Rejected</button>'
+              + '</div>'
+            : '')
+        + '</div>'
+        + '<div class="cfr-wh-row" style="display:' + whDisplay + ';margin-top:6px;">'
+        + '<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Restock to warehouse</div>'
+        + '<select class="form-select cfr-warehouse" style="font-size:12px;padding:4px 8px;"'
+        + ' onchange="onCfrDispositionChange()">'
+        + '<option value="">-- select --</option>'
+        + '<option value="wh1">WH1</option>'
+        + '<option value="wh2">WH2</option>'
+        + '<option value="wh3">Balagtas</option>'
+        + '</select>'
+        + '</div>'
+        + '</div>';
     }).join('');
     $('cancel-disposition-rows').innerHTML = html;
   };
 
-  // Called from disposition buttons (onclick) and from the master key input (oninput)
+  // Called from disposition buttons (onclick), warehouse selects (onchange), and master key input (oninput)
   window.onCfrDispositionChange = function (btn) {
-    if (btn) {
-      // Apply selected / deselected visual state to the two buttons for this item
+    if (btn && btn.classList && btn.classList.contains('cfr-disp-btn')) {
       var itemId = btn.getAttribute('data-item');
+      var selectedVal = btn.getAttribute('data-val');
+      // Apply selected / deselected visual state
       $('cancel-disposition-rows').querySelectorAll('.cfr-disp-btn[data-item="' + itemId + '"]').forEach(function(b) {
         if (b === btn) {
           b.style.background = 'var(--accent)';
@@ -5819,18 +5838,35 @@
           delete b.dataset.selected;
         }
       });
+      // Show warehouse select for SELLABLE; hide + clear for REJECTED
+      var row = $('cancel-disposition-rows').querySelector('[data-item-id="' + itemId + '"]');
+      if (row) {
+        var whRow = row.querySelector('.cfr-wh-row');
+        var whSel = row.querySelector('.cfr-warehouse');
+        if (whRow) whRow.style.display = selectedVal === 'SELLABLE' ? '' : 'none';
+        if (whSel && selectedVal !== 'SELLABLE') whSel.value = '';
+      }
     }
-    // Decide whether the submit button should be enabled
+    // Submit gate
     var masterKey = ($('cancel-master-key-input').value || '').trim();
     var order = appState.cancelTargetOrder;
     var isDelivered = order && order.status === 'DELIVERED';
     var allDisposed = true;
-    if (isDelivered) {
-      $('cancel-disposition-rows').querySelectorAll('[data-item-id]').forEach(function(row) {
-        if (!row.querySelector('.cfr-disp-btn[data-selected="true"]')) allDisposed = false;
-      });
-    }
-    $('cancel-submit-btn').disabled = !(masterKey && (!isDelivered || allDisposed));
+    var warehouseOk = true;
+    $('cancel-disposition-rows').querySelectorAll('[data-item-id]').forEach(function(row) {
+      if (isDelivered) {
+        var selBtn = row.querySelector('.cfr-disp-btn[data-selected="true"]');
+        if (!selBtn) { allDisposed = false; return; }
+        if (selBtn.getAttribute('data-val') === 'SELLABLE') {
+          var wh = row.querySelector('.cfr-warehouse');
+          if (!wh || !wh.value) warehouseOk = false;
+        }
+      } else {
+        var wh2 = row.querySelector('.cfr-warehouse');
+        if (!wh2 || !wh2.value) warehouseOk = false;
+      }
+    });
+    $('cancel-submit-btn').disabled = !(masterKey && (!isDelivered || allDisposed) && warehouseOk);
   };
 
   // Unified cancel submit — routes to standard cancel or cancel-for-replacement
@@ -5863,14 +5899,28 @@
       if (!masterKey) { showToast('Master key is required', 'error'); return; }
       var items = [];
       var order = appState.cancelTargetOrder;
-      if (order && order.status === 'DELIVERED') {
+      var isDelivered2 = order && order.status === 'DELIVERED';
+      if (isDelivered2) {
         var valid = true;
         $('cancel-disposition-rows').querySelectorAll('[data-item-id]').forEach(function(row) {
           var selBtn = row.querySelector('.cfr-disp-btn[data-selected="true"]');
           if (!selBtn) { valid = false; return; }
-          items.push({ orderItemId: Number(row.getAttribute('data-item-id')), disposition: selBtn.getAttribute('data-val') });
+          var entry = { orderItemId: Number(row.getAttribute('data-item-id')), disposition: selBtn.getAttribute('data-val') };
+          if (selBtn.getAttribute('data-val') === 'SELLABLE') {
+            var wh = row.querySelector('.cfr-warehouse');
+            entry.restockWarehouse = wh ? wh.value : '';
+          }
+          items.push(entry);
         });
         if (!valid) { showToast('Please select a disposition for every item', 'error'); return; }
+      } else {
+        var valid2 = true;
+        $('cancel-disposition-rows').querySelectorAll('[data-item-id]').forEach(function(row) {
+          var wh = row.querySelector('.cfr-warehouse');
+          if (!wh || !wh.value) { valid2 = false; return; }
+          items.push({ orderItemId: Number(row.getAttribute('data-item-id')), restockWarehouse: wh.value });
+        });
+        if (!valid2) { showToast('Please select a restock warehouse for every item', 'error'); return; }
       }
       try {
         var res2 = await fetch('' + API_BASE + '/api/orders/' + appState.cancelTargetId + '/cancel-for-replacement', {
