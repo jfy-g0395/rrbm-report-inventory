@@ -48,5 +48,12 @@ public class ReturnOrderRequest {
 
         /** Of the returned units: how many are damaged / unrecoverable. */
         private Integer rejectedQty;
+
+        /**
+         * Destination warehouse for SELLABLE units.
+         * Required when sellableQty > 0; ignored otherwise.
+         * Must be one of: wh1, wh2, wh3.
+         */
+        private String restockWarehouse;
     }
 }
