@@ -167,20 +167,25 @@ class OrderVoidReturnIT {
 
     @Test
     void t01_voidPartialWithSellableDisposition_updatesOrderItemRestoresStock() throws Exception {
-        // Create order with 5 items
+        // Create order with 5 items (origin warehouse: wh1)
         String orderId = createOrderViaApi("S3-Void-Customer-1-" + RUN, 5);
         Order order = orderRepository.findByIdWithItems(orderId).get();
         OrderItem item = order.getItems().get(0);
 
-        // Get stock before void
-        Product productBefore = productRepository.findById(product1.getId()).get();
-        int stockBefore = productBefore.getStockWh1();
+        order.setStatus("DELIVERED");
+        orderRepository.save(order);
 
-        // Void 2 items with SELLABLE disposition
+        // Capture stock before void
+        Product productBefore = productRepository.findById(product1.getId()).get();
+        int stockWh1Before = productBefore.getStockWh1();
+        int stockWh2Before = productBefore.getStockWh2();
+
+        // Void 2 units with SELLABLE disposition → restock to WH2 (not origin WH1)
         Map<String, Object> voidItem = new HashMap<>();
         voidItem.put("orderItemId", item.getId());
         voidItem.put("voidQuantity", 2);
         voidItem.put("disposition", "SELLABLE");
+        voidItem.put("restockWarehouse", "wh2");
 
         Map<String, Object> voidRequest = new HashMap<>();
         voidRequest.put("items", List.of(voidItem));
@@ -193,35 +198,44 @@ class OrderVoidReturnIT {
                         .content(objectMapper.writeValueAsString(voidRequest)))
                 .andExpect(status().isOk());
 
-        // Assert order item voided quantity updated
+        // Voided quantity updated
         OrderItem updatedItem = orderItemRepository.findById(item.getId()).get();
         assertThat(updatedItem.getVoidedQuantity()).isEqualTo(2);
 
-        // Assert stock was restored
+        // Sellable units land in WH2 (chosen destination), origin WH1 unchanged
         Product productAfter = productRepository.findById(product1.getId()).get();
-        int stockAfter = productAfter.getStockWh1();
-        assertThat(stockAfter).isGreaterThan(stockBefore);
+        assertThat(productAfter.getStockWh2()).isEqualTo(stockWh2Before + 2);
+        assertThat(productAfter.getStockWh1()).isEqualTo(stockWh1Before);
 
-        // Assert VOID transaction was created
+        // ITEM_VOID movement has warehouse = "wh2"
+        List<InventoryMovement> movements =
+                inventoryMovementRepository.findByReferenceIdOrderByCreatedAtDesc(orderId);
+        InventoryMovement voidMov = movements.stream()
+                .filter(m -> "ITEM_VOID".equals(m.getMovementType()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No ITEM_VOID movement found"));
+        assertThat(voidMov.getWarehouse()).isEqualTo("wh2");
+
+        // VOID transaction created
         List<Transaction> txns = transactionRepository.findByOrderIdOrderByCreatedAtDesc(orderId);
-        List<Transaction> voidTxns = txns.stream()
-                .filter(t -> "VOID".equals(t.getTransactionType()))
-                .collect(java.util.stream.Collectors.toList());
-        assertThat(voidTxns).isNotEmpty();
+        assertThat(txns.stream().anyMatch(t -> "VOID".equals(t.getTransactionType()))).isTrue();
     }
 
     @Test
     void t02_voidWithRejectedDisposition_updatesOrderItemNoStockRestore() throws Exception {
-        // Create order with 3 items
+        // Create order with 3 items — must be DELIVERED so REJECTED means no restock
         String orderId = createOrderViaApi("S3-Void-Rejected-" + RUN, 3);
         Order order = orderRepository.findByIdWithItems(orderId).get();
         OrderItem item = order.getItems().get(0);
+
+        order.setStatus("DELIVERED");
+        orderRepository.save(order);
 
         // Get stock before void
         Product productBefore = productRepository.findById(product1.getId()).get();
         int stockBefore = productBefore.getStockWh1();
 
-        // Void 1 item with REJECTED disposition
+        // Void 1 item with REJECTED disposition — no restockWarehouse needed
         Map<String, Object> voidItem = new HashMap<>();
         voidItem.put("orderItemId", item.getId());
         voidItem.put("voidQuantity", 1);
@@ -418,6 +432,32 @@ class OrderVoidReturnIT {
         req.put("securityKey", SEC_KEY);
 
         mockMvc.perform(post("/api/orders/" + orderId + "/return")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + userJwt)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void t09_voidSellableWithBlankWarehouse_returns400() throws Exception {
+        String orderId = createOrderViaApi("S3-Void-NoWh-" + RUN, 2);
+        Order order = orderRepository.findByIdWithItems(orderId).get();
+        OrderItem item = order.getItems().get(0);
+        order.setStatus("DELIVERED");
+        orderRepository.save(order);
+
+        Map<String, Object> voidItem = new HashMap<>();
+        voidItem.put("orderItemId", item.getId());
+        voidItem.put("voidQuantity", 1);
+        voidItem.put("disposition", "SELLABLE");
+        // restockWarehouse intentionally omitted
+
+        Map<String, Object> req = new HashMap<>();
+        req.put("items", List.of(voidItem));
+        req.put("reason", "Test");
+        req.put("securityKey", SEC_KEY);
+
+        mockMvc.perform(post("/api/orders/" + orderId + "/void")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("Authorization", "Bearer " + userJwt)
                         .content(objectMapper.writeValueAsString(req)))

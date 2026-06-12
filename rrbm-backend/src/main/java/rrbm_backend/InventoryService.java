@@ -361,23 +361,25 @@ public class InventoryService {
      *
      * For non-DELIVERED orders (ACTIVE, PENDING, etc.): goods were never
      * physically dispatched, so any voided quantity is always restored to
-     * warehouse stock regardless of the disposition value.
+     * the chosen destination warehouse regardless of the disposition value.
      *
      * For DELIVERED orders:
-     *   disposition = 'SELLABLE' → restore qty to warehouse (goods coming back)
-     *   disposition = 'REJECTED' → do NOT restore stock; write a zero-qty ITEM_VOID
-     *                              movement record as an audit trail only.
+     *   disposition = 'SELLABLE' → restore qty to destinationWarehouse (validated)
+     *   disposition = 'REJECTED' → do NOT restore stock; write a VOID_REJECTED
+     *                              movement using the origin warehouse as audit tag.
      *
-     * @param item        the order item being voided
-     * @param voidQty     number of units voided on this line
-     * @param disposition 'SELLABLE' or 'REJECTED'; ignored for non-delivered orders
-     * @param isDelivered whether the parent order has status DELIVERED
-     * @param orderId     the parent order ID (for movement reference)
-     * @param userId      the authenticated user performing the void
+     * @param item                the order item being voided
+     * @param voidQty             number of units voided on this line
+     * @param disposition         'SELLABLE' or 'REJECTED'; ignored for non-delivered orders
+     * @param isDelivered         whether the parent order has status DELIVERED
+     * @param destinationWarehouse chosen restock warehouse (required when line restocks)
+     * @param orderId             the parent order ID (for movement reference)
+     * @param userId              the authenticated user performing the void
      */
     @Transactional
     public String restoreStockForVoidedItem(OrderItem item, int voidQty,
                                           String disposition, boolean isDelivered,
+                                          String destinationWarehouse,
                                           String orderId, Long userId) {
         if (item.getProductId() == null)
             return item.getProductName() + " — manual item, no stock tracked";
@@ -386,28 +388,30 @@ public class InventoryService {
         if (product == null)
             return item.getProductName() + " — product not found, no stock change";
 
-        String warehouse = item.getWarehouse() != null ? item.getWarehouse().toLowerCase() : "wh1";
+        // Origin is kept as the audit tag for VOID_REJECTED only
+        String originWarehouse = item.getWarehouse() != null ? item.getWarehouse().toLowerCase() : "wh1";
         boolean restoreStock = !isDelivered || "SELLABLE".equalsIgnoreCase(disposition);
 
         if (restoreStock) {
-            switch (warehouse) {
+            String destWh = requireValidWarehouse(destinationWarehouse, product.getName());
+            switch (destWh) {
                 case "wh2": product.setStockWh2(product.getStockWh2() + voidQty); break;
                 case "wh3": product.setStockWh3(product.getStockWh3() + voidQty); break;
                 default:    product.setStockWh1(product.getStockWh1() + voidQty); break;
             }
             productRepository.save(product);
-            logMovement(item.getProductId(), "ITEM_VOID", warehouse, +voidQty,
+            logMovement(item.getProductId(), "ITEM_VOID", destWh, +voidQty,
                     orderId,
                     "Void of " + voidQty + " unit(s) — "
                         + (isDelivered ? "SELLABLE return" : "non-delivered order")
                         + " — order " + orderId,
                     userId);
             return voidQty + " unit(s) of " + item.getProductName()
-                + " returned to " + warehouse.toUpperCase()
-                + " — new stock total: " + getWhStock(product, warehouse);
+                + " returned to " + destWh.toUpperCase()
+                + " — new stock total: " + getWhStock(product, destWh);
         } else {
-            // REJECTED: no stock change; write movement record with actual qty for reporting
-            logMovement(item.getProductId(), "VOID_REJECTED", warehouse, voidQty,
+            // REJECTED: no stock change; keep origin warehouse as audit tag
+            logMovement(item.getProductId(), "VOID_REJECTED", originWarehouse, voidQty,
                     orderId,
                     "Void of " + voidQty + " unit(s) — REJECTED (no stock restore) — order " + orderId,
                     userId);

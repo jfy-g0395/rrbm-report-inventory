@@ -42,5 +42,13 @@ public class VoidOrderRequest {
          * non-DELIVERED orders, since undelivered goods are still in the warehouse.
          */
         private String disposition;
+
+        /**
+         * Destination warehouse for restocked units.
+         * Required when the line will restock: any line on a non-DELIVERED order,
+         * or a DELIVERED order line with disposition SELLABLE.
+         * Must be one of: wh1, wh2, wh3.
+         */
+        private String restockWarehouse;
     }
 }

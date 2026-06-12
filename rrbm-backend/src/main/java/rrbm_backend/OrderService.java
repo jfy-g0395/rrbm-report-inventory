@@ -736,6 +736,10 @@ public class OrderService {
                 throw new RuntimeException(
                     "Disposition (SELLABLE or REJECTED) is required for \"" + item.getProductName()
                     + "\" because the order is DELIVERED");
+
+            boolean willRestock = !isDelivered || "SELLABLE".equalsIgnoreCase(req.getDisposition());
+            if (willRestock)
+                inventoryService.requireValidWarehouse(req.getRestockWarehouse(), item.getProductName());
         }
 
         // ── Apply void quantities and accumulate monetary amount ─────────
@@ -757,7 +761,8 @@ public class OrderService {
             // Inventory side-effect (stock restore + movement record)
             String disposition = req.getDisposition() != null ? req.getDisposition() : "SELLABLE";
             String inventoryOutcome = inventoryService.restoreStockForVoidedItem(
-                    item, req.getVoidQuantity(), disposition, isDelivered, orderId, userId);
+                    item, req.getVoidQuantity(), disposition, isDelivered,
+                    req.getRestockWarehouse(), orderId, userId);
 
             // Collect result detail for this item
             int newVoided    = item.getVoidedQuantity();
