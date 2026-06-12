@@ -10124,7 +10124,18 @@
         +     ' style="font-size:12px;padding:4px 8px;" oninput="onReturnQtyChange()" />'
         +   '</div>'
         +   '<div class="rtn-validity" style="font-size:10px;width:80px;text-align:center;"></div>'
-        + '</div></div>';
+        + '</div>'
+        + '<div class="rtn-wh-row" style="display:none;margin-top:6px;">'
+        +   '<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Restock to warehouse</div>'
+        +   '<select class="form-select rtn-warehouse" style="font-size:12px;padding:4px 8px;"'
+        +   ' onchange="onReturnQtyChange()">'
+        +   '<option value="">-- select --</option>'
+        +   '<option value="wh1">WH1</option>'
+        +   '<option value="wh2">WH2</option>'
+        +   '<option value="wh3">Balagtas</option>'
+        +   '</select>'
+        + '</div>'
+        + '</div>';
     }).join('');
     $('rtn-items-container').innerHTML = html;
   };
@@ -10139,6 +10150,10 @@
       var sellable = parseInt(row.querySelector('.rtn-sellable').value)  || 0;
       var rejected = parseInt(row.querySelector('.rtn-rejected').value)  || 0;
       var indicator = row.querySelector('.rtn-validity');
+
+      // Show warehouse select only when sellable > 0
+      var whRow = row.querySelector('.rtn-wh-row');
+      if (whRow) whRow.style.display = (sellable > 0) ? '' : 'none';
 
       if (total <= 0) { indicator.textContent = ''; return; }  // row not participating
 
@@ -10158,7 +10173,16 @@
     var refundOn = $('rtn-refund-toggle').checked;
     var refundAmt = refundOn ? (parseFloat($('rtn-refund-amount').value) || 0) : 1; // bypass when toggle off
 
-    $('rtn-submit-btn').disabled = !(anyReturning && allValid && reason && secKey && (!refundOn || refundAmt > 0));
+    var warehouseOk = true;
+    document.querySelectorAll('.rtn-item-row').forEach(function(r) {
+      var sel = parseInt(r.querySelector('.rtn-sellable').value) || 0;
+      if (sel > 0) {
+        var wh = r.querySelector('.rtn-warehouse');
+        if (!wh || !wh.value) warehouseOk = false;
+      }
+    });
+
+    $('rtn-submit-btn').disabled = !(anyReturning && allValid && reason && secKey && (!refundOn || refundAmt > 0) && warehouseOk);
   };
 
   // Handles refund-section and replacement-note visibility on toggle change
@@ -10186,12 +10210,16 @@
       var rejected = parseInt(row.querySelector('.rtn-rejected').value)  || 0;
       if (total <= 0) return;
       if (sellable + rejected !== total) { valid = false; return; }
-      items.push({
+      var whEl = row.querySelector('.rtn-warehouse');
+      var whVal = whEl ? whEl.value : '';
+      var entry = {
         orderItemId:   Number(row.getAttribute('data-item-id')),
         totalReturned: total,
         sellableQty:   sellable,
         rejectedQty:   rejected
-      });
+      };
+      if (sellable > 0) entry.restockWarehouse = whVal;
+      items.push(entry);
     });
     if (!valid)        { showToast('Fix item quantities before submitting', 'error'); return; }
     if (!items.length) { showToast('Enter quantities for at least one item', 'error'); return; }
