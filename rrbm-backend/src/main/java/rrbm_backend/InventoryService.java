@@ -441,16 +441,18 @@ public class InventoryService {
      */
     @Transactional
     public void processReturnForItem(OrderItem item, int sellableQty, int rejectedQty,
-                                     String orderId, Long userId) {
+                                     String destinationWarehouse, String orderId, Long userId) {
         if (item.getProductId() == null) return; // manually typed item — skip
 
         Product product = productRepository.findById(item.getProductId()).orElse(null);
         if (product == null) return; // product since deleted — skip silently
 
-        String warehouse = item.getWarehouse() != null ? item.getWarehouse().toLowerCase() : "wh1";
+        // Origin warehouse is kept as the audit tag for RETURN_REJECTED only
+        String originWarehouse = item.getWarehouse() != null ? item.getWarehouse().toLowerCase() : "wh1";
 
-        // ── Sellable: restore stock ──────────────────────────────────────
+        // ── Sellable: restore stock to chosen destination ────────────────
         if (sellableQty > 0) {
+            String destWh = requireValidWarehouse(destinationWarehouse, product.getName());
             if (Boolean.TRUE.equals(product.getIsSet())) {
                 // SET product: restore each component proportionally
                 List<ProductSetComponent> comps =
@@ -460,13 +462,13 @@ public class InventoryService {
                             productRepository.findById(comp.getComponentProductId()).orElse(null);
                     if (compProduct == null) continue;
                     int restore = sellableQty * comp.getQuantityPerSet();
-                    switch (warehouse) {
+                    switch (destWh) {
                         case "wh2": compProduct.setStockWh2(compProduct.getStockWh2() + restore); break;
                         case "wh3": compProduct.setStockWh3(compProduct.getStockWh3() + restore); break;
                         default:    compProduct.setStockWh1(compProduct.getStockWh1() + restore); break;
                     }
                     productRepository.save(compProduct);
-                    logMovement(compProduct.getId(), "RETURN_SELLABLE", warehouse, +restore,
+                    logMovement(compProduct.getId(), "RETURN_SELLABLE", destWh, +restore,
                             orderId,
                             "Return — " + sellableQty + " sellable unit(s) of set \""
                                 + product.getName() + "\" — order " + orderId,
@@ -474,13 +476,13 @@ public class InventoryService {
                 }
             } else {
                 // Regular product
-                switch (warehouse) {
+                switch (destWh) {
                     case "wh2": product.setStockWh2(product.getStockWh2() + sellableQty); break;
                     case "wh3": product.setStockWh3(product.getStockWh3() + sellableQty); break;
                     default:    product.setStockWh1(product.getStockWh1() + sellableQty); break;
                 }
                 productRepository.save(product);
-                logMovement(item.getProductId(), "RETURN_SELLABLE", warehouse, +sellableQty,
+                logMovement(item.getProductId(), "RETURN_SELLABLE", destWh, +sellableQty,
                         orderId,
                         "Return — " + sellableQty + " sellable unit(s) of \""
                             + item.getProductName() + "\" — order " + orderId,
@@ -488,9 +490,9 @@ public class InventoryService {
             }
         }
 
-        // ── Rejected: no stock change; write movement with actual count ──
+        // ── Rejected: no stock change; keep origin warehouse as audit tag ─
         if (rejectedQty > 0) {
-            logMovement(item.getProductId(), "RETURN_REJECTED", warehouse, rejectedQty,
+            logMovement(item.getProductId(), "RETURN_REJECTED", originWarehouse, rejectedQty,
                     orderId,
                     "Return — " + rejectedQty + " rejected unit(s) of \""
                         + item.getProductName() + "\" (no stock restore) — order " + orderId,

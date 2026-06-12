@@ -248,25 +248,23 @@ class OrderVoidReturnIT {
 
     @Test
     void t03_returnWithSellableAndRejected_createsRefundTransaction() throws Exception {
-        // Create order
         String orderId = createOrderViaApi("S3-Return-Customer-" + RUN, 3);
         Order order = orderRepository.findByIdWithItems(orderId).get();
         OrderItem item = order.getItems().get(0);
 
-        // Mark as delivered first (return is allowed on delivered orders)
         order.setStatus("DELIVERED");
         orderRepository.save(order);
 
-        // Get stock before return
         Product productBefore = productRepository.findById(product1.getId()).get();
-        int stockBefore = productBefore.getStockWh1();
+        int stockWh1Before = productBefore.getStockWh1();
+        int stockWh2Before = productBefore.getStockWh2();
 
-        // Process return: 2 sellable, 1 rejected
         Map<String, Object> returnItem = new HashMap<>();
         returnItem.put("orderItemId", item.getId());
         returnItem.put("totalReturned", 3);
         returnItem.put("sellableQty", 2);
         returnItem.put("rejectedQty", 1);
+        returnItem.put("restockWarehouse", "wh2"); // destination: WH2
 
         Map<String, Object> returnRequest = new HashMap<>();
         returnRequest.put("items", List.of(returnItem));
@@ -280,17 +278,23 @@ class OrderVoidReturnIT {
                         .content(objectMapper.writeValueAsString(returnRequest)))
                 .andExpect(status().isOk());
 
-        // Assert refund transaction created
-        List<Transaction> txns2 = transactionRepository.findByOrderIdOrderByCreatedAtDesc(orderId);
-        List<Transaction> refundTxns = txns2.stream()
-                .filter(t -> "RETURN".equals(t.getTransactionType()))
-                .collect(java.util.stream.Collectors.toList());
-        assertThat(refundTxns).isNotEmpty();
-
-        // Assert stock was restored for sellable items
+        // Sellable units go to WH2 (chosen destination), not WH1 (origin)
         Product productAfter = productRepository.findById(product1.getId()).get();
-        int stockAfter = productAfter.getStockWh1();
-        assertThat(stockAfter).isGreaterThanOrEqualTo(stockBefore);
+        assertThat(productAfter.getStockWh2()).isEqualTo(stockWh2Before + 2);
+        assertThat(productAfter.getStockWh1()).isEqualTo(stockWh1Before); // origin unchanged
+
+        // Movement record for RETURN_SELLABLE has warehouse = "wh2"
+        List<InventoryMovement> movements =
+                inventoryMovementRepository.findByReferenceIdOrderByCreatedAtDesc(orderId);
+        InventoryMovement sellableMov = movements.stream()
+                .filter(m -> "RETURN_SELLABLE".equals(m.getMovementType()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No RETURN_SELLABLE movement found"));
+        assertThat(sellableMov.getWarehouse()).isEqualTo("wh2");
+
+        // Refund transaction created
+        List<Transaction> txns = transactionRepository.findByOrderIdOrderByCreatedAtDesc(orderId);
+        assertThat(txns.stream().anyMatch(t -> "RETURN".equals(t.getTransactionType()))).isTrue();
     }
 
     @Test

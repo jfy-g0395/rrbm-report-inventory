@@ -627,7 +627,8 @@ public class OrderService {
             int sellable       = req.getSellableQty()   != null ? req.getSellableQty()   : 0;
             int rejected       = req.getRejectedQty()   != null ? req.getRejectedQty()   : 0;
 
-            inventoryService.processReturnForItem(item, sellable, rejected, orderId, userId);
+            inventoryService.processReturnForItem(
+                item, sellable, rejected, req.getRestockWarehouse(), orderId, userId);
 
             Map<String, Object> detail = new java.util.LinkedHashMap<>();
             detail.put("orderItemId",   item.getId());
