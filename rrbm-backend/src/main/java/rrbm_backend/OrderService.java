@@ -358,18 +358,23 @@ public class OrderService {
 
         boolean isDelivered = "DELIVERED".equals(order.getStatus());
 
-        // Build orderItemId → disposition lookup from request
+        // Build orderItemId → disposition and orderItemId → restockWarehouse lookups
         Map<Long, String> dispositionMap = new java.util.HashMap<>();
+        Map<Long, String> destinationMap = new java.util.HashMap<>();
         if (request.getItems() != null) {
             for (CancelForReplacementRequest.CancelItemDisposition d : request.getItems()) {
-                if (d.getOrderItemId() != null && d.getDisposition() != null) {
-                    dispositionMap.put(d.getOrderItemId(), d.getDisposition());
+                if (d.getOrderItemId() != null) {
+                    if (d.getDisposition() != null)
+                        dispositionMap.put(d.getOrderItemId(), d.getDisposition());
+                    if (d.getRestockWarehouse() != null)
+                        destinationMap.put(d.getOrderItemId(), d.getRestockWarehouse());
                 }
             }
         }
 
-        // Validate full disposition coverage for DELIVERED orders before any writes
+        // Validate before any writes
         if (isDelivered) {
+            // DELIVERED: every item needs a disposition; SELLABLE items also need a warehouse
             for (OrderItem item : order.getItems()) {
                 String disp = dispositionMap.get(item.getId());
                 if (disp == null || disp.isBlank()) {
@@ -382,12 +387,23 @@ public class OrderService {
                         "Invalid disposition \"" + disp + "\" for \""
                         + item.getProductName() + "\". Must be SELLABLE or REJECTED.");
                 }
+                if (disp.equalsIgnoreCase("SELLABLE"))
+                    inventoryService.requireValidWarehouse(
+                        destinationMap.get(item.getId()), item.getProductName());
+            }
+        } else {
+            // Non-DELIVERED: all items auto-SELLABLE; warehouse required for every active line
+            for (OrderItem item : order.getItems()) {
+                int alreadyVoided = item.getVoidedQuantity() != null ? item.getVoidedQuantity() : 0;
+                if (item.getQuantity() - alreadyVoided > 0)
+                    inventoryService.requireValidWarehouse(
+                        destinationMap.get(item.getId()), item.getProductName());
             }
         }
 
         // Inventory side-effects: stock restore + movement records per item
         inventoryService.restoreStockForCancelledWithDisposition(
-                order, dispositionMap, isDelivered, userId);
+                order, dispositionMap, destinationMap, isDelivered, userId);
 
         // Update order — replacementOrderId left null until Step 5
         order.setStatus("CANCELLED");

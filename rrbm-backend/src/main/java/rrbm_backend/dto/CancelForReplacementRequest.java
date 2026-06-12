@@ -41,5 +41,12 @@ public class CancelForReplacementRequest {
          * Ignored for non-DELIVERED orders.
          */
         private String disposition;
+
+        /**
+         * Destination warehouse for SELLABLE units.
+         * Required when the line restocks (SELLABLE on DELIVERED; always on non-DELIVERED).
+         * Must be one of: wh1, wh2, wh3.
+         */
+        private String restockWarehouse;
     }
 }

@@ -284,6 +284,7 @@ public class InventoryService {
     @Transactional
     public void restoreStockForCancelledWithDisposition(Order order,
                                                         Map<Long, String> dispositionMap,
+                                                        Map<Long, String> destinationMap,
                                                         boolean isDelivered,
                                                         Long userId) {
         for (OrderItem item : order.getItems()) {
@@ -292,7 +293,8 @@ public class InventoryService {
             Product product = productRepository.findById(item.getProductId()).orElse(null);
             if (product == null) continue; // product since deleted — skip silently
 
-            String warehouse = item.getWarehouse() != null ? item.getWarehouse().toLowerCase() : "wh1";
+            // Origin warehouse used only as audit tag on CANCEL_REJECTED movements
+            String originWarehouse = item.getWarehouse() != null ? item.getWarehouse().toLowerCase() : "wh1";
 
             // Use REMAINING quantity — not the original full quantity.
             // Voided units were already restored to stock when each void was applied.
@@ -312,6 +314,9 @@ public class InventoryService {
             boolean restoreStock = "SELLABLE".equals(disposition);
 
             if (restoreStock) {
+                String destWh = requireValidWarehouse(
+                        destinationMap != null ? destinationMap.get(item.getId()) : null,
+                        product.getName());
                 if (Boolean.TRUE.equals(product.getIsSet())) {
                     // ── SET product: restore each component ──────────────────
                     List<ProductSetComponent> comps =
@@ -321,13 +326,13 @@ public class InventoryService {
                                 productRepository.findById(comp.getComponentProductId()).orElse(null);
                         if (compProduct == null) continue;
                         int restore = qty * comp.getQuantityPerSet();
-                        switch (warehouse) {
+                        switch (destWh) {
                             case "wh2": compProduct.setStockWh2(compProduct.getStockWh2() + restore); break;
                             case "wh3": compProduct.setStockWh3(compProduct.getStockWh3() + restore); break;
                             default:    compProduct.setStockWh1(compProduct.getStockWh1() + restore); break;
                         }
                         productRepository.save(compProduct);
-                        logMovement(compProduct.getId(), "CANCELLED_RETURN", warehouse, +restore,
+                        logMovement(compProduct.getId(), "CANCELLED_RETURN", destWh, +restore,
                                 order.getId(),
                                 "Replacement cancel of set order " + order.getId()
                                     + " (set: " + product.getName() + ") — SELLABLE",
@@ -335,20 +340,20 @@ public class InventoryService {
                     }
                 } else {
                     // ── Regular product ──────────────────────────────────────
-                    switch (warehouse) {
+                    switch (destWh) {
                         case "wh2": product.setStockWh2(product.getStockWh2() + qty); break;
                         case "wh3": product.setStockWh3(product.getStockWh3() + qty); break;
                         default:    product.setStockWh1(product.getStockWh1() + qty); break;
                     }
                     productRepository.save(product);
-                    logMovement(item.getProductId(), "CANCELLED_RETURN", warehouse, +qty,
+                    logMovement(item.getProductId(), "CANCELLED_RETURN", destWh, +qty,
                             order.getId(),
                             "Replacement cancel of order " + order.getId() + " — SELLABLE",
                             userId);
                 }
             } else {
-                // ── REJECTED: no stock change; write audit trail movement ────
-                logMovement(item.getProductId(), "CANCEL_REJECTED", warehouse, qty,
+                // ── REJECTED: no stock change; keep origin warehouse as audit tag ─
+                logMovement(item.getProductId(), "CANCEL_REJECTED", originWarehouse, qty,
                         order.getId(),
                         "Replacement cancel of order " + order.getId() + " — REJECTED (no stock restore)",
                         userId);

@@ -313,13 +313,23 @@ class OrderVoidReturnIT {
 
     @Test
     void t04_cancelForReplacement_setsStatusAndCancellationType() throws Exception {
-        // Create order
         String orderId = createOrderViaApi("S3-Cancel-Replacement-" + RUN, 2);
+        Order order = orderRepository.findByIdWithItems(orderId).get();
+        OrderItem item = order.getItems().get(0);
+        // non-DELIVERED (ACTIVE) — all units auto-SELLABLE; warehouse required
 
-        // Cancel for replacement
+        Product productBefore = productRepository.findById(product1.getId()).get();
+        int stockWh1Before = productBefore.getStockWh1();
+        int stockWh2Before = productBefore.getStockWh2();
+
+        Map<String, Object> cancelItem = new HashMap<>();
+        cancelItem.put("orderItemId", item.getId());
+        cancelItem.put("restockWarehouse", "wh2"); // destination: WH2
+
         Map<String, Object> cancelRequest = new HashMap<>();
         cancelRequest.put("masterKey", MASTER_KEY_RAW);
         cancelRequest.put("reason", "Need replacement");
+        cancelRequest.put("items", List.of(cancelItem));
 
         mockMvc.perform(post("/api/orders/" + orderId + "/cancel-for-replacement")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -329,21 +339,40 @@ class OrderVoidReturnIT {
                 .andExpect(jsonPath("$.status").value("CANCELLED"))
                 .andExpect(jsonPath("$.cancellationType").value("REPLACEMENT"));
 
-        // Assert order state
+        // Sellable units go to WH2 (chosen destination), not WH1 (origin)
+        Product productAfter = productRepository.findById(product1.getId()).get();
+        assertThat(productAfter.getStockWh2()).isEqualTo(stockWh2Before + 2);
+        assertThat(productAfter.getStockWh1()).isEqualTo(stockWh1Before);
+
+        // Movement record for CANCELLED_RETURN has warehouse = "wh2"
+        List<InventoryMovement> movements =
+                inventoryMovementRepository.findByReferenceIdOrderByCreatedAtDesc(orderId);
+        InventoryMovement mov = movements.stream()
+                .filter(m -> "CANCELLED_RETURN".equals(m.getMovementType()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No CANCELLED_RETURN movement found"));
+        assertThat(mov.getWarehouse()).isEqualTo("wh2");
+
         Order cancelled = orderRepository.findById(orderId).get();
         assertThat(cancelled.getStatus()).isEqualTo("CANCELLED");
         assertThat(cancelled.getCancellationType()).isEqualTo("REPLACEMENT");
-        assertThat(cancelled.getReplacementOrderId()).isNull(); // Not set yet
+        assertThat(cancelled.getReplacementOrderId()).isNull();
     }
 
     @Test
     void t05_createReplacementOrder_linksToOriginal() throws Exception {
-        // Create and cancel for replacement
         String originalId = createOrderViaApi("S3-Original-Order-" + RUN, 2);
+        Order originalOrder = orderRepository.findByIdWithItems(originalId).get();
+        OrderItem originalItem = originalOrder.getItems().get(0);
+
+        Map<String, Object> cancelItem = new HashMap<>();
+        cancelItem.put("orderItemId", originalItem.getId());
+        cancelItem.put("restockWarehouse", "wh1");
 
         Map<String, Object> cancelRequest = new HashMap<>();
         cancelRequest.put("masterKey", MASTER_KEY_RAW);
         cancelRequest.put("reason", "Create replacement");
+        cancelRequest.put("items", List.of(cancelItem));
 
         mockMvc.perform(post("/api/orders/" + originalId + "/cancel-for-replacement")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -491,5 +520,28 @@ class OrderVoidReturnIT {
                         .header("Authorization", "Bearer " + userJwt)
                         .content(objectMapper.writeValueAsString(returnRequest)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void t10_cancelSellableWithBlankWarehouse_returns400() throws Exception {
+        String orderId = createOrderViaApi("S3-Cancel-NoWh-" + RUN, 2);
+        Order order = orderRepository.findByIdWithItems(orderId).get();
+        OrderItem item = order.getItems().get(0);
+        // non-DELIVERED — all items auto-SELLABLE; warehouse required
+
+        Map<String, Object> cancelItem = new HashMap<>();
+        cancelItem.put("orderItemId", item.getId());
+        // restockWarehouse intentionally omitted
+
+        Map<String, Object> req = new HashMap<>();
+        req.put("masterKey", MASTER_KEY_RAW);
+        req.put("reason", "Test");
+        req.put("items", List.of(cancelItem));
+
+        mockMvc.perform(post("/api/orders/" + orderId + "/cancel-for-replacement")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + userJwt)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
     }
 }
