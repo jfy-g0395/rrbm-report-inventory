@@ -161,7 +161,7 @@ mvn test -Dtest=OrderCreateValidationIT,OrderCancelIT,OrderVoidReturnIT
 |------|-------|--------|
 | `OrderCreateValidationIT.java` | 10 | Order create validation: missing customer/empty items/qty≤0/price≤0/non-existent product/inactive agent/no token. Each: asserts 400 + NO order row written. Happy path: order + commission_entries persisted. |
 | `OrderCancelIT.java` | 5 | Order cancellation: ACTIVE → CANCELLED with stock restore + VOID transaction + activity_log. Bad security key → 403. Already-CANCELLED → 400. No token → 401. |
-| `OrderVoidReturnIT.java` | 9 | Item void (sellable/rejected disposition) → order_items updated + VOID transaction. Return and Void with explicit `restockWarehouse` → sellable stock lands in chosen wh (not origin). Cancel-for-replacement + replacement creation. Warehouse validation (blank/invalid → 400). *(t03/t07/t08 extended 2026-06-12 for S1; t01/t02 updated + t09 added 2026-06-12 for inventory-adjustments S2.)* |
+| `OrderVoidReturnIT.java` | 10 | Item void (sellable/rejected disposition) → order_items updated + VOID transaction. Return and Void with explicit `restockWarehouse` → sellable stock lands in chosen wh (not origin). Cancel-for-replacement + replacement creation. Warehouse validation (blank/invalid → 400). *(t03/t07/t08 extended 2026-06-12 for S1; t01/t02 updated + t09 added 2026-06-12 for S2; t04/t05 updated + t10 added 2026-06-12 for inventory-adjustments S3.)* |
 | `OrderItemRepository.java` | — | New JPA repository for accessing individual OrderItem entities by ID (required for void/return tests). |
 
 **Scenarios implemented:**
@@ -185,16 +185,17 @@ mvn test -Dtest=OrderCreateValidationIT,OrderCancelIT,OrderVoidReturnIT
 - ✅ `t04`: No token → 401; status unchanged
 - ✅ `t05`: Missing security key → 400
 
-**OrderVoidReturnIT (9 tests — S1: t03 rewritten, t07/t08 added; S2: t01/t02 updated, t09 added — all 2026-06-12):**
+**OrderVoidReturnIT (10 tests — S1: t03 rewritten, t07/t08 added; S2: t01/t02 updated, t09 added; S3: t04/t05 updated, t10 added — all 2026-06-12):**
 - ✅ `t01`: Void DELIVERED+SELLABLE with `restockWarehouse:"wh2"` → voidedQuantity +2, stockWh2 +2, stockWh1 unchanged, ITEM_VOID movement.warehouse=="wh2", VOID transaction created *(updated S2)*
 - ✅ `t02`: Void DELIVERED+REJECTED (no restockWarehouse) → voidedQuantity updated, stock unchanged, VOID_REJECTED movement, no stock restore *(updated S2: set DELIVERED so REJECTED correctly means no-restock)*
 - ✅ `t03`: Return with `restockWarehouse:"wh2"` (2 sellable + 1 rejected) → refund transaction + stockWh2 +2, stockWh1 unchanged, RETURN_SELLABLE movement.warehouse=="wh2"
-- ✅ `t04`: Cancel-for-replacement → status CANCELLED + cancellationType REPLACEMENT + replacementOrderId null
-- ✅ `t05`: Create replacement → new order created + linked to original (both directions)
+- ✅ `t04`: Cancel-for-replacement (non-DELIVERED) with `restockWarehouse:"wh2"` → status CANCELLED + cancellationType REPLACEMENT + stockWh2 +2, stockWh1 unchanged, CANCELLED_RETURN movement.warehouse=="wh2" *(updated S3)*
+- ✅ `t05`: Create replacement → cancel with `restockWarehouse` supplied; new replacement order created + linked to original (both directions) *(updated S3)*
 - ✅ `t06`: Return without security key → 403
 - ✅ `t07`: Return sellable with blank restockWarehouse → 400 (no stock change)
 - ✅ `t08`: Return sellable with invalid restockWarehouse ("wh9") → 400 (no stock change)
 - ✅ `t09`: Void DELIVERED+SELLABLE with blank restockWarehouse → 400 (no stock change) *(added S2)*
+- ✅ `t10`: Cancel-for-replacement (non-DELIVERED) with blank restockWarehouse → 400 (no stock change) *(added S3)*
 
 **Test data & seeding:**
 - **Real workflow:** Orders created via live `POST /api/orders` (not hand-inserted rows). Product with multi-warehouse stock, ACTIVE agent, open commission period.

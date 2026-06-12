@@ -128,25 +128,25 @@ is the semantically correct scenario for "REJECTED means no restock".
 
 ---
 
-### S3 — Cancel-for-replacement flow  ⬜ not started
+### S3 — Cancel-for-replacement flow  ✅ done
 **Backend**
-- [ ] `dto/CancelForReplacementRequest.java`: add `restockWarehouse` to `CancelItemDisposition` + Javadoc.
-- [ ] `InventoryService.restoreStockForCancelledWithDisposition(...)` (`:284`): add parallel
+- [x] `dto/CancelForReplacementRequest.java`: add `restockWarehouse` to `CancelItemDisposition` + Javadoc.
+- [x] `InventoryService.restoreStockForCancelledWithDisposition(...)` (`:284`): add parallel
       `Map<Long,String> destinationMap`; when a line restocks, use `requireValidWarehouse(destinationMap.get(id), ...)`.
       Keep origin tag on `CANCEL_REJECTED`.
-- [ ] `OrderService.cancelOrderForReplacement`: build `destinationMap` (parallel to `dispositionMap`);
+- [x] `OrderService.cancelOrderForReplacement`: build `destinationMap` (parallel to `dispositionMap`);
       validate for lines with `remaining = quantity − voidedQuantity > 0` resolving to SELLABLE; pass map in.
-- [ ] Compile.
+- [x] Compile.
 
 **Frontend** (`js/app.js`)
-- [ ] Cancel-for-replacement modal (~`:5757` disposition buttons): per-row warehouse select for SELLABLE lines with remaining qty.
-- [ ] Submit-gate requires it; confirm fn includes `restockWarehouse` per restocking item.
-- [ ] **Note the tightening:** non-DELIVERED cancels now require destinations in the `items` list — ensure the modal always sends them.
+- [x] Cancel-for-replacement modal: `onCancelTypeChange` now shows disposition/warehouse section for all CFR modes (not just DELIVERED); `renderCfrDispositions` renders warehouse selects immediately for non-DELIVERED (all auto-SELLABLE) and hidden-until-Sellable for DELIVERED.
+- [x] Submit-gate (`onCfrDispositionChange`) requires warehouse on all SELLABLE lines; `confirmCancel` includes `restockWarehouse` in items payload for both DELIVERED (SELLABLE lines) and non-DELIVERED (all lines).
 
 **Tests** (`OrderVoidReturnIT.java`)
-- [ ] `t04`/`t05` (cancel-for-replacement, non-DELIVERED): add `items` with `orderItemId`+`restockWarehouse`; assert honored.
-- [ ] New: SELLABLE cancel line with missing warehouse → 400.
-- [ ] `mvn test -Dtest=OrderVoidReturnIT` green.
+- [x] `t04` (non-DELIVERED cancel with `restockWarehouse:"wh2"`): assert stockWh2 +2, stockWh1 unchanged, CANCELLED_RETURN movement.warehouse=="wh2", status CANCELLED, cancellationType REPLACEMENT.
+- [x] `t05` (create replacement): cancel now sends items with `restockWarehouse`; replacement order linking assertions unchanged.
+- [x] `t10` (new): non-DELIVERED cancel with blank restockWarehouse → 400.
+- [x] `mvn test -Dtest=OrderVoidReturnIT` green × 2 (10/10, FK-safe cleanup confirmed).
 
 ---
 
@@ -165,7 +165,7 @@ is the semantically correct scenario for "REJECTED means no restock".
 |---------|---------|----------|-------|--------|
 | S1 Return | ✅ | ✅ | ✅ | ✅ done |
 | S2 Void | ✅ | ✅ | ✅ | ✅ done |
-| S3 Cancel | ⬜ | ⬜ | ⬜ | ⬜ not started |
+| S3 Cancel | ✅ | ✅ | ✅ | ✅ done |
 | S4 Cleanup/verify | — | — | ⬜ | ⬜ not started |
 
 **Legend:** ⬜ not started · 🚧 in progress · ✅ done
