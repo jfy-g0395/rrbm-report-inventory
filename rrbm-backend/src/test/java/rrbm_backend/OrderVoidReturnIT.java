@@ -367,6 +367,60 @@ class OrderVoidReturnIT {
     }
 
     @Test
+    void t07_returnSellableWithBlankWarehouse_returns400() throws Exception {
+        String orderId = createOrderViaApi("S3-Return-NoWh-" + RUN, 2);
+        Order order = orderRepository.findByIdWithItems(orderId).get();
+        OrderItem item = order.getItems().get(0);
+        order.setStatus("DELIVERED");
+        orderRepository.save(order);
+
+        Map<String, Object> returnItem = new HashMap<>();
+        returnItem.put("orderItemId", item.getId());
+        returnItem.put("totalReturned", 1);
+        returnItem.put("sellableQty", 1);
+        returnItem.put("rejectedQty", 0);
+        // restockWarehouse intentionally omitted
+
+        Map<String, Object> req = new HashMap<>();
+        req.put("items", List.of(returnItem));
+        req.put("reason", "Test");
+        req.put("securityKey", SEC_KEY);
+
+        mockMvc.perform(post("/api/orders/" + orderId + "/return")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + userJwt)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void t08_returnSellableWithInvalidWarehouse_returns400() throws Exception {
+        String orderId = createOrderViaApi("S3-Return-BadWh-" + RUN, 2);
+        Order order = orderRepository.findByIdWithItems(orderId).get();
+        OrderItem item = order.getItems().get(0);
+        order.setStatus("DELIVERED");
+        orderRepository.save(order);
+
+        Map<String, Object> returnItem = new HashMap<>();
+        returnItem.put("orderItemId", item.getId());
+        returnItem.put("totalReturned", 1);
+        returnItem.put("sellableQty", 1);
+        returnItem.put("rejectedQty", 0);
+        returnItem.put("restockWarehouse", "wh9");
+
+        Map<String, Object> req = new HashMap<>();
+        req.put("items", List.of(returnItem));
+        req.put("reason", "Test");
+        req.put("securityKey", SEC_KEY);
+
+        mockMvc.perform(post("/api/orders/" + orderId + "/return")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + userJwt)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void t06_returnWithoutSecurityKey_returns403() throws Exception {
         // Create order
         String orderId = createOrderViaApi("S3-Return-NoKey-" + RUN, 2);

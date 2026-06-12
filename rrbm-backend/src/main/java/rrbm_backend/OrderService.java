@@ -614,6 +614,9 @@ public class OrderService {
                 throw new RuntimeException(
                     "Cannot return " + total + " unit(s) of \"" + item.getProductName()
                     + "\" — the original order quantity was " + item.getQuantity());
+            if (sellable > 0)
+                inventoryService.requireValidWarehouse(
+                    req.getRestockWarehouse(), item.getProductName());
         }
 
         // ── Apply inventory side-effects per item ────────────────────────

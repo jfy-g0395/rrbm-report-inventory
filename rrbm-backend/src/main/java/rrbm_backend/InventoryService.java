@@ -499,6 +499,28 @@ public class InventoryService {
     }
 
     /**
+     * Validates and normalizes a destination warehouse code.
+     * Must be called before any stock write when a sellable restock is requested.
+     *
+     * @param warehouse    raw value from the request (may be null/blank)
+     * @param productLabel product name for the error message
+     * @return normalized lowercase warehouse code: "wh1", "wh2", or "wh3"
+     * @throws RuntimeException with a descriptive message if blank or unrecognized
+     */
+    String requireValidWarehouse(String warehouse, String productLabel) {
+        if (warehouse == null || warehouse.isBlank())
+            throw new RuntimeException(
+                "Destination warehouse is required for sellable item \""
+                + productLabel + "\". Must be wh1, wh2, or wh3.");
+        String normalized = warehouse.trim().toLowerCase();
+        if (!normalized.equals("wh1") && !normalized.equals("wh2") && !normalized.equals("wh3"))
+            throw new RuntimeException(
+                "Invalid destination warehouse \"" + warehouse + "\" for item \""
+                + productLabel + "\". Must be wh1, wh2, or wh3.");
+        return normalized;
+    }
+
+    /**
      * Write one row to inventory_movements.
      * quantity is signed: negative = out, positive = in.
      */
