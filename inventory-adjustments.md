@@ -99,25 +99,32 @@ for any line whose units go back into sellable stock. No silent fallback to orig
 
 ---
 
-### S2 — Void flow  ⬜ not started
+### S2 — Void flow  ✅ done
 **Backend**
-- [ ] `dto/VoidOrderRequest.java`: add `restockWarehouse` to `VoidItemRequest` + Javadoc.
-- [ ] `InventoryService.restoreStockForVoidedItem(...)` (`:378`): add `String destinationWarehouse` param;
+- [x] `dto/VoidOrderRequest.java`: add `restockWarehouse` to `VoidItemRequest` + Javadoc.
+- [x] `InventoryService.restoreStockForVoidedItem(...)` (`:378`): add `String destinationWarehouse` param;
       when `restoreStock` (`!isDelivered || SELLABLE`), use validated destination. Keep origin tag on `VOID_REJECTED`.
-- [ ] `OrderService.voidOrderItems`: validate destination when `!isDelivered || disposition==SELLABLE`; thread it in.
-- [ ] Compile.
+- [x] `OrderService.voidOrderItems`: validate destination when `!isDelivered || disposition==SELLABLE`; thread it in.
+- [x] Compile.
 
 **Frontend** (`js/app.js`)
-- [ ] Void modal (item render fn ~`:5441` disposition radios): per-row warehouse select shown when line will restock
-      (SELLABLE disposition, or any line on a non-DELIVERED order).
-- [ ] Void submit-gate requires the warehouse on restocking lines.
-- [ ] Void confirm fn: include `restockWarehouse` per restocking item.
+- [x] Void modal `_renderVoidItems` (~`:5420`): per-row `.ivm-wh-row` warehouse select (hidden by default); disposition radios
+      now call `onVoidQtyChange()` (not `_ivmUpdateSubmitState`) so warehouse visibility stays in sync.
+- [x] `onVoidQtyChange`: show/hide `.ivm-wh-row` per item based on `qtyVal > 0 && (!isDelivered || disp === 'SELLABLE')`;
+      clear select on hide.
+- [x] `_ivmUpdateSubmitState`: warehouse gate added — require `.ivm-wh-` value on every restocking line.
+- [x] `confirmItemVoid`: include `restockWarehouse` per restocking item (`!isDelivered || disp === 'SELLABLE'`).
 
 **Tests** (`OrderVoidReturnIT.java`)
-- [ ] `t01` (void SELLABLE): add `restockWarehouse:"wh2"`; assert lands in wh2, not origin; movement `warehouse=="wh2"`.
-- [ ] `t02` (void REJECTED): no warehouse needed — still passes (negative coverage).
-- [ ] New: SELLABLE void with blank warehouse → 400.
-- [ ] `mvn test -Dtest=OrderVoidReturnIT` green.
+- [x] `t01` (void SELLABLE): set order DELIVERED; add `restockWarehouse:"wh2"`; assert stockWh2 +2, stockWh1 unchanged,
+      ITEM_VOID movement `warehouse=="wh2"`, VOID transaction created.
+- [x] `t02` (void REJECTED): set order DELIVERED so REJECTED truly means no-restock; no warehouse needed — passes.
+- [x] `t09` (new): DELIVERED+SELLABLE void with blank warehouse → 400.
+- [x] `mvn test -Dtest=OrderVoidReturnIT` green × 2 (9/9, FK-safe cleanup confirmed).
+
+**Note:** On non-DELIVERED orders all lines always restock (disposition ignored), so warehouse is required for all
+qty > 0 lines regardless of disposition. t02 was updated to set DELIVERED status before the REJECTED void — this
+is the semantically correct scenario for "REJECTED means no restock".
 
 ---
 
@@ -157,7 +164,7 @@ for any line whose units go back into sellable stock. No silent fallback to orig
 | Session | Backend | Frontend | Tests | Status |
 |---------|---------|----------|-------|--------|
 | S1 Return | ✅ | ✅ | ✅ | ✅ done |
-| S2 Void | ⬜ | ⬜ | ⬜ | ⬜ not started |
+| S2 Void | ✅ | ✅ | ✅ | ✅ done |
 | S3 Cancel | ⬜ | ⬜ | ⬜ | ⬜ not started |
 | S4 Cleanup/verify | — | — | ⬜ | ⬜ not started |
 
