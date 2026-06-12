@@ -5435,12 +5435,22 @@
         + '<div class="ivm-disposition-row" id="ivm-disp-' + item.id + '" style="display:' + dispDisplay + ';">'
         +   '<label class="ivm-disp-opt">'
         +     '<input type="radio" name="ivm-disp-' + item.id + '" value="SELLABLE" checked'
-        +     ' onchange="_ivmUpdateSubmitState()" /> Sellable'
+        +     ' onchange="onVoidQtyChange()" /> Sellable'
         +   '</label>'
         +   '<label class="ivm-disp-opt">'
         +     '<input type="radio" name="ivm-disp-' + item.id + '" value="REJECTED"'
-        +     ' onchange="_ivmUpdateSubmitState()" /> Rejected / Damaged'
+        +     ' onchange="onVoidQtyChange()" /> Rejected / Damaged'
         +   '</label>'
+        + '</div>'
+        + '<div class="rtn-wh-row ivm-wh-row" id="ivm-wh-row-' + item.id + '" style="display:none;margin-top:6px;">'
+        +   '<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Restock to warehouse</div>'
+        +   '<select class="form-select ivm-warehouse" id="ivm-wh-' + item.id + '"'
+        +   ' style="font-size:12px;padding:4px 8px;" onchange="_ivmUpdateSubmitState()">'
+        +   '<option value="">-- select --</option>'
+        +   '<option value="wh1">WH1</option>'
+        +   '<option value="wh2">WH2</option>'
+        +   '<option value="wh3">Balagtas</option>'
+        +   '</select>'
         + '</div>'
         + '</div>';
     }).join('');
@@ -5474,6 +5484,16 @@
       if (remaining - qtyVal > 0) allEffectiveZero = false;
 
       totalVoidingValue += qtyVal * parseFloat(item.unitPrice || 0);
+
+      // Show warehouse select when this line will restock
+      var whRow = $('ivm-wh-row-' + item.id);
+      if (whRow) {
+        var checkedDisp = document.querySelector('input[name="ivm-disp-' + item.id + '"]:checked');
+        var disp = checkedDisp ? checkedDisp.value : 'SELLABLE';
+        var willRestock = qtyVal > 0 && (!isDelivered || disp === 'SELLABLE');
+        whRow.style.display = willRestock ? '' : 'none';
+        if (!willRestock) { var whs = $('ivm-wh-' + item.id); if (whs) whs.value = ''; }
+      }
     });
 
     // Determine new tier
@@ -5588,6 +5608,21 @@
       if (!allOk) { btn.disabled = true; return; }
     }
 
+    // Warehouse: required for each line that will restock
+    var warehouseOk = true;
+    order.items.forEach(function(item) {
+      var input = $('ivm-qty-' + item.id);
+      var qty   = input ? parseInt(input.value, 10) : 0;
+      if (isNaN(qty) || qty <= 0) return;
+      var checkedDisp = document.querySelector('input[name="ivm-disp-' + item.id + '"]:checked');
+      var disp = checkedDisp ? checkedDisp.value : 'SELLABLE';
+      if (!isDelivered || disp === 'SELLABLE') {
+        var wh = $('ivm-wh-' + item.id);
+        if (!wh || !wh.value) warehouseOk = false;
+      }
+    });
+    if (!warehouseOk) { btn.disabled = true; return; }
+
     btn.disabled = false;
   };
 
@@ -5617,6 +5652,13 @@
       if (isDelivered || tier === 'TIER_2') {
         var checked = document.querySelector('input[name="ivm-disp-' + item.id + '"]:checked');
         entry.disposition = checked ? checked.value : 'SELLABLE';
+      }
+
+      // Include restockWarehouse when line will restock
+      var entryDisp = entry.disposition || 'SELLABLE';
+      if (!isDelivered || entryDisp === 'SELLABLE') {
+        var whEl = $('ivm-wh-' + item.id);
+        entry.restockWarehouse = whEl ? whEl.value : '';
       }
 
       items.push(entry);
