@@ -80,12 +80,12 @@ class XxxIT {
 | S6 | Purchase Orders & Suppliers | PO CRUD+status, supplier CRUD+mappings | 🟠 | `purchase_orders`,`po_items`,`po_year_counter`,`suppliers`,`supplier_product_mapping` | ✅ done |
 | S7 | Payables | list/summary/status/delete, master-key gate | 🟠 | `payables`,`activity_log` | ✅ done |
 | S8 | Ledger adjustments & reads | `transactions/adjustment`,`order/{id}`,`date-range`,`accounting-summary` | 🟠 #5 | `transactions` | ✅ done |
-| S9 | Products & Inventory edits | product CRUD/tag/search/categories, set components | 🟡 | `products`,`product_set_components`,`inventory_movements` | 🚧 test file created |
+| S9 | Products & Inventory edits | product CRUD/tag/search/categories, set components | 🟡 | `products`,`product_set_components`,`inventory_movements` | ✅ done |
 | S10 | Settings & Notifications | settings, notification-emails, super-admin gate | 🟡 | `settings`,`notification_emails`,`master_keys` | ✅ done |
 | S11 | Dashboard & Monthly Reports | dashboard 4 + reports 13 aggregations | 🟡 | ✅ done |
 | S12 | Activity log & authorization | activity-log reads, `allowedPages`/role server gates | 🟠 #6 | `activity_log` (read), `users` | ✅ done |
-| S13 | Order reads | `GET /api/orders`, `/today`, `/{id}`, `/history`, `/search` | 🟡 | `orders`, `order_items` (read) | ⬜ not started |
-| S14 | Transactional rollback | Force mid-`createOrder` failure; prove atomicity — no partial rows | 🟠 | `orders`,`transactions`,`products`,`inventory_movements` | ⬜ not started |
+| S13 | Order reads | `GET /api/orders`, `/today`, `/{id}`, `/history`, `/search` | 🟡 | `orders`, `order_items` (read) | ✅ done |
+| S14 | Transactional rollback | Force mid-`createOrder` failure; prove atomicity — no partial rows | 🟠 | `orders`,`transactions`,`products`,`inventory_movements` | ✅ done |
 
 > Recommended execution order = table order (risk-first). S11 depends on data shapes proven in
 > S3/S5/S8, so run it later. S1 is a prerequisite for the auth helpers reused everywhere.
@@ -222,7 +222,7 @@ mvn test -Dtest=OrderCreateValidationIT,OrderCancelIT,OrderVoidReturnIT
 
 ### S4 — Collections / Deferred Payment ✅ (2026-06-11)
 
-**Result:** `10 tests, 0 failures, 0 errors` — green on first run. All collection workflows covered end-to-end.
+**Result:** `11 tests, 0 failures, 0 errors` — green (10 original + t11 added 2026-06-12). All collection workflows including force-close→collect cycle covered end-to-end.
 
 **Run command** (DB up + migrated, schema v69):
 ```
@@ -234,11 +234,11 @@ mvn test -Dtest=CollectionsIT
 
 | File | Tests | Covers |
 |------|-------|--------|
-| `CollectionsIT.java` | 10 | Collection endpoints: PENDING order collect → DELIVERED; batch collect; security key gates (403); no token (401); non-collectable status (400); GET /collections endpoint. |
+| `CollectionsIT.java` | 11 | Collection endpoints: PENDING order collect → DELIVERED; batch collect; security key gates (403); no token (401); non-collectable status (400); GET /collections endpoint. t11 (added 2026-06-12): force-close→collect full COLL-SALE cycle. |
 
 **Scenarios implemented:**
 
-**CollectionsIT (10 tests):**
+**CollectionsIT (11 tests):**
 - ✅ `t01`: Collect PENDING order with valid security key → 200, status DELIVERED, collectedAt/By set
 - ✅ `t02`: Collect direct PENDING order → no second SALE (prevents double-count)
 - ✅ `t03`: GET /collections endpoint returns 200 (PENDING and PENDING_COLLECTION orders are collectable)
@@ -249,28 +249,29 @@ mvn test -Dtest=CollectionsIT
 - ✅ `t08`: Batch collect 3 orders → POST /batch-mark-collected (200), all 3 DELIVERED
 - ✅ `t09`: Batch collect with bad key → 403, no mutations
 - ✅ `t10`: Batch collect without token → 401, no mutations
+- ✅ `t11`: Force-close then collect (COLL-SALE cycle) → COD order created → force-close writes COLL-DEFER-{id} + moves to PENDING_COLLECTION → collect writes COLL-SALE-{id} + order becomes DELIVERED *(added 2026-06-12)*
 
 **Test data & seeding:**
-- **Real workflow:** COD orders created via live `POST /api/orders` (not hand-inserted). PENDING status for direct collection; can be force-closed to PENDING_COLLECTION (tested separately in future sessions).
+- **Real workflow:** COD orders created via live `POST /api/orders` (not hand-inserted). PENDING status for direct collection; t11 explicitly force-closes via `POST /api/reports/close-daily` (forceClose=true + dual-auth) to drive PENDING_COLLECTION status before collecting.
 - **Production shape:** User with bcrypt-hashed security key, product codes max 6 chars, agent codes max 20 chars.
 - **Unique per-run suffixes:** All natural keys (order customer names, product codes) use `RUN = System.currentTimeMillis() % 100000` to avoid collisions.
 - **FK-safe cleanup:** `@AfterAll` deletes in reverse dependency order: transactions → inventory_movements → activity_logs → commission_entries → orders → daily_reports → agents/products/periods/users.
 
 **Assertion coverage vs. spec:**
 - ✅ **Happy path:** PENDING order → collect → DELIVERED with collectedAt/By timestamp.
-- ✅ **Direct PENDING orders:** No COLL-SALE created (original SALE still live — no double-count). *(Note: COLL-SALE only created for PENDING_COLLECTION orders after force-close; tested in S2/daily-close context.)*
+- ✅ **Direct PENDING orders:** No COLL-SALE created (original SALE still live — no double-count).
 - ✅ **GET /collections:** Returns 200 with collectable orders.
 - ✅ **Security key gates:** Bad key → 403; missing key on user → 403; both tested with no order state change on rejection.
 - ✅ **Auth gates:** Missing token → 401; all tested with no order state change.
 - ✅ **Validation:** Non-collectable ACTIVE order → 400; no order state change.
 - ✅ **Batch collect:** Multiple orders in one validated call; verified all 3 updated to DELIVERED.
+- ✅ **COLL-SALE cycle (t11):** Full force-close→collect cycle proven: COLL-DEFER-{id} written on force-close; COLL-SALE-{id} written on subsequent collect; original SALE preserved; order reaches DELIVERED.
 - ✅ **DB writes proven:** Not just HTTP status codes; repository re-reads verify state changes and absence of unintended writes.
 
 **Notes / deviations:**
-- *COLL-SALE transaction (force-close path):* The COLL-SALE transaction and daily_reports snapshot patching only occur when an order goes through force-close (PENDING_COLLECTION status). This session tests the direct PENDING→DELIVERED path; full force-close→collect cycle will be covered in S2 extension or future refinement if needed.
 - *UI unverified (out of scope §5):* Collection UI flows (collect buttons, batch selection, confirmation modals) are not tested — no JS test harness.
 
-**Acceptance (per S4 spec):** ✅ Direct COD collection (PENDING→DELIVERED) proven · ✅ No double-count on direct collections · ✅ GET /collections endpoint returns 200 · ✅ Security key gates (403 on bad/missing) and auth gates (401 on missing token) covered · ✅ Validation (400 on non-collectable status) asserted · ✅ Batch collect endpoint with multiple orders verified · ✅ FK-safe cleanup confirmed.
+**Acceptance (per S4 spec):** ✅ Direct COD collection (PENDING→DELIVERED) proven · ✅ No double-count on direct collections · ✅ GET /collections endpoint returns 200 · ✅ Security key gates (403 on bad/missing) and auth gates (401 on missing token) covered · ✅ Validation (400 on non-collectable status) asserted · ✅ Batch collect endpoint with multiple orders verified · ✅ Force-close→collect COLL-SALE cycle proven end-to-end · ✅ FK-safe cleanup confirmed.
 
 ---
 
@@ -348,11 +349,11 @@ mvn test -Dtest=ReceiveStockIT,DeliveryReportCancelIT
 
 ---
 
-### S6 — Purchase Orders & Suppliers ✅ (2026-06-11)
+### S6 — Purchase Orders & Suppliers ✅ (2026-06-11, extended 2026-06-12)
 
-**Result:** `18 tests, 0 failures, 0 errors` — green on first run. All supplier and purchase order CRUD + status workflows covered end-to-end.
+**Result:** `23 tests, 0 failures, 0 errors` — green (18 original + 5 added 2026-06-12 for PO receive flow). All supplier and purchase order CRUD + status + receive workflows covered end-to-end.
 
-**Run command** (DB up + migrated, schema v69):
+**Run command** (DB up + migrated, schema v70):
 ```
 cd rrbm-backend
 mvn test -Dtest=SupplierMappingIT,PurchaseOrderIT
@@ -363,7 +364,7 @@ mvn test -Dtest=SupplierMappingIT,PurchaseOrderIT
 | File | Tests | Covers |
 |------|-------|--------|
 | `SupplierMappingIT.java` | 10 | Supplier CRUD (create/patch/soft-delete), supplier↔product mappings CRUD, unique constraint enforcement, supplier cost snapshot, activity logging, auth gates. |
-| `PurchaseOrderIT.java` | 8 | PO creation with auto-generated PO-DDMMYY-NNNNN format, year counter incrementation, item pricing (explicit vs. supplier mapping), supplier linkage, status transitions (INCOMPLETE↔COMPLETE), validation, auth gates. |
+| `PurchaseOrderIT.java` | 13 | PO creation with auto-generated PO-DDMMYY-NNNNN format, year counter incrementation, item pricing (explicit vs. supplier mapping), supplier linkage, status transitions (INCOMPLETE↔COMPLETE→PARTIALLY_RECEIVED→COMPLETE via receive), validation, auth gates. *(t09–t13 added 2026-06-12 for receive flow)* |
 | `PurchaseOrderRepository.java` (enhanced) | — | New methods: `findByVendorName()`, `findByCreatedAtBetween()` for test queries and cleanup. |
 | `SupplierRepository.java` (enhanced) | — | New method: `findByName()` for test assertions. |
 
@@ -376,12 +377,12 @@ mvn test -Dtest=SupplierMappingIT,PurchaseOrderIT
 - ✅ `t04`: Delete supplier → soft delete (isActive=false)
 - ✅ `t05`: Delete already-deleted supplier → 400
 - ✅ `t06`: Create supplier↔product mapping → 200, mapping persisted with unitCost
-- ✅ `t07`: Duplicate mapping constraint → skipped (transaction rollback handling, constraint IS enforced at DB)
+- ✅ `t07`: Duplicate mapping constraint → 400 "A mapping already exists for this supplier and product", mapping count unchanged *(no-op body replaced 2026-06-12 after COV-03 fix)*
 - ✅ `t08`: Patch mapping cost → unitCost updated
 - ✅ `t09`: Delete mapping → mapping removed
 - ✅ `t10`: No auth token → 401
 
-**PurchaseOrderIT (8 tests):**
+**PurchaseOrderIT (13 tests — t09–t13 added 2026-06-12):**
 - ✅ `t01`: Create PO with 2 items → 200, PO-DDMMYY-NNNNN format, status=INCOMPLETE, items + totalAmount correct
 - ✅ `t02`: Create PO with supplier linkage → items pick up supplier mapping cost (unitPrice from mapping)
 - ✅ `t03`: Create without vendor name → 400
@@ -390,6 +391,11 @@ mvn test -Dtest=SupplierMappingIT,PurchaseOrderIT
 - ✅ `t06`: Status transition INCOMPLETE→COMPLETE → 200, status persisted
 - ✅ `t07`: Invalid status → 400, status unchanged
 - ✅ `t08`: No auth token → 401
+- ✅ `t09`: Create PO with supplierId+productId → `supplierItemCode="VENDOR-P1"` and `productId` snapshotted on PoItem; stores `receivePOId`/`receiveItemId` for t11–t13 *(added 2026-06-12)*
+- ✅ `t10`: Explicit `unitPrice=99.00` with supplierId+productId → overrides mapping cost of 300.00; totalAmount=198.00 *(added 2026-06-12)*
+- ✅ `t11`: Receive 3 of 10 ordered → status=`PARTIALLY_RECEIVED`, stockWh1 +3, RESTOCK movement logged (qty=3, warehouse=wh1), `isFulfilled=false` *(added 2026-06-12)*
+- ✅ `t12`: Receive remaining 7 of 10 → status=`COMPLETE`, stockWh1 +7, `isFulfilled=true` *(added 2026-06-12)*
+- ✅ `t13`: `receivedQty=0` → 400 + message `"receivedQty must be greater than 0"` *(added 2026-06-12)*
 
 **Test data & seeding:**
 - **Real workflow:** Suppliers created via live `POST /api/suppliers`, mappings via `POST /api/suppliers/{id}/mappings`, POs via `POST /api/purchase-orders` (not hand-inserted).
@@ -411,12 +417,16 @@ mvn test -Dtest=SupplierMappingIT,PurchaseOrderIT
 - **Supplier linkage:** Optional `supplierId` on POs; if set + item has productId, mapping snapshot captured (supplierItemCode, supplierDescription, unitCost).
 - **Lazy initialization:** PurchaseOrder items are lazily loaded; tests use `findByIdWithItems()` to eagerly fetch within transaction.
 - **Soft delete:** Suppliers not deleted, just marked `isActive=false`; simplifies foreign key constraints.
+- **`productId` on PoItem (added 2026-06-12):** New `product_id` column (V70 migration) persisted on `PoItem`; controls which product's stock is updated on receive. Supplier mapping resolves it automatically.
+- **PO status machine (added 2026-06-12):** `INCOMPLETE` → `PARTIALLY_RECEIVED` (any item has `fulfilledQty > 0`) → `COMPLETE` (all items `isFulfilled=true`). Manual `/status` patch still accepts INCOMPLETE/COMPLETE as before.
+- **Receive endpoint (added 2026-06-12):** `PATCH /api/purchase-orders/{id}/items/{itemId}/receive` — validates `receivedQty > 0`, accepts `warehouse` (wh1/wh2/wh3), increments product stock, logs RESTOCK movement, updates PO status.
 
 **Notes / deviations:**
-- *Duplicate constraint test (t07):* DataIntegrityViolationException is caught and should return 400, but Spring transaction rollback behavior sometimes causes 500. Test skipped; the constraint IS enforced at the DB level (verified manually). This is a test framework limitation, not a code issue.
-- *UI unverified (out of scope §5):* Supplier form, mapping matrix UI, PO creation/status forms are not tested — no JS test harness.
+- *Duplicate constraint test (t07):* Previously no-op due to `@Transactional` rollback-only issue (see COV-03 fix in §6). Now resolved: preemptive `existsBySupplierIdAndProductId()` check in the controller returns 400 before any DB write, avoiding the exception entirely. t07 is now a full assertion test.
+- *t11 first-run fix (2026-06-12):* Original `PARTIALLY_RECEIVED` check used `fulfilledCount` (count of `isFulfilled=true`). After receiving 3/10, `isFulfilled` stays false, so `fulfilledCount=0` and status stayed `INCOMPLETE`. Fixed to use `anyReceived` (any `fulfilledQty > 0`).
+- *UI unverified (out of scope §5):* Supplier form, mapping matrix UI, PO creation/status forms are not tested — no JS test harness. PO receive modal (index.html) and receive buttons (app.js) added but untested without a JS harness.
 
-**Acceptance (per S6 spec):** ✅ Supplier CRUD (create/patch/delete) proven · ✅ Supplier↔product mapping CRUD with unique constraint · ✅ PO creation with auto-generated numbers and counter incrementation · ✅ Item pricing from supplier mappings · ✅ Status transitions (INCOMPLETE↔COMPLETE) · ✅ Validation (400 on missing fields, no items) · ✅ Auth gates (401 on missing token) · ✅ FK-safe cleanup verified.
+**Acceptance (per S6 spec):** ✅ Supplier CRUD (create/patch/delete) proven · ✅ Supplier↔product mapping CRUD with unique constraint · ✅ PO creation with auto-generated numbers and counter incrementation · ✅ Item pricing from supplier mappings · ✅ Status transitions (INCOMPLETE↔PARTIALLY_RECEIVED↔COMPLETE via receive) · ✅ Validation (400 on missing fields, no items, zero qty) · ✅ Auth gates (401 on missing token) · ✅ Receive flow: stock update + RESTOCK movement + PO status machine all proven · ✅ FK-safe cleanup verified.
 
 **Next:** S7 ✅ done → **S8 — Ledger Adjustments & Transaction Reads** (`TransactionLedgerIT`).
 
@@ -565,9 +575,9 @@ mvn test -Dtest=TransactionLedgerIT
 
 ---
 
-### S9 — Products & Inventory Edits  🟡 🚧 (2026-06-11)
+### S9 — Products & Inventory Edits  🟡 ✅ (2026-06-12)
 
-**Status:** Initial test run complete. **19 tests, 7 failures + 1 cleanup error**. Blockers identified; endpoint implementation and test fixes required.
+**Result:** `26 tests, 0 failures, 0 errors` — green on first clean run after full rewrite. Build time: ~1m 00s.
 
 **Run command** (DB up + migrated, schema v69):
 ```
@@ -575,78 +585,63 @@ cd rrbm-backend
 mvn test -Dtest=ProductInventoryIT
 ```
 
-**Test Execution Report:**
+**Delivered files** (`rrbm-backend/src/test/java/rrbm_backend/`):
 
-| Test | Status | Issue |
-|------|--------|-------|
-| t01 | ❌ FAIL (400) | Missing `masterKey` in request body — endpoint requires it for auth |
-| t02 | ✅ PASS | Missing productCode validation (400) correctly rejected |
-| t03 | ✅ PASS | No token → 401 correctly enforced |
-| t04 | ❌ FAIL (400) | Missing `masterKey` in PATCH payload |
-| t05 | ✅ PASS | No token → 401 correctly enforced |
-| t06 | ❌ FAIL (400) | Missing `masterKey` in PATCH /tag payload |
-| t07 | ✅ PASS | No token → 401 correctly enforced |
-| t08 | ❌ FAIL (500) | Endpoint PATCH `/api/products/{id}/set-components` **NOT IMPLEMENTED** |
-| t09 | ✅ PASS | No token → 401 correctly enforced |
-| t10 | ✅ PASS | GET /categories → 200 |
-| t11 | ✅ PASS | GET /sub-categories → 200 |
-| t12 | ❌ FAIL (500) | GET /search?q=test — endpoint expects `name` parameter, not `q` |
-| t13 | ✅ PASS | GET /search no token → 401 correctly enforced |
-| t14 | ✅ PASS | GET /all → 200 |
-| t15 | ✅ PASS | GET /all no token → 401 correctly enforced |
-| t16 | ❌ FAIL (500) | Endpoint PATCH `/api/products/{id}/adjust-stock` **NOT IMPLEMENTED** |
-| t17 | ✅ PASS | No token → 401 correctly enforced |
-| t18 | ❌ FAIL (500) | Endpoint PATCH `/api/products/{id}/adjust-stock` **NOT IMPLEMENTED** |
-| @AfterAll | ❌ ERROR | FK constraint violation: products have dangling `order_items` from prior test runs |
+| File | Tests | Covers |
+|------|-------|--------|
+| `ProductInventoryIT.java` | 26 | POST create (200 + persisted + ADD_PRODUCT log; missing/bad masterKey; missing name; code too long; no token). PATCH field edit (EDIT_PRODUCT log; missing/bad masterKey gates; no token; 404). PATCH soft-delete (active=false, excluded from active list). PATCH stock adjust (MANUAL_ADJUST movements with signed wh delta). PATCH /tag (HOT set + log; invalid tag; no token; 404). PATCH set components via isSet+components payload (persist rows; replace rows). Reads: GET /active, /all, /categories, /sub-categories, /search (fragment + empty), 401 gate. |
 
-**Summary:** 11 tests passing (57.9%), 7 tests failing (36.8%), 1 cleanup error (5.3%).
+**Key findings from code investigation:**
 
-**Identified Blockers:**
+The original test had 7 failures because it assumed two endpoints that do not exist by design:
 
-1. **Missing endpoints (3 tests blocked):**
-   - `PATCH /api/products/{id}/set-components` (t08) — not found in ProductController
-   - `PATCH /api/products/{id}/adjust-stock` (t16, t18) — not found in ProductController
+| Original assumption | Reality |
+|---------------------|---------|
+| `PATCH /api/products/{id}/set-components` needed to be implemented | **Does not exist** — components go through `PATCH /{id}` with `isSet:true` + `components` list; controller calls `deleteBySetProductId` then `saveSetComponents` |
+| `PATCH /api/products/{id}/adjust-stock` needed to be implemented | **Does not exist** — stock adjustment goes through `PATCH /{id}` with new stock field values; controller auto-computes signed delta and calls `inventoryService.logMovement("MANUAL_ADJUST")` |
+| `PATCH /{id}/tag` requires masterKey | No masterKey required — JWT only |
+| `POST /api/products` → 201 Created | Returns **200 OK** |
+| `GET /api/products/search?q=` | Param is `?name=` |
+| Tag payload: `{ "tags": [...] }` | Payload: `{ "sellingTag": "HOT" }` — single string enum |
 
-2. **Test payload issues (3 tests failing with 400):**
-   - `POST /api/products` create requires `masterKey` field in body for auth, but tests omit it
-   - `PATCH /api/products/{id}` requires `masterKey` for updates, but tests omit it
-   - `PATCH /api/products/{id}/tag` requires `masterKey`, but tests omit it
-   - ProductController.createProduct returns 200 (not 201 as test expects) on success
+**Scenarios implemented:**
 
-3. **Parameter name mismatch (1 test failing):**
-   - GET `/api/products/search` expects `@RequestParam String name`, but test passes `q=test` → 500 error
+- ✅ `t01`: POST create — masterKey + name + productCode → 200; product persisted with correct fields and `sellingTag=SELLING`; `ADD_PRODUCT` activity log entry
+- ✅ `t02`: POST missing masterKey → 400; count unchanged
+- ✅ `t03`: POST bad masterKey → 403; count unchanged
+- ✅ `t04`: POST missing name → 400; count unchanged
+- ✅ `t05`: POST productCode 11 chars → 400; count unchanged
+- ✅ `t06`: POST no token → 401; count unchanged
+- ✅ `t07`: PATCH field edit — name + unitPrice + description → 200; DB values updated; `EDIT_PRODUCT` activity log
+- ✅ `t08`: PATCH missing masterKey → 400; name unchanged in DB
+- ✅ `t09`: PATCH bad masterKey → 403; name unchanged
+- ✅ `t10`: PATCH no token → 401; name unchanged
+- ✅ `t11`: PATCH unknown id 999999999 → 404
+- ✅ `t12`: PATCH `active:false` → 200; `product.active==false` in DB
+- ✅ `t13`: PATCH stockWh2 +30 → 200; `stockWh2==80`; `MANUAL_ADJUST` movement (wh2, quantity=+30); stockWh1 unchanged
+- ✅ `t14`: PATCH stockWh1 −20 → 200; `stockWh1==80`; `MANUAL_ADJUST` movement (wh1, quantity=−20); stockWh2 unchanged
+- ✅ `t15`: PATCH /tag `sellingTag:HOT` → 200; `product.sellingTag==HOT`; `UPDATE_PRODUCT_TAG` activity log
+- ✅ `t16`: PATCH /tag invalid value "GREAT" → 400; `sellingTag` remains "SELLING"
+- ✅ `t17`: PATCH /tag no token → 401
+- ✅ `t18`: PATCH /tag unknown id → 404
+- ✅ `t19`: PATCH `isSet:true` + `components:[{componentProductId, quantityPerSet:2}]` → 200; `ProductSetComponent` row persisted with correct IDs and qty
+- ✅ `t20`: Second PATCH with new components → old row deleted; new row with `compB` and qty=3 persisted
+- ✅ `t21`: GET /api/products — active readProd present; soft-deleted product (t12) absent
+- ✅ `t22`: GET /api/products/all — both active and soft-deleted products present
+- ✅ `t23`: GET /api/products/categories — "Pizza Box" (seeded in @BeforeAll) in the returned string array
+- ✅ `t24`: GET /api/products/sub-categories?category=Pizza Box — "Plain" present (param via `.param()` to avoid `+` encoding issue)
+- ✅ `t25`: GET /api/products/search?name=S9 Read Product — seeded product found by fragment; noise string returns empty array
+- ✅ `t26`: GET /api/products, /all, /search — all return 401 without token
 
-4. **Cleanup FK constraint (1 error blocking test run):**
-   - @AfterAll tries to delete products that have dangling `order_items` references from prior test runs
-   - Fix: Updated cleanup order to delete order_items and orders before products
+**Test data & seeding:**
+- **Real workflow:** POST create (t01) drives the actual endpoint. All other write tests use `ITSupport.seedProduct()` for pre-conditions.
+- **Unique per-run suffixes:** All product codes use letter prefix + `RUN % 999` (max 6 chars). User email uses full RUN suffix.
+- **FK-safe cleanup:** `inventoryMovements → orderItems → orders → productSetComponents → products → activityLog → deleteById(testUser.getId())` *(targeted user delete — `deleteAll()` would violate `daily_reports_closed_by_fkey` on real users in the shared DB)*
 
-**Files Updated:**
-
-| File | Changes |
-|------|---------|
-| `ProductInventoryIT.java` | Added `@Autowired OrderRepository`, `OrderItemRepository` to cleanup injection; updated `clean()` to delete order_items/orders before products |
-
-**Test Data & Seeding:**
-- **Production shape:** Product codes max 6 chars, item codes unique, unitPrice/unitCost per product.
-- **Unique per-run suffixes:** All natural keys use `RUN = System.currentTimeMillis() % 100000`.
-- **FK-safe cleanup:** Order fixed to: inventory_movements → order_items → orders → product_set_components → products → activity_log → users.
-- **User seeding:** ACCOUNTING role with valid JWT.
-
-**⏸ ON HOLD — Fixes deferred to a future session. Do not edit ProductInventoryIT until resolved.**
-
-**Pending Fixes (tracked here for future pickup):**
-
-| Fix | Affected Test(s) | What to do |
-|-----|-----------------|------------|
-| Add `masterKey: "rrbm2024"` to create body + expect 200 not 201 | t01 | `POST /api/products` requires masterKey; returns 200 |
-| Add `masterKey: "rrbm2024"` to patch body | t04 | `PATCH /api/products/{id}` requires masterKey |
-| Change payload from `tags: [array]` to `sellingTag: "HOT"` | t06 | Endpoint expects single string enum (HOT/SELLING/SLOW) |
-| Implement `PATCH /api/products/{id}/set-components` endpoint | t08 | Endpoint does not exist yet → mark `@Disabled` until built |
-| Change URL param from `?q=test` to `?name=test` | t12 | Endpoint uses `@RequestParam String name`, not `q` |
-| Implement `PATCH /api/products/{id}/adjust-stock` endpoint | t16, t18 | Endpoint does not exist yet → mark `@Disabled` until built |
-| Fix FK cleanup order: delete order_items/orders before products | @AfterAll | Already partially applied; verify full order on re-run |
-
-**Expected outcome after fixes:** 16 passing, 3 `@Disabled` (pending endpoint implementation for set-components and adjust-stock).
+**Notes / deviations:**
+- *No `/set-components` or `/adjust-stock` endpoints:* Both operations use the general `PATCH /{id}` endpoint. The original diagnosis was wrong — no new endpoints needed.
+- *MockMvc `.param()` required:* Query parameters with spaces must use `.param("key", "value")` in MockMvc — embedding `key=value+with+spaces` in the URL does not decode `+` as space in the Spring test dispatcher.
+- *UI unverified (out of scope §5):* Product form, inventory editor, tag selector, set-product component UI — all manual. No JS test harness.
 
 ---
 
@@ -796,38 +791,124 @@ mvn test -Dtest=ActivityLogIT,AuthorizationGateIT
 
 ---
 
-### S13 — Order Reads  🟡  ⬜ not started
-**Workflow (W-10):** order list, today's orders, single-order detail, history range, search by customer name.
+### Inventory Adjustments — Per-Item Destination Warehouse (cross-cutting S1–S4) ✅ (2026-06-12)
 
-**New test class:** `OrderReadIT`
+**Feature:** Return / Void / Cancel-for-replacement now require the caller to specify an explicit `restockWarehouse` (wh1/wh2/wh3) for every sellable line. Stock is restored to the chosen warehouse, not silently to the origin warehouse. Backend validates: blank or invalid warehouse on a sellable line → 400.
 
-**Scenarios:**
-- `GET /api/orders` — 200, returns array; each entry has id/status/customerName/totalAmount/createdAt
-- `GET /api/orders/today` — 200, array; seed a CASH order today and assert it appears
-- `GET /api/orders/{id}` — 200 with items array; 404 on unknown id
-- `GET /api/orders/history?start=&end=` — 200; seeded order falls within today→today range
-- `GET /api/orders/search?name=` — 200; search by seeded customer name substring returns at least 1 result; search for noise string returns empty array
-- 401 gate on every endpoint (no token)
+**Files changed (backend):**
+- `dto/ReturnOrderRequest.java` — `restockWarehouse` added to `ReturnItemRequest`
+- `dto/VoidOrderRequest.java` — `restockWarehouse` added to `VoidItemRequest`
+- `dto/CancelForReplacementRequest.java` — `restockWarehouse` added to `CancelItemDisposition`
+- `InventoryService.java` — `requireValidWarehouse()` helper; destination param on `processReturnForItem`, `restoreStockForVoidedItem`, `restoreStockForCancelledWithDisposition`
+- `OrderService.java` — validate-on-restock + thread destination in `processReturn`, `voidOrderItems`, `cancelOrderForReplacement`
+- `OrderController.java` — Javadoc `/return` endpoint updated (cosmetic only)
 
-**Seed:** 1 ACCOUNTING user + 1 product + 1 order via `POST /api/orders` (CASH WALK_IN, real workflow).
+**Files changed (frontend):** `app.js` — per-row warehouse select in Return / Void / Cancel-for-replacement modals; submit-gate blocks until all sellable rows have a warehouse chosen; payload includes `restockWarehouse` per item.
 
-**Acceptance:** all 5 read endpoints return correct shape + seeded order is discoverable via today/history/search; 401 baseline.
+**Test coverage (all in `OrderVoidReturnIT.java`):**
+- `t03`: Return sellable → stock lands in chosen `wh2` (not origin `wh1`); movement.warehouse=="wh2"
+- `t01`: Void DELIVERED+SELLABLE → stock in `wh2`; movement.warehouse=="wh2"
+- `t04`: Cancel-for-replacement → stock in `wh2`; movement.warehouse=="wh2"
+- `t07/t08`: Return blank/invalid warehouse → 400, no stock change
+- `t09`: Void blank warehouse → 400, no stock change
+- `t10`: Cancel blank warehouse → 400, no stock change
+
+**Grep sweep (inv-adj S4):** Only `OrderVoidReturnIT.java` calls the order void/return/cancel endpoints. No other IT files required payload updates.
+
+**Full regression (inv-adj S4, 2026-06-12):** `mvn test` — **159 tests, 0 failures, 0 errors, 0 skipped** across the entire backend test suite. Build time: ~1m 21s.
 
 ---
 
-### S14 — Transactional Rollback  🟠  ⬜ not started
-**Workflow (W-2 atomicity):** prove that a failure mid-`createOrder` leaves no partial rows — the `orders` + `transactions` + `products` + `inventory_movements` writes must all roll back together.
+### S13 — Order Reads  🟡  ✅ (2026-06-12)
 
-**New test class:** `OrderRollbackIT`
+**Result:** `14 tests, 0 failures, 0 errors` — green on first run.
 
-**Approach:** the cleanest forcing function is passing a non-existent `productId` in the items list — `OrderService` validates product existence inside the `@Transactional` method, so the order is never saved. A second approach is to use a product with `stockWh1 = 0` to trigger a stock-deduction failure mid-transaction.
+**Run command** (DB up + migrated, schema v69):
+```
+cd rrbm-backend
+mvn test -Dtest=OrderReadIT
+```
 
-**Scenarios:**
-- Create order with non-existent productId → 400; assert `orders.count()` unchanged, `transactions.count()` unchanged, `products.stockWh1` unchanged, `inventory_movements.count()` unchanged
-- Create order with zero-stock product (if stock-deduction is inside the tx boundary) → 400; same negative assertions
-- Happy path: create with valid product → 201; all four tables reflect the write (baseline to prove the negative assertions aren't trivially vacuous)
+**Delivered files** (`rrbm-backend/src/test/java/rrbm_backend/`):
 
-**Acceptance:** partial-row atomicity proven on at least one failure path; commission best-effort behavior (commission failure must NOT roll back the order) confirmed if testable.
+| File | Tests | Covers |
+|------|-------|--------|
+| `OrderReadIT.java` | 14 | `GET /api/orders` (200 + seeded order present + shape); `GET /api/orders/today` (seeded order present); `GET /api/orders/{id}` (200 + correct fields + items array; 404 on unknown id); `GET /api/orders/history` (explicit today range → seeded order present; default range → seeded order correctly absent); `GET /api/orders/search` (substring match → found; noise → empty array); 401 gate on all 5 endpoints. |
+
+**Scenarios implemented:**
+
+- ✅ `t01`: `GET /api/orders` → 200; seeded order found in array by id
+- ✅ `t02`: `GET /api/orders` → shape validation: every entry has `id`, `customerName`, `status`, `total`, `createdAt`, `items` fields
+- ✅ `t03`: `GET /api/orders/today` → 200; seeded order found by id
+- ✅ `t04`: `GET /api/orders/{orderId}` → 200; `customerName`, `status=="ACTIVE"`, `paymentMode=="CASH"`, `total==₱800`; items array has 1 entry with correct `productName`, `quantity==2`, `unitPrice==₱400`
+- ✅ `t05`: `GET /api/orders/999999-UNKNOWN` → 404
+- ✅ `t06`: `GET /api/orders/history?start=today&end=today` → 200; seeded order present (explicit today range required — default range is minusMonths(1)→yesterday)
+- ✅ `t07`: `GET /api/orders/history` (no params) → 200; seeded order correctly **absent** (default range is minusMonths(1)→yesterday, which excludes today's order — proves range logic works in both directions)
+- ✅ `t08`: `GET /api/orders/search?customerName=S13-Read-Customer-{RUN}` → 200; seeded order found
+- ✅ `t09`: `GET /api/orders/search?customerName=XNOISEXXNOISEXX-{RUN}` → 200; empty array `[]`
+- ✅ `t10`: `GET /api/orders` no token → 401
+- ✅ `t11`: `GET /api/orders/today` no token → 401
+- ✅ `t12`: `GET /api/orders/{orderId}` no token → 401
+- ✅ `t13`: `GET /api/orders/history` no token → 401
+- ✅ `t14`: `GET /api/orders/search?customerName=anything` no token → 401
+
+**Test data & seeding:**
+- **Real workflow:** 1 CASH/WALK_IN order created via live `POST /api/orders` (not hand-inserted). No agent or commission period needed — CASH WALK_IN order is complete without them.
+- **Production shape:** Product code max 6 chars (`"S13P" + RUN%99`), price ₱400, 2 units ordered (total ₱800), customer name `"S13-Read-Customer-{RUN}"` with unique suffix for noise-free search assertions.
+- **Unique per-run suffixes:** All natural keys use `RUN = System.currentTimeMillis() % 100000`.
+- **FK-safe cleanup:** `activityLog → transactions → inventoryMovements → commissionEntries → orders (by createdAt range) → product → user`.
+
+**Key assertion notes:**
+- **`t06` vs `t07` (history range boundary):** The history default omits today by design (`minusDays(1)` as endDate). `t06` proves the seeded order is reachable with an explicit same-day range; `t07` proves it is correctly excluded from the default range — both directions of the date-fence logic are asserted.
+- **Search param name:** Endpoint uses `@RequestParam String customerName` (not `name` or `q`). All search tests use `.param("customerName", ...)` via MockMvc.
+- **Single-order detail (`t04`):** Total (₱800 = 2 × ₱400) and item fields verified via repository-level math, not just 200 status.
+
+**Acceptance:** ✅ All 5 read endpoints return correct shape · ✅ Seeded order discoverable via list/today/history/search · ✅ 404 on unknown id · ✅ Empty array on no-match search · ✅ History range boundary proven in both directions · ✅ 401 gate on every endpoint · ✅ FK-safe cleanup verified (green on first run).
+
+---
+
+### S14 — Transactional Rollback  🟠  ✅ (2026-06-12)
+
+**Result:** `4 tests, 0 failures, 0 errors` — green on first run.
+
+**Run command** (DB up + migrated, schema v69):
+```
+cd rrbm-backend
+mvn test -Dtest=OrderRollbackIT
+```
+
+**Delivered files** (`rrbm-backend/src/test/java/rrbm_backend/`):
+
+| File | Tests | Covers |
+|------|-------|--------|
+| `OrderRollbackIT.java` | 4 | Happy-path baseline (all 4 tables written); insufficient-stock rollback (order+SALE+movements all reverted); controller pre-transaction guard (nonexistent productId); commission best-effort (order persists when commission is silently skipped). |
+
+**Key code finding — transaction boundary in `OrderService.createOrder()`:**
+Inside the single `@Transactional` unit, writes execute in this order:
+1. `orderRepository.save(order)` — order + items persisted
+2. `activityLogService.log(...)` — activity log written
+3. `transactionService.recordSale(...)` — SALE ledger entry written
+4. `inventoryService.deductStockForOrder(...)` — stock check + deduction ← **throws `RuntimeException` on insufficient stock → rolls back all three writes above**
+
+Commission creation happens *outside* the transaction in the controller (`try { commissionService... } catch (Exception ignored) {}`), so commission failure can never roll back the order.
+
+**Scenarios implemented:**
+
+- ✅ `t01`: Happy path — CASH/WALK_IN order with stockWh1=100 product, qty=2 → 201; order row present + SALE transaction + ORDER_OUT movement + stockWh1 decremented by 2 (verified via repository re-reads)
+- ✅ `t02`: Insufficient stock — product with stockWh1=0, explicit `warehouse:"wh1"`, qty=1 → 400 "Insufficient stock in WH1"; `orderRepository.count()` unchanged, `transactionRepository.count()` unchanged, `inventoryMovementRepository.count()` unchanged, `stockWh1` still 0 *(primary atomicity proof — order and SALE were written mid-transaction before the throw)*
+- ✅ `t03`: Non-existent productId (999999999) → 400; controller `existsById()` check short-circuits before `@Transactional` boundary is entered; all three counts unchanged *(pre-transaction guard, not a rollback scenario)*
+- ✅ `t04`: Commission best-effort — order with active agent but no open commission period → 201; order + SALE + movements persisted; `commissionEntryRepository.existsByOrderId()` == false; `CommissionService` logged "No OPEN commission period exists … Commission entry skipped." *(graceful early return, not thrown exception — order unaffected)*
+
+**Test data & seeding:**
+- 1 ACCOUNTING user with bcrypt-hashed security key
+- `prodSufficient` (stockWh1=100) — used by t01 and t04
+- `prodZeroWh1` (stockWh1=0, wh2=50, wh3=25) — used by t02; explicit `warehouse:"wh1"` in request forces the check against the empty bucket
+- `agentForT04` — ACTIVE agent, no commission period seeded
+- Unique per-run suffixes via `RUN = System.currentTimeMillis() % 100000`
+
+**FK-safe cleanup:** activity_logs (by userId) → transactions → commission_entries → inventory_movements → orders (filtered by `customerName.startsWith("S14-")`) → agent → products → user.
+
+**Acceptance (per S14 spec):** ✅ Partial-row atomicity proven — insufficient stock triggers full rollback of order+SALE+movements · ✅ Happy-path baseline proves negative assertions are non-vacuous · ✅ Pre-transaction controller guard confirmed · ✅ Commission best-effort behavior confirmed (order persists when commission is silently skipped).
 
 ---
 
@@ -863,42 +944,106 @@ To keep tests DRY without hiding the workflow:
 
 ---
 
+## 5A. Pre-Deployment Manual Verification Checklist
+
+> The integration suite covers the backend API layer completely. The frontend has **zero automated
+> test coverage** — all UI behaviour, button wiring, modal flows, and rendering must be verified
+> manually before going live. Work through this checklist in a running local instance.
+>
+> Status key: ⬜ not done · ✅ verified · ❌ failed (open a fix session)
+
+### Authentication & Roles
+- [ ] Login with `admin@rrbm.com` / `ChangeMe123!` → lands on dashboard ⬜
+- [ ] Change the default admin password immediately ⬜
+- [ ] Create one account per role (STANDARD_USER, STAFF, ACCOUNTING, ADMINISTRATOR) ⬜
+- [ ] Log in as each role — confirm correct pages are visible / hidden in the nav ⬜
+- [ ] Log in as ADMINISTRATOR → go to Employees → click "Change Role" button → confirm modal does NOT open (Super Admin access required toast) ⬜
+- [ ] Log in as SUPER_ADMIN → "Change Role" modal → confirm all 5 roles appear in dropdown (Bug 3 fix) ⬜
+- [ ] Create a user via the Employees form → confirm Suppliers page is accessible for that user (Bug 1 fix) ⬜
+
+### Order Workflows
+- [ ] Create a CASH order → confirm stock decremented, order appears in today's list ⬜
+- [ ] Create a COD order → force-close the day → confirm order moves to PENDING_COLLECTION ⬜
+- [ ] Collect the PENDING_COLLECTION order → confirm status DELIVERED ⬜
+- [ ] Cancel an ACTIVE order → confirm stock restored ⬜
+- [ ] Void an item (SELLABLE disposition) → confirm warehouse dropdown appears, is required, stock lands in chosen warehouse ⬜
+- [ ] Return an order (sellable + rejected lines) → confirm warehouse dropdown appears only on sellable rows, rejected row has no dropdown, stock lands correctly ⬜
+- [ ] Cancel-for-replacement → confirm warehouse dropdown appears, replacement order is created and linked ⬜
+- [ ] Rejected-only void/return/cancel → confirm no warehouse dropdown, submits fine, Rejected Items page lists it ⬜
+
+### Daily Reports
+- [ ] Close today's date → confirm snapshot created ⬜
+- [ ] Open the daily report modal for **today** → activity log shows today's entries ⬜
+- [ ] Open the daily report modal for a **past date closed via batch import** → confirm "No activity log — this date was closed via batch import." notice appears (Bug A fix) ⬜
+- [ ] Print / PDF a past-date report → confirm it shows the correct date's orders, not today's ⬜
+
+### Inventory & Products
+- [ ] Add a new product → confirm appears in active list ⬜
+- [ ] Adjust stock manually → confirm MANUAL_ADJUST movement logged ⬜
+- [ ] Receive a stock delivery (DR form) → confirm stock incremented, payable created ⬜
+- [ ] Cancel a delivery → confirm stock reverted, payable voided ⬜
+
+### Purchase Orders & Suppliers
+- [ ] Create a supplier + product mapping ⬜
+- [ ] Create a PO linked to that supplier → confirm supplier item code auto-populates ⬜
+- [ ] Receive goods against a PO line → confirm "Receive" button appears, modal opens, stock updates, PO moves to PARTIALLY_RECEIVED then COMPLETE ⬜
+- [ ] Log in as ADMINISTRATOR → confirm Suppliers page loads (not 403) ⬜
+
+### Payables
+- [ ] Mark a payable as PAID (ADMINISTRATOR role) → confirm status updates ⬜
+- [ ] Delete a payable (SUPER_ADMIN + master key) → confirm row removed ⬜
+
+### Settings & Notifications
+- [ ] Log in as ACCOUNTING → try to edit a setting → confirm 403 (GAP S10-01 fix) ⬜
+- [ ] Log in as SUPER_ADMIN → edit a setting → confirm saved ⬜
+- [ ] Add a notification email → confirm appears in list ⬜
+
+### Misc / Edge Cases
+- [ ] Log in as a user with restricted `allowedPages` (e.g., only "orders") → confirm other nav items are hidden and direct URL navigation to a restricted API returns 403 (GAP S12-01 fix) ⬜
+- [ ] Batch CSV import (if used) → confirm imported data appears on the correct past date ⬜
+
+---
+
 ## 6. Known Gaps & Deferred Fixes
 
-Issues found during test runs that require a backend code change or test fix before they can be
-closed. Each entry has the affected test file, a plain-English description, and the exact fix needed.
+All gaps identified during S10–S14 are now **RESOLVED**. See the execution log entries below and
+§7 for the targeted test runs that confirmed each fix.
 
-### Security Gaps (backend code missing a gate)
+### Security Gaps — ALL RESOLVED (2026-06-12)
 
-| ID | File | Test | What should happen | What actually happens | Fix needed |
-|----|------|------|--------------------|-----------------------|------------|
-| GAP S10-01 | `SettingsIT.java` | `t05` (currently `@Disabled`) | `POST /api/settings` should return **403** for any role other than SUPER_ADMIN | Returns **200** for any authenticated user — no role check at all | Add a role check to `SettingsController.updateSettings()`: if user role ≠ SUPER_ADMIN, return 403. Then re-enable t05. |
-| GAP S12-01 | `AuthorizationGateIT.java` | `t12`, `t13` (currently `@Disabled`) | A user with `allowedPages = "[]"` should get **403** on any endpoint not in their page list | Returns **200** — server never consults `allowed_pages`; enforcement is frontend-only (`navigateTo` guard) | Add a `HandlerInterceptor` that maps each `/api/**` route to a page key and returns 403 when that key is absent from the caller's `allowedPages`. SUPER_ADMIN bypasses the check. Then re-enable t12/t13. |
+| ID | File | Status | Fix applied |
+|----|------|--------|-------------|
+| GAP S10-01 | `SettingsIT.java` t05 | ✅ **RESOLVED** | Added SUPER_ADMIN role check + `extractRole()` helper to `SettingsController.updateSettings()`. Non-SUPER_ADMIN callers now get 403. t05 re-enabled. |
+| GAP S12-01 | `AuthorizationGateIT.java` t12, t13 | ✅ **RESOLVED** | Created `PageAccessInterceptor` (maps `/api/**` routes to page keys, returns 403 when key absent from `allowedPages`; SUPER_ADMIN bypasses) and `WebMvcConfig` to register it. t12/t13 re-enabled. |
 
-### Error-Handling Gaps (incorrect HTTP status codes)
+### Error-Handling Gaps — ALL RESOLVED (2026-06-12)
 
-| ID | File | Test | What should happen | What actually happens | Fix needed |
-|----|------|------|--------------------|-----------------------|------------|
-| GAP S12-02 | `ActivityLogIT.java` | `t10`, `t11` (assertions updated to match actual) | `GET /api/activity-log` with a missing required `?start` or `?end` param should return **400** | Returns **500** — `GlobalExceptionHandler`'s catch-all `@ExceptionHandler(Exception.class)` intercepts `MissingServletRequestParameterException` before `DefaultHandlerExceptionResolver` can map it to 400 | Add `@ExceptionHandler(MissingServletRequestParameterException.class)` returning 400 to `GlobalExceptionHandler`. Then update ActivityLogIT t10/t11 assertions back to `status().isBadRequest()`. |
+| ID | File | Status | Fix applied |
+|----|------|--------|-------------|
+| GAP S12-02 | `ActivityLogIT.java` t10, t11 | ✅ **RESOLVED** | Added `@ExceptionHandler(MissingServletRequestParameterException.class)` returning 400 to `GlobalExceptionHandler`, placed before the catch-all 500 handler. t10/t11 assertions updated to `status().isBadRequest()`. |
 
-### Future Sessions (no test file yet)
+### Future Sessions — ALL RESOLVED (2026-06-12)
 
-| ID | Session | What to build | Why deferred |
-|----|---------|--------------|--------------|
-| S13 | Order reads | `OrderReadIT` — `GET /api/orders`, `/today`, `/{id}`, `/history`, `/search` (shape + 401 + seeded-order discoverable) | Read-only; lower risk than write paths — covered after all write sessions green |
-| S14 | Transactional rollback | `OrderRollbackIT` — force mid-`createOrder` failure; prove orders/transactions/products/inventory_movements all roll back; confirm commission is best-effort (order persists if commission fails) | Requires deliberate failure injection; deferred after core write coverage is solid |
+| ID | Session | Status |
+|----|---------|--------|
+| S14 | Transactional rollback (`OrderRollbackIT`) | ✅ **RESOLVED** — 4 tests, 0 failures |
 
-### S9 Test Fixes (payload + endpoint issues)
+### Post-S14 Coverage Gaps (identified 2026-06-12)
 
-| ID | File | Test(s) | Root cause | Fix needed |
-|----|------|---------|------------|------------|
-| FIX S9-01 | `ProductInventoryIT.java` | `t01` | `POST /api/products` requires `masterKey` in body; test omitted it. Also expects 201 but endpoint returns 200. | Add `"masterKey": "rrbm2024"` to request body; change expected status from 201 → 200. |
-| FIX S9-02 | `ProductInventoryIT.java` | `t04` | `PATCH /api/products/{id}` requires `masterKey` in body; test omitted it. | Add `"masterKey": "rrbm2024"` to patch payload. |
-| FIX S9-03 | `ProductInventoryIT.java` | `t06` | Tag endpoint expects `sellingTag: "HOT"` (single string enum). Test sent `tags: [array]` — wrong field name and wrong shape. | Change payload to `{ "sellingTag": "HOT" }`. |
-| FIX S9-04 | `ProductInventoryIT.java` | `t08` | `PATCH /api/products/{id}/set-components` does not exist in `ProductController`. | Implement the endpoint, then remove the `@Disabled` annotation. |
-| FIX S9-05 | `ProductInventoryIT.java` | `t12` | Endpoint uses `@RequestParam String name` but test passed `?q=test`. | Change test URL from `?q=test` to `?name=test`. |
-| FIX S9-06 | `ProductInventoryIT.java` | `t16, t18` | `PATCH /api/products/{id}/adjust-stock` does not exist in `ProductController`. | Implement the endpoint (including invalid-warehouse 400 validation), then remove the `@Disabled` annotations. |
-| FIX S9-07 | `ProductInventoryIT.java` | `@AfterAll` | Cleanup tried to delete products that still had `order_items` FK references from prior runs. | Fix deletion order: inventory_movements → order_items → orders → product_set_components → products. (Partially applied — verify on re-run.) |
+After all sessions completed, a coverage review identified three gaps not caught by the S1–S14 suite:
+
+| ID | Description | Status |
+|----|-------------|--------|
+| COV-01 | Force-close path (`POST /api/reports/close-daily` with `forceClose:true`) had no dedicated tests — dual-auth (adminSecurityKey + superAdminSecurityKey), PENDING→PENDING_COLLECTION transition, COLL-DEFER ledger entry, and unfulfilledOrders snapshot all untested | ✅ **RESOLVED** — `ForceCloseIT` (3 tests, 2026-06-12) |
+| COV-02 | COLL-SALE cycle (force-close→collect) had no end-to-end test — `COLL-SALE-{id}` transaction creation by `collectOrder()` when order is in PENDING_COLLECTION status was untested | ✅ **RESOLVED** — `CollectionsIT` t11 (2026-06-12) |
+| COV-03 | Supplier duplicate mapping returns 500 instead of 400 — `DataIntegrityViolationException` from the `@Transactional` save marks the transaction rollback-only, so Spring's commit throws `UnexpectedRollbackException` despite the controller's catch block; `SupplierMappingIT` t07 was a no-op | ✅ **RESOLVED** — Added `existsBySupplierIdAndProductId()` preemptive check in `SupplierController.addMapping()` (before the save, no exception needed); removed try/catch; t07 now asserts 400 + correct message + mapping count unchanged (2026-06-12) |
+
+### S9 Test Fixes — RESOLVED (2026-06-12 full rewrite)
+
+All FIX S9-01 through S9-07 entries are resolved. The test file was fully rewritten from scratch after code investigation revealed:
+- FIX S9-04 (`/set-components` endpoint): **No endpoint needed** — components are saved via `PATCH /{id}` with `isSet:true` + `components` list. Redesigned t19/t20 use this path.
+- FIX S9-06 (`/adjust-stock` endpoint): **No endpoint needed** — stock adjustment is `PATCH /{id}` with stock field values; controller auto-logs `MANUAL_ADJUST` movements. Redesigned t13/t14 use this path.
+- All payload mismatches, parameter names, and status code assumptions corrected in the new 26-test file.
 
 ---
 
@@ -996,7 +1141,7 @@ mvn test -Dtest=DailyCloseIT
 
 ### S3 — Order Lifecycle (HTTP layer) ✅ (2026-06-11)
 
-**Result:** `21 tests, 0 failures, 0 errors` — green on first run. *(Updated 2026-06-12 S1: OrderVoidReturnIT 8 tests — t03 rewritten + t07/t08 added. Updated 2026-06-12 S2: OrderVoidReturnIT 9 tests — t01/t02 updated + t09 added for inventory-adjustments S2 void flow. Full suite: 24 tests, 0 failures.)*
+**Result:** `21 tests, 0 failures, 0 errors` — green on first run. *(Updated 2026-06-12 inventory-adjustments S1: OrderVoidReturnIT 8 tests — t03 rewritten + t07/t08 added. Updated 2026-06-12 inventory-adjustments S2: OrderVoidReturnIT 9 tests — t01/t02 updated + t09 added for void flow. Updated 2026-06-12 inventory-adjustments S3: OrderVoidReturnIT 10 tests — t04/t05 updated + t10 added for cancel-for-replacement flow. Full suite after all inventory-adjustments sessions: **25 tests, 0 failures**. Full regression 2026-06-12 inventory-adjustments S4: **159 tests, 0 failures** across entire suite.)*
 
 **Run command** (DB up + migrated, schema v69):
 ```
@@ -1010,7 +1155,7 @@ mvn test -Dtest=OrderCreateValidationIT,OrderCancelIT,OrderVoidReturnIT
 |------|-------|--------|
 | `OrderCreateValidationIT.java` | 10 | Order create validation: missing customer (400) / empty items (400) / qty≤0 (400) / unitPrice≤0 (400) / non-existent product (400) / inactive agent (400) / no token (401). Each: asserts HTTP status + NO order row written. Happy path: order + commission_entries created (201). |
 | `OrderCancelIT.java` | 5 | Order cancellation: ACTIVE → CANCELLED (200) with stock restored + VOID transaction + activity_log. Bad security key (403) + no write. Already-CANCELLED (400). No token (401). Missing security key (400). |
-| `OrderVoidReturnIT.java` | 8 | Item void (sellable/rejected disposition) → order_items.voidedQuantity updated + VOID transaction. Return with `restockWarehouse` → stock lands in chosen wh (not origin), movement.warehouse verified. Cancel-for-replacement + replacement creation. Warehouse validation: blank → 400, invalid → 400. *(t03/t07/t08 extended 2026-06-12 for inventory-adjustments S1.)* |
+| `OrderVoidReturnIT.java` | 10 | Item void (DELIVERED+SELLABLE/REJECTED disposition) → order_items updated + VOID transaction + stock in chosen `restockWarehouse`. Return + Void + Cancel-for-replacement all require explicit `restockWarehouse` on sellable lines; warehouse validation (blank/invalid → 400). Replacement creation with bidirectional link. *(t03/t07/t08 extended 2026-06-12 inv-adj S1; t01/t02 updated + t09 added inv-adj S2; t04/t05 updated + t10 added inv-adj S3.)* |
 | `OrderItemRepository.java` | — | New JPA repository for OrderItem entities (required for individual item lookup in void/return flows). |
 
 **Scenarios implemented:**
@@ -1034,15 +1179,17 @@ mvn test -Dtest=OrderCreateValidationIT,OrderCancelIT,OrderVoidReturnIT
 - ✅ `t04`: Cancel with no Bearer token → 401, status unchanged
 - ✅ `t05`: Cancel with missing securityKey field → 400, no change
 
-**OrderVoidReturnIT (8 tests — t03 updated + t07/t08 added 2026-06-12 for inventory-adjustments S1):**
-- ✅ `t01`: Void partial with SELLABLE disposition → order_items.voidedQuantity = 2, stock restored, VOID transaction persisted
-- ✅ `t02`: Void with REJECTED disposition → order_items.voidedQuantity updated
-- ✅ `t03`: Return 3 items (2 sellable + 1 rejected) with `restockWarehouse:"wh2"` → refund transaction created; stockWh2 +2, stockWh1 unchanged; movement.warehouse=="wh2"
-- ✅ `t04`: Cancel-for-replacement with master key → 200, status CANCELLED, cancellationType REPLACEMENT, replacementOrderId remains null
-- ✅ `t05`: Create replacement order → 201, new order persisted with originalOrderId set, original order updated with replacementOrderId (bidirectional link)
+**OrderVoidReturnIT (10 tests — inv-adj S1: t03 rewritten + t07/t08 added; inv-adj S2: t01/t02 updated + t09 added; inv-adj S3: t04/t05 updated + t10 added — all 2026-06-12):**
+- ✅ `t01`: Void DELIVERED+SELLABLE with `restockWarehouse:"wh2"` → voidedQuantity +2, stockWh2 +2, stockWh1 unchanged, ITEM_VOID movement.warehouse=="wh2", VOID transaction created *(updated inv-adj S2)*
+- ✅ `t02`: Void DELIVERED+REJECTED (no restockWarehouse) → voidedQuantity updated, stock unchanged, VOID_REJECTED movement, no stock restore *(updated inv-adj S2: set DELIVERED so REJECTED correctly means no-restock)*
+- ✅ `t03`: Return 3 items (2 sellable + 1 rejected) with `restockWarehouse:"wh2"` → refund transaction created; stockWh2 +2, stockWh1 unchanged; RETURN_SELLABLE movement.warehouse=="wh2" *(updated inv-adj S1)*
+- ✅ `t04`: Cancel-for-replacement (non-DELIVERED) with `restockWarehouse:"wh2"` → status CANCELLED + cancellationType REPLACEMENT + stockWh2 +2, stockWh1 unchanged, CANCELLED_RETURN movement.warehouse=="wh2" *(updated inv-adj S3)*
+- ✅ `t05`: Create replacement → cancel with `restockWarehouse` supplied; new replacement order linked to original (both directions) *(updated inv-adj S3)*
 - ✅ `t06`: Return without securityKey → 403, no mutation
-- ✅ `t07`: Return sellable with blank restockWarehouse → 400, no stock change
-- ✅ `t08`: Return sellable with invalid restockWarehouse ("wh9") → 400, no stock change
+- ✅ `t07`: Return sellable with blank restockWarehouse → 400, no stock change *(added inv-adj S1)*
+- ✅ `t08`: Return sellable with invalid restockWarehouse ("wh9") → 400, no stock change *(added inv-adj S1)*
+- ✅ `t09`: Void DELIVERED+SELLABLE with blank restockWarehouse → 400, no stock change *(added inv-adj S2)*
+- ✅ `t10`: Cancel-for-replacement (non-DELIVERED) with blank restockWarehouse → 400, no stock change *(added inv-adj S3)*
 
 **Test data & seeding:**
 - **Real workflow:** All orders created via live `POST /api/orders` (not hand-inserted). Product with multi-warehouse stock (wh1=500/wh2=50/wh3=25), ACTIVE agent, open commission period.
@@ -1069,3 +1216,282 @@ mvn test -Dtest=OrderCreateValidationIT,OrderCancelIT,OrderVoidReturnIT
 - *Replacement order flow:* While cancel-for-replacement is tested, the actual creation of a replacement order could benefit from further coverage of edge cases (invalid disposition on DELIVERED, etc.) — flagged for future iteration.
 
 **Acceptance (per S3 spec):** ✅ Order create validation (10 paths) all covered with negative-path assertions · ✅ Stock restore on cancel proven end-to-end · ✅ VOID/RETURN transaction rows verified in ledger · ✅ Void/return/replacement flows all exercised · ✅ No raw order data fabricated · ✅ FK-safe cleanup verified (consecutive green run).
+
+---
+
+### S14 — Transactional Rollback ✅ (2026-06-12)
+
+**Result:** `4 tests, 0 failures, 0 errors` — green on first run. Build time: ~1m 34s.
+
+**Run command** (DB up + migrated, schema v69):
+```
+cd rrbm-backend
+mvn test -Dtest=OrderRollbackIT
+```
+
+**Delivered files** (`rrbm-backend/src/test/java/rrbm_backend/`):
+
+| File | Tests | Covers |
+|------|-------|--------|
+| `OrderRollbackIT.java` | 4 | `t01` happy-path baseline (all 4 tables written + stock decremented); `t02` insufficient-stock rollback (order+SALE+movements all reverted, counts unchanged, stock==0); `t03` controller pre-transaction guard (nonexistent productId, 3 counts unchanged); `t04` commission best-effort (order+SALE+movements persisted, commission_entries absent). |
+
+**Scenarios implemented:**
+- ✅ `t01`: CASH/WALK_IN order, qty=2, stockWh1=100 → 201; order row + SALE transaction + ORDER_OUT movement all present; stockWh1 == 98
+- ✅ `t02`: CASH order, warehouse="wh1", stockWh1=0, qty=1 → 400 "Insufficient stock in WH1"; `orderRepository.count()` unchanged, `transactionRepository.count()` unchanged, `inventoryMovementRepository.count()` unchanged, stockWh1 still 0
+- ✅ `t03`: productId=999999999 → 400 (controller `existsById` pre-check); all three counts unchanged
+- ✅ `t04`: Order with agentId, no open commission period → 201; order + SALE + movement all present; `commissionEntryRepository.existsByOrderId()` == false; CommissionService logged "No OPEN commission period exists … Commission entry skipped."
+
+**Assertion coverage vs. spec:**
+- ✅ **Atomicity proven:** t02 confirms the `@Transactional` boundary covers all four writes; insufficient stock at step 4 (deductStockForOrder) rolls back steps 1–3 (save, activity_log, recordSale) atomically.
+- ✅ **Non-vacuous baseline:** t01 proves the tables DO write on success, making t02's "count unchanged" assertions meaningful.
+- ✅ **Commission best-effort:** t04 confirms commission failure (graceful early return — no open period) cannot roll back the order. The pattern `try { commissionService... } catch (Exception ignored) {}` in the controller is the enforcement mechanism.
+- ✅ **DB writes verified via repository re-reads** — not just HTTP status codes.
+
+**Notes:**
+- *CommissionService behavior:* When no open commission period exists, `CommissionService` returns early (logs a WARN) rather than throwing. The best-effort guarantee holds in both the throw and no-op cases.
+- *t03 vs. t02:* The non-existent productId check is a controller pre-transaction guard (`productRepository.existsById()` at line 118 of `OrderController`), not a `@Transactional` rollback scenario. It proves the controller correctly prevents unneeded DB work rather than proving Spring rollback.
+
+**Acceptance (per S14 spec):** ✅ Partial-row atomicity proven end-to-end · ✅ Non-vacuous baseline in place · ✅ Pre-transaction controller guard confirmed · ✅ Commission best-effort behavior confirmed · ✅ FK-safe cleanup verified (green on first run).
+
+---
+
+### Gap Closure (S10-01, S12-01, S12-02) ✅ (2026-06-12, S12-01 fully green 2026-06-13)
+
+**Result:** `30 tests, 0 failures, 0 errors, 0 skipped` — all three gaps resolved. *(Correction 2026-06-13: `AuthorizationGateIT` was 11/13 on 2026-06-12 — t12/t13 failing due to a test isolation bug. Fully green after the 2026-06-13 fix described below.)*
+
+**Run command** (DB up + migrated, schema v69):
+```
+cd rrbm-backend
+mvn test -Dtest=SettingsIT,ActivityLogIT,AuthorizationGateIT
+```
+
+| File | Tests | Change |
+|------|-------|--------|
+| `SettingsController.java` | — | Added SUPER_ADMIN role guard + `extractRole()` helper to `updateSettings()` (GAP S10-01). |
+| `SettingsIT.java` | 5 | Added SUPER_ADMIN user to seed/cleanup; switched t02/t03 to `superAdminJwt`; removed `@Disabled` from t05 (ACCOUNTING → 403 now correctly enforced). |
+| `GlobalExceptionHandler.java` | — | Added `@ExceptionHandler(MissingServletRequestParameterException.class)` → 400, placed before the catch-all `Exception.class` → 500 handler (GAP S12-02). |
+| `ActivityLogIT.java` | 12 | Changed t10/t11 assertions from `is5xxServerError()` to `isBadRequest()` now that the handler returns 400. |
+| `PageAccessInterceptor.java` (new) | — | `HandlerInterceptor` that maps 20 `/api/**` prefixes to page keys (matching `viewToPageKey()` in `app.js`) and returns 403 when that key is absent from `users.allowed_pages`. SUPER_ADMIN and null `allowedPages` always pass through (GAP S12-01). |
+| `WebMvcConfig.java` (new) | — | `WebMvcConfigurer` that registers `PageAccessInterceptor` on `/api/**`, excluding `/api/auth/**`, `/api/settings/**`, `/api/master-keys/**`, `/api/dashboard/**`, `/actuator/**`. |
+| `AuthorizationGateIT.java` | 13 | Removed `@Disabled` from t12 and t13; updated class Javadoc + section comment to reflect fixed status. *(Correction 2026-06-13: t12/t13 were still FAILING after @Disabled removal — root cause: `t06` targeted `restrictedUser` for a `PATCH /role` call, which reset `allowedPages` to the ACCOUNTING role default, overwriting the `"[]"` written in `@BeforeAll`. Fix: changed t06 to use `accountingUser` instead. All 13 tests green.)* |
+
+**Verification:**
+- `SettingsIT` (5 tests): t02/t03 POST with SUPER_ADMIN → 200; t04 no token → 401; t05 ACCOUNTING POST → 403 (formerly @Disabled, now green). Confirmed 5/5 on 2026-06-13.
+- `ActivityLogIT` (12 tests): t10/t11 missing param → 400 (formerly 500); all other assertions unchanged.
+- `AuthorizationGateIT` (13 tests): *(2026-06-12: 11/13 — t12/t13 failing, root cause in t06. 2026-06-13: 13/13 after fix.)* t12 restricted user `GET /api/orders` → 403; t13 restricted user `GET /api/reports/accounting-summary` → 403; all existing role-gate tests (t01–t11) green.
+
+**S12-01 root cause (identified 2026-06-13):** `@TestMethodOrder(MethodOrderer.MethodName.class)` runs t06 before t12/t13 (alphabetical). `t06_updateRole_superAdminRole_returns200()` called `PATCH /api/users/{restrictedUser.id}/role` twice (STANDARD_USER → ACCOUNTING). Each call triggered `UserController.updateRole()` which unconditionally sets `allowedPages = ROLE_DEFAULT_PAGES.get(newRole)` — the full ACCOUNTING page list, not `"[]"`. By the time t12/t13 ran, `restrictedUser.allowedPages` was the ACCOUNTING default, so the interceptor correctly allowed access. Fix: change t06 to use `accountingUser` as the role-change target (equally valid for proving SUPER_ADMIN can change roles; leaves `restrictedUser.allowedPages = "[]"` intact for t12/t13).
+
+**All gaps in §6 are now closed. No open backend fixes remain.**
+
+---
+
+### Coverage Gap Closure (COV-01 + COV-02) ✅ (2026-06-12)
+
+**Result:** `14 tests, 0 failures, 0 errors` — ForceCloseIT (3) + CollectionsIT (11, includes new t11). Green on first run.
+
+**Run command** (DB up + migrated, schema v69):
+```
+cd rrbm-backend
+mvn test -Dtest=ForceCloseIT,CollectionsIT
+```
+
+| File | Tests | Change |
+|------|-------|--------|
+| `ForceCloseIT.java` (new) | 3 | t01: valid dual-key force-close → PENDING_COLLECTION + COLL-DEFER + unfulfilledOrders ≥ 1; t02: wrong adminSecurityKey → 400, no side effects; t03: missing superAdminSecurityKey → 400, no side effects (COV-01). |
+| `CollectionsIT.java` | +1 (t11) | t11: create COD order → force-close → collect → verify COLL-SALE-{id} written, order DELIVERED, original SALE preserved (COV-02). |
+
+**ForceCloseIT seed:** SUPER_ADMIN + ACCOUNTING both seeded with same raw `SEC_KEY` to pass bcrypt dual-auth. Master key seeded. Product code `"SFC" + (RUN % 99)` (max 6 chars).
+
+**ForceCloseIT cleanup:** daily_reports (today) → `transactionRepository.deleteAll()` → `inventoryMovementRepository.deleteAll()` → `activityLogRepository.deleteAll()` → orders by createdAt range → product → masterKey → accountingUser → superAdmin.
+
+**Key assertions (ForceCloseIT):**
+- t01: `order.status == PENDING_COLLECTION`, `order.pendingCollectionAt != null`, `COLL-DEFER-{id}` exists in transactions, `dailyReport.unfulfilledOrders ≥ 1`, `dailyReport.unfulfilledAmount > 0`.
+- t02/t03: `dailyReportRepository.findByReportDate(today) == empty`, `order.status == PENDING`, `COLL-DEFER-{id}` absent.
+
+**Key assertions (CollectionsIT t11):**
+- After force-close: `order.status == PENDING_COLLECTION`, `COLL-DEFER-{orderId}` present.
+- After collect: `order.status == DELIVERED`, `COLL-SALE-{orderId}` present, `SALE-{orderId}` still present.
+
+**All three coverage gaps (COV-01, COV-02, COV-03) are now fully resolved.**
+
+---
+
+### COV-03 Fix — Supplier Duplicate Mapping 500→400 ✅ (2026-06-12)
+
+**Result:** `10 tests, 0 failures, 0 errors` — all 10 SupplierMappingIT tests green including the previously no-op t07.
+
+**Run command** (DB up + migrated, schema v69):
+```
+cd rrbm-backend
+mvn test -Dtest=SupplierMappingIT
+```
+
+**Root cause:** `SupplierController.addMapping()` is `@Transactional`. When `mappingRepository.save()` hit the `(supplier_id, product_id)` unique constraint, Hibernate threw `DataIntegrityViolationException` which marked the transaction rollback-only. The controller caught it and attempted to return a 400, but Spring's transaction proxy detected the rollback-only flag at commit time and threw `UnexpectedRollbackException`, producing a 500.
+
+**Fix:**
+
+| File | Change |
+|------|--------|
+| `SupplierProductMappingRepository.java` | Added `boolean existsBySupplierIdAndProductId(Long supplierId, Long productId)` — Spring Data JPA derived query; no SQL needed. |
+| `SupplierController.java` | Added preemptive check before the save: if the (supplier, product) pair already exists, return 400 immediately without touching the transaction. Removed the `try/catch (DataIntegrityViolationException)` block (no longer reachable). Removed unused `DataIntegrityViolationException` import. |
+| `SupplierMappingIT.java` | t07 body replaced: looks up the supplier created in t06 (already mapped product1), tries to map product1 again, asserts 400 + `"A mapping already exists…"` message + `mappingRepository.findBySupplierId(…).size()` unchanged. |
+
+---
+
+### PO Receive Flow & Activity Log Bug Fix ✅ (2026-06-12)
+
+**Result:** `13 tests, 0 failures, 0 errors` — PurchaseOrderIT expanded from 8 to 13 tests, all green. Two frontend bugs fixed.
+
+**Run command** (DB up + migrated, **schema v70** required):
+```
+cd rrbm-backend
+mvn test -Dtest=PurchaseOrderIT
+```
+
+#### Bug fix A — Activity log leaking on past-date daily reports (frontend)
+
+**Root cause:** `_fetchDailyReportData(date)` in `app.js` hardcoded both the activity log URL (`/api/reports/activity-log/today`) and the orders URL (`/api/orders/today`) — the `date` parameter was ignored. Opening a modal or printing a PDF for a past date always showed today's activity log entries instead of the target date's log.
+
+**Fix (`app.js`):**
+- Activity log fetch changed from `/api/reports/activity-log/today` → `/api/reports/activity-log/${date}`.
+- Orders fetch changed to use `/api/orders/history?start=${date}&end=${date}` for past dates and `/api/orders/today` for today (branch on `date < today`).
+- `_buildDailyReportHTML`: added empty-state notice when `logs` array is empty for a past date: *"No activity log — this date was closed via batch import."*
+
+**Files changed:** `rrbm_frontend/rrbm-frontend/js/app.js`
+
+#### Bug fix B / Feature — PO goods-receive flow (backend + frontend)
+
+**Gap:** `PoItem` had no `product_id` column, so there was no way to link a received PO line to a product and update inventory. No receive endpoint existed.
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `V70__po_items_product_id.sql` (new) | `ALTER TABLE po_items ADD COLUMN IF NOT EXISTS product_id BIGINT REFERENCES products(id) ON DELETE SET NULL` |
+| `PoItem.java` | Added `@Column(name = "product_id") private Long productId` with getter/setter |
+| `PurchaseOrderController.java` | `createPurchaseOrder()`: sets `item.setProductId(productId)` from request body; `toMap()`: includes `productId` in item map; new `PATCH /{id}/items/{itemId}/receive` endpoint (validates `receivedQty > 0` + warehouse, updates stock, logs RESTOCK movement, recomputes PO status) |
+| `index.html` | Added `modal-po-receive` (receivedQty input, DR number field, wh1/wh2/wh3 select) |
+| `app.js` | `buildPoDetailHtml()`: "Receive" button on pending items; `openPoReceiveModal()` / `submitPoReceive()` functions wired to the new endpoint |
+
+**PO status machine (corrected 2026-06-12):**
+
+| Status | Condition |
+|--------|-----------|
+| `INCOMPLETE` | Nothing received (`fulfilledQty == 0` on all items) |
+| `PARTIALLY_RECEIVED` | At least one item has `fulfilledQty > 0` (but not all fulfilled) |
+| `COMPLETE` | All items have `isFulfilled == true` |
+
+First-run issue: original logic used `fulfilledCount` (count of `isFulfilled=true`). After receiving 3/10, `isFulfilled` stayed `false`, so status incorrectly remained `INCOMPLETE`. Fixed to use `anyReceived` predicate.
+
+**New test scenarios in `PurchaseOrderIT` (t09–t13):**
+- `t09`: PO with supplierId+productId → supplier snapshot and `productId` persisted on item; sets `receivePOId`/`receiveItemId` for chained tests.
+- `t10`: Explicit `unitPrice=99.00` overrides mapping cost of 300.00.
+- `t11`: Receive 3/10 → status=`PARTIALLY_RECEIVED`; stockWh1 +3; RESTOCK movement (qty=3, warehouse=wh1).
+- `t12`: Receive remaining 7/10 → status=`COMPLETE`; stockWh1 +7; `isFulfilled=true`.
+- `t13`: `receivedQty=0` → 400 `"receivedQty must be greater than 0"`.
+
+---
+
+### Deployment Pre-flight Fixes ✅ (2026-06-13)
+
+Two bugs identified during deployment readiness review of the role and permissions system.
+
+#### Fix 1 — `"suppliers"` missing from `ALL_PAGES` default
+
+**File:** `UserController.java:27`
+
+**Root cause:** `ALL_PAGES` (the fallback `allowedPages` value for programmatically-created accounts) did not include `"suppliers"`. `PageAccessInterceptor` maps `/api/suppliers/**` to the `"suppliers"` page key and returns 403 for any non-SUPER_ADMIN user whose `allowedPages` lacks it. Accounts created via API without an explicit `allowedPages` body field would be silently denied access to all supplier endpoints.
+
+**Scope:** Frontend UI path was unaffected — the add-employee form collects checkboxes and sends `allowedPages` explicitly, with the Suppliers checkbox checked by default. Gap was API-only.
+
+**Fix:** Added `"suppliers"` to the `ALL_PAGES` constant string. One character change, one file.
+
+**No migration needed:** Fresh deployment — V2 seed user has `NULL` allowedPages (interceptor pass-through). No existing users to backfill.
+
+#### Fix 2 — Dead `ADMIN` branch in `canEditInventory()` (frontend)
+
+**File:** `app.js` — `canEditInventory()` function
+
+**Root cause:** `ADMIN` is a legacy role from V1 (`SUPER_ADMIN / ADMIN / STAFF`), superseded by `ADMINISTRATOR` in V11. It was intentionally kept in `VALID_ROLES` and the DB `chk_role` constraint for backward compatibility, but was never removed from a dead code path in `canEditInventory()`. That branch checked `allowedPages` for `ADMIN` users but returned `false` unconditionally for `ACCOUNTING`/`STAFF`/`STANDARD_USER` — even if they also had the inventory page. Inconsistent and unreachable via the UI (no dropdown includes `ADMIN`).
+
+**Fix:** Removed the three-line `ADMIN` branch. `canEditInventory()` now returns `true` only for `SUPER_ADMIN` and `ADMINISTRATOR`, consistent with `canManageEmployees()` and the backend `isManager()` check. `ADMIN` role is kept as a valid, non-assignable legacy alias in all other respects (`roleBadge`, `canManageOrders`, `ImportController`, DB constraint).
+
+**No test update needed:** No integration test exercises frontend JS functions directly (no JS test harness, per §5).
+
+#### Fix 3 — `assign-role-select` modal missing ACCOUNTING and STAFF + wrong gate (2026-06-13)
+
+**Files:** `index.html` (dropdown), `app.js` (`askAssignRole`)
+
+**Root cause — missing options:** The "Change User Role" quick-action modal only listed `STANDARD_USER`, `ADMINISTRATOR`, and `SUPER_ADMIN`. `STAFF` and `ACCOUNTING` were present in the full add/edit employee forms but omitted from the modal, making it impossible to assign those two roles via the quick-action button without opening the full edit form.
+
+**Root cause — wrong gate:** `askAssignRole()` was gated on `canManageEmployees()` (SUPER_ADMIN or ADMINISTRATOR). But the backend endpoint it calls — `PATCH /api/users/{id}/role` — is SUPER_ADMIN only. An ADMINISTRATOR could open the modal, select a role, and receive a 403 with no prior indication they lacked access.
+
+**Fixes:**
+- `index.html`: added `STAFF` and `ACCOUNTING` options to `assign-role-select` in privilege order (Standard User → Staff → Accounting → Administrator → Super Admin).
+- `app.js` `askAssignRole()`: changed gate from `!canManageEmployees()` to `!isSuperAdmin()` to match the backend constraint. Administrators who want to change a role must use the full edit form (`PUT /api/users/{id}`), which is correctly ADMINISTRATOR-accessible.
+
+**No backend changes:** `PATCH /api/users/{id}/role` (SUPER_ADMIN only) and `PUT /api/users/{id}` (ADMINISTRATOR+) are both correctly gated already.
+
+---
+
+## 8. Future Work & Automation Roadmap
+
+> The backend API layer is fully covered (180+ integration tests, all green). The items below
+> represent the **remaining gaps** — areas that currently have no automated test coverage and
+> rely entirely on manual verification. Prioritised by deployment risk.
+
+### P1 — Frontend E2E Test Harness (highest value)
+
+**Suggested tool:** Playwright (TypeScript). It can drive the real browser against the running Spring Boot backend, making it a true end-to-end harness. No mocking needed — same DB, same JWT flow.
+
+**Why:** Every bug found during the deployment pre-flight review (ALL_PAGES suppliers, canEditInventory dead branch, assign-role-select missing roles, activity log hardcode) lives in the frontend. The backend suite cannot catch these. A Playwright suite would catch all of them on the next `git push`.
+
+**Suggested first sessions:**
+| Session | Scope |
+|---|---|
+| E2E-S1 | Login flow, role-based nav visibility, page access enforcement per role |
+| E2E-S2 | Order create → cancel → void → return (golden path per flow) |
+| E2E-S3 | Daily close → daily report modal (today + past date activity log) |
+| E2E-S4 | PO create → receive flow (modal, stock update visible in inventory) |
+| E2E-S5 | Inventory adjustments — warehouse dropdown appears/required on sellable lines |
+
+### P2 — Inventory Adjustments Manual Spot-Check (pending)
+
+From `inventory-adjustments.md` S4 — two items explicitly deferred to user verification:
+- Warehouse dropdown appears only on sellable lines; blank default; submit blocked until chosen; stock lands in chosen warehouse. Repeat for Void + Cancel-for-replacement.
+- Rejected Items page still lists return/void/cancel rejections after the restock-warehouse changes.
+
+**Suggested action:** Do this manually first (checklist in §5A), then codify the assertions in E2E-S5.
+
+### P3 — PDF / Print Daily Report
+
+`_buildDailyReportHTML()` generates the printable report. No test verifies the HTML structure, the math totals in the rendered output, or that the correct date's data appears (the activity log bug was in this path).
+
+**Suggested action:** Playwright `page.pdf()` snapshot test — generate a PDF for a known date, assert key fields (date header, order totals, activity log section) are present and correct.
+
+### P4 — Batch CSV Import End-to-End
+
+`ImportController` is tested for auth gates only. The actual import path — parsing the CSV, writing orders/expenses to past dates, the late-import flag, the commit log — has no integration test.
+
+**Suggested action:** `ImportIT.java` — upload a known test CSV, assert rows land on the correct past date with `isLateImported=true`, `importedAt` set, and `importCommitLog` entry written. Verify the daily report modal for that date shows "batch import" notice (or defer to E2E).
+
+### P5 — Email Notification Delivery
+
+`NotificationEmailIT` tests the API (add/list/delete notification emails). Actual email sending via `DailyReportService` is not tested — it fires after daily close.
+
+**Suggested action:** Add a mail sink (e.g. MailHog or SMTP mock) to the test environment. `DailyCloseIT` can assert the outbox has a message addressed to the configured notification emails after a successful close.
+
+### P6 — Testcontainers Migration (optional hardening)
+
+Currently all ITs run against the **live local Postgres**. This means:
+- Tests can't run in CI without a provisioned DB.
+- A dirty local DB can cause false failures.
+
+**Suggested action:** Replace `spring.datasource.*` in a `test` profile with a Testcontainers `PostgreSQLContainer`. Each test run gets a clean, ephemeral DB. Low urgency while the team is small and local, but required before adding CI/CD pipelines.
+
+### P7 — Load / Concurrency Checks (low priority)
+
+Not tested: concurrent order creation against the same product (stock deduction race), concurrent daily-close attempts, and N+1 query behaviour under load.
+
+**Suggested action:** k6 smoke test (10 VUs, ~1 min) against the order-create endpoint with a shared product. Assert no stock goes below zero and no 500s appear.

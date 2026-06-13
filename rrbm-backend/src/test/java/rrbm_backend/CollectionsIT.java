@@ -461,4 +461,66 @@ class CollectionsIT {
         assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo("PENDING");
         assertThat(orderRepository.findById(orderId).orElseThrow().getCollectedAt()).isNull();
     }
+
+    /**
+     * Full force-close → collect cycle (S4 gap closure).
+     *
+     * Proves the COLL-SALE path:
+     *   1. COD order created → SALE-{id} transaction written (PENDING status)
+     *   2. Force-close the day (dual-key) → order becomes PENDING_COLLECTION;
+     *      COLL-DEFER-{id} reverses the SALE in the ledger
+     *   3. Collect the PENDING_COLLECTION order → COLL-SALE-{id} restores revenue;
+     *      order status becomes DELIVERED
+     *
+     * Net ledger effect: SALE(+X) + COLL-DEFER(-X) + COLL-SALE(+X) = +X (correct).
+     * Without this cycle tested, a bug in COLL-SALE could silently zero out revenue
+     * for every force-closed day.
+     */
+    @Test
+    void t11_collectAfterForceClose_createsCOLLSALEAndRestoresRevenue() throws Exception {
+        // Step 1: create a COD order — SALE-{id} written automatically
+        String orderId = createCODOrderViaApi("S4-ForceCollect-" + RUN, new BigDecimal("2"), adminJwtWithKey);
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo("PENDING");
+        assertThat(transactionRepository.existsByTransactionCode("SALE-" + orderId)).isTrue();
+
+        // Step 2: clear any existing daily report, then force-close
+        dailyReportRepository.findByReportDate(LocalDate.now()).ifPresent(dailyReportRepository::delete);
+
+        Map<String, Object> forceCloseBody = new HashMap<>();
+        forceCloseBody.put("masterKey",             MASTER_KEY_RAW);
+        forceCloseBody.put("forceClose",            true);
+        forceCloseBody.put("adminSecurityKey",      SEC_KEY);
+        forceCloseBody.put("superAdminSecurityKey", SEC_KEY);
+
+        mockMvc.perform(post("/api/reports/close-daily")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + adminJwtWithKey)
+                        .content(objectMapper.writeValueAsString(forceCloseBody)))
+                .andExpect(status().isOk());
+
+        // Order deferred: PENDING_COLLECTION + COLL-DEFER ledger entry
+        Order deferred = orderRepository.findById(orderId).orElseThrow();
+        assertThat(deferred.getStatus()).isEqualTo("PENDING_COLLECTION");
+        assertThat(transactionRepository.existsByTransactionCode("COLL-DEFER-" + orderId)).isTrue();
+
+        // Step 3: collect the PENDING_COLLECTION order
+        mockMvc.perform(patch("/api/orders/" + orderId + "/collect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + adminJwtWithKey)
+                        .content("{\"securityKey\":\"" + SEC_KEY + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DELIVERED"));
+
+        // Order delivered
+        Order collected = orderRepository.findById(orderId).orElseThrow();
+        assertThat(collected.getStatus()).isEqualTo("DELIVERED");
+        assertThat(collected.getCollectedAt()).isNotNull();
+
+        // COLL-SALE created — revenue correctly restored at the original order date
+        assertThat(transactionRepository.existsByTransactionCode("COLL-SALE-" + orderId)).isTrue();
+
+        // Full ledger for this order: SALE(+X) + COLL-DEFER(-X) + COLL-SALE(+X) = +X
+        // No double-count: original SALE still present (not removed, just netted by COLL-DEFER)
+        assertThat(transactionRepository.existsByTransactionCode("SALE-" + orderId)).isTrue();
+    }
 }
