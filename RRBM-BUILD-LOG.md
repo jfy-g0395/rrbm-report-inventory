@@ -99,6 +99,8 @@
 | U18 | Jun 9 | **Review Modal Fixes** — 3 fixes: (1) removed Validate button from Step 4 Preview (misleading — checks original CSV data, not review overrides); (2) fixed nested card appearance and autocomplete dropdown clipping in review modal by replacing `class="card"` with `class="review-card"` and `overflow:visible;border:1px solid var(--border);border-radius:var(--radius-sm)` — eliminates card-in-card look and allows product/agent autocomplete dropdowns to render outside card bounds; (3) updated `.card` → `.review-card` selector for exclude-toggle opacity dimmer. Build: `node --check app.js` clean. No backend changes. |
 | U19 | Jun 9 | **Import Review System — Card Grid Redesign + 6 Fix Rounds** — U19 main: responsive CSS Grid card layout (auto-fit, minmax(280px,1fr)), modal widened to 960px, equal-height cards via flex column, visual hierarchy (title→description→metadata→actions), exclude toggle at bottom. Round 1: 9 regression fixes. Round 2: 6 visual fixes (safeDisplay, scoped styles, z-index stacking). Round 3: 8 NaN/HTML bugs (double-plus operators). Round 4: hint bar layout fix. Round 5: X icon exclude button + scrollable items. Round 6: expense category editing plan (FUZZY matches get cascading dropdown). 142/142 tests pass. |
 | U20 | Jun 10 | **Agent Page Investigation + Plan** — Investigated Agent page frontend/backend. Found: (1) statement export broken — `downloadStatement()` missing `/api/` prefix (same pattern as expense bugs); (2) no agent status toggle UI — backend has `PATCH /api/agents/{id}/status` but frontend has no button/modal to call it; (3) N+1 queries on agent list (3 queries per agent). Plan created: `docs/PLAN-agent-page-bugfixes.md`. Issues 1+2 to fix now, Issue 3 deferred. |
+| RR1–4 | Jun 13 | **Role Regrouping — all 4 sessions complete + manually verified.** S1: removed STAFF role (V71 migration STAFF→STANDARD_USER, User.java default, VALID_ROLES, 3 dropdowns). S2: Dashboard/Collections/Ledger/Agents/Import made restrictable (PageAccessInterceptor RULES, WebMvcConfig exclusion removed, viewToPageKey, 5 new checkboxes). S3: role-default auto-fill + Super-Admin customization (ROLE_DEFAULT_PAGES matrix backend+frontend, POST/PATCH-role/PUT enforce defaults, add-modal locks checkboxes for non-SA, login landing guards dashboard route). S4: void/cancel/refund gated to ACCOUNTING+SUPER_ADMIN only (`isOrderManager` helper, 4 endpoint role checks, `canManageOrders()` narrowed). 29/29 assertions green (CollectionsIT 11, OrderCancelIT 6, OrderVoidReturnIT 12). |
+| §5A | Jun 13 | **§5A manual verification fixes + security gap re-verification.** Frontend/feature: (1) Return order UX — amber "Returned" status badge + "Issue Replacement" button replaces "Process Return" after refund, using `refundedAt` timestamp already on order; (2) PDF/report download — added "Download HTML" button to report popup for VS Code compatibility (Blob + `<a download>`), print dialog preserved for real browsers; (3) PO receive modal — label changed to "Qty to Receive", remaining qty bolded; (4) Final Delivery checkbox — V73 migration (`is_final_delivery BOOLEAN DEFAULT FALSE` on `po_items`), `isFinalDelivery` field on `PoItem.java`, `PurchaseOrderController.receiveItem` reads flag + marks item fulfilled + includes `effectiveTotalAmount` in response, frontend badge + accounting summary line. Deployment pre-flight: `"suppliers"` added to `ALL_PAGES` constant (was silently 403 for API-created accounts); dead `ADMIN` branch removed from `canEditInventory()`; `assign-role-select` modal added ACCOUNTING + STAFF options and gate changed from `canManageEmployees()` → `isSuperAdmin()` to match backend. Security gap re-verification: GAP S10-01 confirmed (SettingsIT 5/5 green); GAP S12-01 test isolation bug found and fixed — `AuthorizationGateIT.t06` was calling `PATCH /role` on `restrictedUser`, resetting `allowedPages = "[]"` to ACCOUNTING defaults before t12/t13 ran; changed t06 target to `accountingUser`; 18/18 total (13 AuthorizationGateIT + 5 SettingsIT). |
 
 ---
 
@@ -2812,3 +2814,104 @@ Backend has `PATCH /api/agents/{id}/status` (AgentController.java:263) accepting
 **Plan file:** `docs/PLAN-agent-page-bugfixes.md`
 
 **No code changes this session — planning only.**
+
+---
+
+### §5A Pre-Deployment Fixes + Security Gap Re-Verification — Jun 13, 2026
+
+**Goal:** Fix four issues found during §5A manual verification of the running app; confirm or close the two remaining security gaps (S10-01, S12-01) flagged in INTEGRATION-TEST-PLAN.md.
+
+---
+
+#### Issue 1 — Return Order UX (`app.js`)
+
+**Root cause:** `refundedAt` timestamp was already stored on the `Order` entity after a successful return, but neither the today's-orders view nor the order-history view used it to update the status badge or action buttons.
+
+**Changes:**
+- `orderStatusCell(o)`: when `o.status === 'DELIVERED' && o.refundedAt` → render amber "Returned" badge instead of green "Delivered".
+- Today's-orders DELIVERED block: added `!o.refundedAt` guard on the "Process Return" button; when `o.refundedAt` is set, replaced it with an amber "Issue Replacement" button calling `openReturnReplacement(o.id)`.
+- Order history button block: same guard (`o.status === 'DELIVERED' && !o.refundedAt` for "Process Return"; `o.refundedAt` shows "Issue Replacement").
+- New `openReturnReplacement(orderId)`: pre-fills the new-order modal with the returned order's customer name, opens modal for staff to build the replacement.
+
+**No backend changes.**
+
+---
+
+#### Issue 2 — PDF/Report Download (`app.js`)
+
+**Root cause:** `downloadDailyReportPdf()` opened a new window and called `window.print()`. VS Code's integrated browser does not support the print dialog — the new window opened blank.
+
+**Change:** After generating the report HTML, added a prominent "Download as HTML" button in the popup above the print button:
+```js
+const blob = new Blob([fullHtml], { type: 'text/html' });
+const url  = URL.createObjectURL(blob);
+const a    = document.createElement('a');
+a.href = url; a.download = 'daily-report-' + dateStr + '.html';
+a.click(); URL.revokeObjectURL(url);
+```
+The print dialog path is preserved for real-browser users.
+
+**No backend changes.**
+
+---
+
+#### Issue 3 — PO Receive Modal UX (`index.html`, `app.js`)
+
+**Finding:** The receive logic (`remainingQty = orderedQty − fulfilledQty`) was already correct. The user's observation ("1000 instead of 500") was caused by a DB wipe resetting `fulfilledQty` to 0. No logic bug.
+
+**Minor UX changes:**
+- `index.html` `modal-po-receive`: label changed from "Received Qty" → "Qty to Receive".
+- `app.js openPoReceiveModal()`: remaining qty wrapped in `<strong>` in the hint text to make it visually prominent.
+
+---
+
+#### Issue 4 — Final Delivery Checkbox (`V73` + `PoItem.java` + `PurchaseOrderController.java` + `index.html` + `app.js`)
+
+**Feature:** When a supplier cannot fulfil the full PO quantity, the user checks "Final Delivery" on the receive modal to close out the line at the received quantity. The PO detail shows the effective payable amount (based on received qty, not ordered qty).
+
+| File | Change |
+|------|--------|
+| `V73__po_items_final_delivery.sql` | `ALTER TABLE po_items ADD COLUMN is_final_delivery BOOLEAN NOT NULL DEFAULT FALSE` |
+| `PoItem.java` | Added `@Column(name = "is_final_delivery") private Boolean isFinalDelivery = false` with getter/setter |
+| `PurchaseOrderController.receiveItem` | Reads `isFinalDelivery` flag from request body; sets `isFulfilled = true` when flag is true (or when `fulfilledQty >= orderedQty`); sets `isFinalDelivery = true` on item |
+| `PurchaseOrderController.toMap` | Adds `isFinalDelivery` to item map; computes `effectiveTotalAmount` (uses `fulfilledQty × unitCost` for final-delivery items, `orderedQty × unitCost` for others) |
+| `index.html` | "Final Delivery" checkbox added to `modal-po-receive` with description text |
+| `app.js openPoReceiveModal()` | Resets checkbox on open |
+| `app.js submitPoReceive()` | Reads checkbox; adds `isFinalDelivery` to request body |
+| `app.js buildPoDetailHtml()` | Amber "Final" badge on items with `isFinalDelivery = true`; accounting summary block when `effectiveTotalAmount !== totalAmount` |
+
+---
+
+#### Deployment Pre-flight Fixes (3 items)
+
+| # | Fix | File | Detail |
+|---|-----|------|--------|
+| 1 | `"suppliers"` missing from `ALL_PAGES` | `UserController.java:27` | API-created accounts without explicit `allowedPages` body got silent 403 on all supplier endpoints via PageAccessInterceptor. One line: added `"suppliers"` to the `ALL_PAGES` constant. |
+| 2 | Dead `ADMIN` branch in `canEditInventory()` | `app.js` | Legacy V1 role (`ADMIN`) checked in `canEditInventory()` but unreachable via any UI dropdown. Function returns `true` only for `SUPER_ADMIN` and `ADMINISTRATOR` — consistent with `canManageEmployees()` and the backend `isManager()` check. Removed the three-line dead branch. |
+| 3 | `assign-role-select` modal: missing options + wrong gate | `index.html`, `app.js` | Quick-action "Change User Role" modal was missing `ACCOUNTING` and `STAFF` options. Gate was `canManageEmployees()` (ADMINISTRATOR-accessible) but the backend endpoint is SUPER_ADMIN-only — ADMINISTRATOR could open the modal and get a 403. Fix: added both options in privilege order; changed gate to `isSuperAdmin()`. |
+
+---
+
+#### Security Gap Re-Verification
+
+**GAP S10-01 — POST /api/settings 403 for non-SUPER_ADMIN:**
+`SettingsIT.t05_postSettings_nonSuperAdminRole_returns403()` is active (not `@Disabled`) and passes. `SettingsController.updateSettings()` has the SUPER_ADMIN role check. Confirmed 5/5 SettingsIT tests green — gap closed.
+
+**GAP S12-01 — `allowedPages` server-side enforcement:**
+`AuthorizationGateIT` was reporting 11/13 (t12 and t13 failing — expected 403, got 200). The interceptor was registered and firing correctly. Diagnostic output revealed `user.allowedPages` was the full ACCOUNTING page list instead of `"[]"`.
+
+**Root cause:** `@TestMethodOrder(MethodOrderer.MethodName.class)` runs tests alphabetically. `t06_updateRole_superAdminRole_returns200()` (runs before t12/t13) called `PATCH /api/users/{restrictedUser.id}/role` twice. `UserController.updateRole()` unconditionally sets `allowedPages = ROLE_DEFAULT_PAGES.get(newRole)` — for ACCOUNTING that is a full page list, which overwrote the `"[]"` written in `@BeforeAll`.
+
+**Fix:** Changed t06 to use `accountingUser` as the role-change target instead of `restrictedUser`. The test still proves SUPER_ADMIN can change roles; `restrictedUser.allowedPages` remains `"[]"` for t12/t13.
+
+**Also updated in `AuthorizationGateIT.java`:**
+- Class Javadoc: updated from "GAP S12-01 — NOT enforced server-side" to describe the interceptor and its bypass rules.
+- Section comment: `// ── GAP S12-01 — allowedPages is NOT enforced server-side` → `// ── GAP S12-01 — allowedPages enforced by PageAccessInterceptor`.
+- t12 Javadoc: added isolation note ("restrictedUser must NOT be the target of any updateRole call in this class").
+- t13 comment: simplified stale text.
+
+**Final verification:**
+```
+mvn test -Dtest=SettingsIT,AuthorizationGateIT
+```
+`18 tests, 0 failures, 0 errors, 0 skipped` — 13 AuthorizationGateIT + 5 SettingsIT. BUILD SUCCESS.

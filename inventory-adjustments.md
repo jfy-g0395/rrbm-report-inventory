@@ -150,12 +150,17 @@ is the semantically correct scenario for "REJECTED means no restock".
 
 ---
 
-### S4 — Cross-cutting cleanup & full verification  ⬜ not started
-- [ ] Grep test suite for other ITs POSTing `/return`, `/void`, `/cancel-for-replacement` with sellable/SELLABLE lines; update payloads.
-- [ ] (Optional) `OrderController.java` `/return` Javadoc example: add `restockWarehouse`.
-- [ ] Full backend regression: run the broader IT suite to confirm nothing else broke.
+### S4 — Cross-cutting cleanup & full verification  ✅ done
+- [x] Grep test suite for other ITs POSTing `/return`, `/void`, `/cancel-for-replacement` with sellable/SELLABLE lines; update payloads.
+      → Only `OrderVoidReturnIT.java` calls these order endpoints; `ExpenseE3Test.java` hits `/api/expenses/{id}/void` (separate service, unaffected). No other IT payloads needed updating.
+- [x] (Optional) `OrderController.java` `/return` Javadoc example: add `restockWarehouse`.
+      → Updated Javadoc: warehouse description + item example now shows `"restockWarehouse": "wh2"`.
+- [x] Full backend regression: run the broader IT suite to confirm nothing else broke.
+      → `mvn test`: **159 tests, 0 failures, 0 errors** (2026-06-12).
 - [ ] Manual frontend spot-check (per approved plan): dropdown appears only on sellable lines, blank default, submit blocked until chosen, stock lands in chosen wh; rejected-only line shows no dropdown and submits fine. Repeat for Void + Cancel.
+      → Pending live app verification by user. See INTEGRATION-TEST-PLAN.md §5A (Order Workflows checklist) and §8 P2.
 - [ ] Confirm Rejected Items page still lists return/void/cancel rejections (untouched).
+      → Pending live app verification by user. See INTEGRATION-TEST-PLAN.md §5A (Order Workflows checklist).
 
 ---
 
@@ -166,6 +171,6 @@ is the semantically correct scenario for "REJECTED means no restock".
 | S1 Return | ✅ | ✅ | ✅ | ✅ done |
 | S2 Void | ✅ | ✅ | ✅ | ✅ done |
 | S3 Cancel | ✅ | ✅ | ✅ | ✅ done |
-| S4 Cleanup/verify | — | — | ⬜ | ⬜ not started |
+| S4 Cleanup/verify | ✅ | — | ✅ | ✅ done (frontend spot-check pending user) |
 
 **Legend:** ⬜ not started · 🚧 in progress · ✅ done
