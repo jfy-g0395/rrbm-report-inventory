@@ -404,6 +404,10 @@ public class OrderController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("message", "User not found"));
             }
+            if (!isOrderManager(caller)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("message", "Only Accounting or Super Admin can cancel orders"));
+            }
             if (caller.getAdminSecurityKey() == null) {
                 return ResponseEntity.status(403)
                         .body(Map.of("message", "No admin security key has been set for your account. Ask your Super Admin to assign one."));
@@ -680,6 +684,14 @@ public class OrderController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Authentication required"));
 
+        User voidCaller = userRepository.findById(userId).orElse(null);
+        if (voidCaller == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not found"));
+        if (!isOrderManager(voidCaller))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Accounting or Super Admin can void order items"));
+
         // ── Basic request validation ──────────────────────────────────────
         if (request.getItems() == null || request.getItems().isEmpty())
             return ResponseEntity.badRequest().body(Map.of("message", "At least one item is required"));
@@ -740,9 +752,8 @@ public class OrderController {
             if (secKey.isEmpty())
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("message", "Admin security key is required for a partial void"));
-            User caller = userRepository.findById(userId).orElse(null);
-            if (caller == null || caller.getAdminSecurityKey() == null
-                    || !passwordEncoder.matches(secKey, caller.getAdminSecurityKey()))
+            if (voidCaller.getAdminSecurityKey() == null
+                    || !passwordEncoder.matches(secKey, voidCaller.getAdminSecurityKey()))
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("message", "Invalid admin security key"));
         } else {
@@ -775,7 +786,7 @@ public class OrderController {
      * For each item being returned the caller specifies:
      *   totalReturned  = sellableQty + rejectedQty  (validated server-side)
      *
-     * sellableQty → stock restored to originating warehouse; RETURN_SELLABLE movement.
+     * sellableQty → stock restored to the chosen restockWarehouse; RETURN_SELLABLE movement.
      * rejectedQty → no stock change; RETURN_REJECTED movement with the actual count.
      *
      * An optional refundAmount may be included.  If present the RETURN ledger entry
@@ -788,7 +799,7 @@ public class OrderController {
      *   "securityKey":  "...",
      *   "reason":       "...",
      *   "items": [
-     *     { "orderItemId": 123, "totalReturned": 2, "sellableQty": 1, "rejectedQty": 1 }
+     *     { "orderItemId": 123, "totalReturned": 2, "sellableQty": 1, "rejectedQty": 1, "restockWarehouse": "wh2" }
      *   ],
      *   "refundAmount": 9.98   // optional
      * }
@@ -821,6 +832,9 @@ public class OrderController {
         if (caller == null)
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "User not found"));
+        if (!isOrderManager(caller))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Accounting or Super Admin can process returns"));
         if (caller.getAdminSecurityKey() == null)
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("message",
@@ -966,6 +980,14 @@ public class OrderController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", "Authentication required"));
 
+        User replaceCaller = userRepository.findById(userId).orElse(null);
+        if (replaceCaller == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not found"));
+        if (!isOrderManager(replaceCaller))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Accounting or Super Admin can cancel orders for replacement"));
+
         // ── Request validation ────────────────────────────────────────────
         if (request.getMasterKey() == null || request.getMasterKey().trim().isEmpty())
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -1007,6 +1029,10 @@ public class OrderController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
+    }
+
+    private boolean isOrderManager(User u) {
+        return "SUPER_ADMIN".equals(u.getRole()) || "ACCOUNTING".equals(u.getRole());
     }
 
     /**

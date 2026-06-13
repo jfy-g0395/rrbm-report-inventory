@@ -24,7 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *  U1-a  importFlag_persistsOnExpense
  *          is_imported + import_ref round-trip on Expense entity.
  *  U1-b  authorizeImport_nonAccountingUser_returns403
- *          A STAFF-role user is blocked from POST /api/import/authorize.
+ *          A STANDARD_USER-role user is blocked from POST /api/import/authorize.
  *  U1-c  authorizeImport_wrongKey_returns403
  *          ACCOUNTING role, but wrong admin_security_key → 403.
  *  U1-d  dailyReport_importedFilter_returns200WithImportedEntries
@@ -69,7 +69,7 @@ class ImportU1Test {
         staffUser.setEmail("u1-staff-" + suffix + "@test.rrbm.internal");
         staffUser.setPasswordHash("$2a$10$placeholderHashForTestOnly000000000000000000000000000");
         staffUser.setFullName("U1 Staff User");
-        staffUser.setRole("STAFF");
+        staffUser.setRole("STANDARD_USER");
         staffUser.setAdminSecurityKey(encoder.encode(SECURITY_KEY));
         staffUser = userRepository.save(staffUser);
         staffJwt = jwtUtil.generateToken(staffUser);
@@ -129,7 +129,7 @@ class ImportU1Test {
     // ── U1-b: non-ACCOUNTING role → 403 ─────────────────────────────────────
 
     /**
-     * A STAFF-role user must be blocked from the import-authorize endpoint.
+     * A STANDARD_USER-role user must be blocked from the import-authorize endpoint.
      * Error message must mention "ACCOUNTING".
      */
     @Test

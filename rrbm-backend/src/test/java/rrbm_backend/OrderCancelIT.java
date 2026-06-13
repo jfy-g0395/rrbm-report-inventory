@@ -278,4 +278,32 @@ class OrderCancelIT {
                         .content(objectMapper.writeValueAsString(cancelRequest)))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void t06_administratorCaller_returns403_noStateChange() throws Exception {
+        String adminSecKey = "S3-admin-gate-" + RUN;
+        User adminUser = ITSupport.seedUser(userRepository, "ADMINISTRATOR",
+                "s3-cancel-admin-" + RUN + "@test.rrbm.internal", "S3 Cancel Admin", PASSWORD, adminSecKey);
+        String adminJwt = ITSupport.jwtFor(jwtUtil, adminUser);
+
+        try {
+            String orderId = createOrderViaApi("S3-Cancel-AdminGate-" + RUN, 2);
+
+            Map<String, String> cancelRequest = new HashMap<>();
+            cancelRequest.put("securityKey", adminSecKey);
+            cancelRequest.put("reason", "Admin gate test");
+
+            mockMvc.perform(post("/api/orders/" + orderId + "/cancel")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .header("Authorization", "Bearer " + adminJwt)
+                            .content(objectMapper.writeValueAsString(cancelRequest)))
+                    .andExpect(status().isForbidden());
+
+            // Order remains ACTIVE — no state change
+            Order order = orderRepository.findById(orderId).get();
+            assertThat(order.getStatus()).isEqualTo("ACTIVE");
+        } finally {
+            userRepository.deleteById(adminUser.getId());
+        }
+    }
 }

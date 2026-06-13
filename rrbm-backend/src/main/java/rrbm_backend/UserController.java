@@ -10,6 +10,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.HashMap;
 
 @RestController
 @RequestMapping("/api/users")
@@ -24,7 +25,20 @@ public class UserController {
         List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "STANDARD_USER");
 
     private static final String ALL_PAGES =
-        "[\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-reports\",\"activity-log\",\"employees\",\"expenses\",\"payables\",\"suppliers\"]";
+        "[\"dashboard\",\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-reports\",\"activity-log\",\"employees\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]";
+
+    private static final Map<String, String> ROLE_DEFAULT_PAGES;
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put("STANDARD_USER",
+            "[\"orders\",\"rejected-items\",\"receive-stocks\",\"inventory\",\"delivery-reports\"]");
+        m.put("ACCOUNTING",
+            "[\"dashboard\",\"orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]");
+        m.put("ADMINISTRATOR", ALL_PAGES);
+        m.put("ADMIN",         ALL_PAGES);
+        // SUPER_ADMIN → null (bypass; stored value is irrelevant)
+        ROLE_DEFAULT_PAGES = java.util.Collections.unmodifiableMap(m);
+    }
 
     public UserController(UserRepository userRepository,
                           ActivityLogService activityLogService,
@@ -139,9 +153,19 @@ public class UserController {
         // Default: force password change on first login unless explicitly opted out
         user.setMustChangePassword(!"false".equals(body.get("mustChangePassword")));
 
-        // Page access: use provided value or default to all pages
-        String allowedPages = body.getOrDefault("allowedPages", ALL_PAGES);
-        user.setAllowedPages(allowedPages == null || allowedPages.isBlank() ? ALL_PAGES : allowedPages);
+        // Page access: Super Admin may pass a custom list or fall back to role default;
+        // non-Super-Admin callers always receive the role default (body value ignored).
+        String allowedPages;
+        if ("SUPER_ADMIN".equals(caller.getRole())) {
+            String bodyPages = body.get("allowedPages");
+            allowedPages = (bodyPages != null && !bodyPages.isBlank())
+                ? bodyPages
+                : ROLE_DEFAULT_PAGES.getOrDefault(role, ALL_PAGES);
+        } else {
+            allowedPages = ROLE_DEFAULT_PAGES.getOrDefault(role, ALL_PAGES);
+        }
+        if (allowedPages == null) allowedPages = ALL_PAGES;
+        user.setAllowedPages(allowedPages);
 
         User saved = userRepository.save(user);
         activityLogService.log(userId, createdByName, "CREATE_USER",
@@ -211,6 +235,11 @@ public class UserController {
                 if (!callerIsSuper && "SUPER_ADMIN".equals(newRole))
                     return ResponseEntity.status(HttpStatus.FORBIDDEN)
                             .body(Map.of("message", "Only Super Admin can assign the Super Admin role"));
+                if (!newRole.equals(user.getRole()) && !callerIsSuper) {
+                    String roleDefault = ROLE_DEFAULT_PAGES.getOrDefault(newRole, ALL_PAGES);
+                    if (roleDefault == null) roleDefault = ALL_PAGES;
+                    user.setAllowedPages(roleDefault);
+                }
                 user.setRole(newRole);
             }
 
@@ -255,6 +284,8 @@ public class UserController {
         return userRepository.findById(id).map(user -> {
             String oldRole = user.getRole();
             user.setRole(newRole);
+            String newDefaultPages = ROLE_DEFAULT_PAGES.get(newRole);
+            user.setAllowedPages(newDefaultPages != null ? newDefaultPages : ALL_PAGES);
             userRepository.save(user);
             activityLogService.log(callerId, caller.getFullName(), "UPDATE_USER_ROLE",
                 "Changed role for " + user.getFullName() + " from " + oldRole + " to " + newRole,

@@ -3281,7 +3281,7 @@
           </div>
           <div class="col-md-4">
             <label class="form-label">Role <span class="text-danger">*</span></label>
-            <select class="form-select" id="add-emp-role">
+            <select class="form-select" id="add-emp-role" onchange="onRoleSelectChange('add')">
               <option value="STANDARD_USER">Standard User</option>
               <option value="ACCOUNTING">Accounting</option>
               <option value="ADMINISTRATOR">Administrator</option>
@@ -3341,6 +3341,11 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="expenses" checked /> Expenses</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="payables" checked /> Payables</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="suppliers" checked /> Suppliers</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="dashboard" checked /> Dashboard</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="collections" checked /> Collections</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="ledger" checked /> Ledger</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="agents" checked /> Agents</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="import" checked /> Import</label>
           </div>
         </div>
         <!-- Admin Security Key assignment — Super Admin only -->
@@ -3435,7 +3440,7 @@
           </div>
           <div class="col-md-4">
             <label class="form-label">Role <span class="text-danger">*</span></label>
-            <select class="form-select" id="edit-emp-role">
+            <select class="form-select" id="edit-emp-role" onchange="onRoleSelectChange('edit')">
               <option value="STANDARD_USER">Standard User</option>
               <option value="ACCOUNTING">Accounting</option>
               <option value="ADMINISTRATOR">Administrator</option>
@@ -3495,6 +3500,11 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="expenses" /> Expenses</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="payables" /> Payables</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="suppliers" /> Suppliers</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="dashboard" /> Dashboard</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="collections" /> Collections</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="ledger" /> Ledger</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="agents" /> Agents</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="import" /> Import</label>
           </div>
         </div>
         <!-- Admin Security Key assignment — Super Admin only -->
@@ -4412,8 +4422,8 @@
       <div class="modal-body">
         <p id="po-receive-item-label" style="font-size:13px;font-weight:600;margin-bottom:14px;color:var(--text-primary);"></p>
         <div class="form-group">
-          <label class="form-label">Received Qty <span style="color:#EF4444;">*</span></label>
-          <input type="number" id="po-receive-qty" class="form-control" min="1" value="1" />
+          <label class="form-label">Qty to Receive <span style="color:#EF4444;">*</span></label>
+          <input type="number" id="po-receive-qty" class="form-control" min="0" value="1" />
           <div id="po-receive-qty-hint" style="font-size:11px;color:var(--text-muted);margin-top:3px;"></div>
         </div>
         <div class="form-group">
@@ -4427,6 +4437,16 @@
             <option value="wh2">Warehouse 2 (WH2)</option>
             <option value="wh3">Balagtas (WH3)</option>
           </select>
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="po-receive-final-delivery" />
+            <span style="font-size:13px;font-weight:600;">Final Delivery</span>
+          </label>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;margin-left:22px;line-height:1.4;">
+            Supplier cannot deliver remaining quantity — check to close this item.
+            Payable will reflect actual received quantity only.
+          </div>
         </div>
       </div>
       <div class="modal-footer">

@@ -129,6 +129,14 @@
       return '<span class="status-dot dot-pending"></span>Fully Voided';
     }
 
+    // Returned order — amber badge overrides green Delivered
+    if (o.status === 'DELIVERED' && o.refundedAt) {
+      return '<span class="status-dot dot-pending"></span>Returned'
+        + '<div style="font-size:10px;color:#F59E0B;line-height:1.3;margin-top:2px;">'
+        + new Date(o.refundedAt).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})
+        + '</div>';
+    }
+
     // Cancelled for replacement — keep Cancelled badge, add replacement sub-line
     if (o.cancellationType === 'REPLACEMENT') {
       var replSub = o.replacementOrderId
@@ -172,8 +180,29 @@
   // True for roles that can issue refunds / voids
   function canManageOrders() {
     const u = JSON.parse(localStorage.getItem('rrbm_user') || '{}');
-    return ['SUPER_ADMIN', 'ADMINISTRATOR', 'ADMIN', 'ACCOUNTING'].includes(u.role);
+    return ['SUPER_ADMIN', 'ACCOUNTING'].includes(u.role);
   }
+
+  const ROLE_DEFAULT_PAGES = {
+    'STANDARD_USER':  ['orders','rejected-items','receive-stocks','inventory','delivery-reports'],
+    'ACCOUNTING':     ['dashboard','orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import'],
+    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import'],
+    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import'],
+    'SUPER_ADMIN':    null
+  };
+
+  function applyRoleDefaultPages(prefix, role) {
+    const defaults = ROLE_DEFAULT_PAGES[role] || [];
+    document.querySelectorAll('#' + prefix + '-emp-page-access input[type=checkbox]').forEach(function(cb) {
+      cb.checked = defaults.includes(cb.value);
+    });
+  }
+
+  window.onRoleSelectChange = function(prefix) {
+    const sel = $(prefix + '-emp-role');
+    if (!sel) return;
+    applyRoleDefaultPages(prefix, sel.value);
+  };
 
   function roleBadge(role) {
     const map = {
@@ -245,12 +274,7 @@
 
   function canEditInventory() {
     const r = currentUserRole();
-    if (r === 'SUPER_ADMIN' || r === 'ADMINISTRATOR') return true;
-    if (r === 'ADMIN') {
-      const pages = getAllowedPages();
-      return pages === null || pages.includes('inventory');
-    }
-    return false;
+    return r === 'SUPER_ADMIN' || r === 'ADMINISTRATOR';
   }
 
   // ================================================================
@@ -339,11 +363,16 @@
       'delivery-rep': 'delivery-reports',
       'activity-log': 'activity-log',
       'emp': 'employees',
+      'agents': 'agents',
       'expenses': 'expenses',
       'payables': 'payables',
       'suppliers': 'suppliers',
+      'dash': 'dashboard',
+      'collections': 'collections',
+      'transactions': 'ledger',
+      'import': 'import',
     };
-    return map[view] || null; // null = no restriction (dash, set)
+    return map[view] || null; // null = no restriction (set)
   }
 
   function getAllowedPages() {
@@ -541,11 +570,18 @@
           + '<button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel"><i class="ti ti-x"></i></button>';
       } else if (o.status === 'DELIVERED') {
         const safeTotal = Number(o.total || 0).toFixed(2);
-        actions = '<span style="color:var(--accent-success);font-size:12px;"><i class="ti ti-check"></i> Done</span>';
-        if (canManageOrders()) {
-          actions += ivmBtn;
-          actions += ' <button class="btn btn-sm" onclick="openReturnModal(\'' + safeId + '\')" title="Process Return" style="background:#F59E0B;color:#fff;margin-left:4px;"><i class="ti ti-arrow-back-up"></i></button>';
-          actions += ' <button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel" style="margin-left:4px;"><i class="ti ti-x"></i></button>';
+        if (o.refundedAt) {
+          actions = '<span style="color:#F59E0B;font-size:12px;font-weight:600;"><i class="ti ti-receipt-refund"></i> Returned</span>';
+          if (canManageOrders()) {
+            actions += ' <button class="btn btn-sm" onclick="openReturnReplacement(\'' + safeId + '\')" title="Issue Replacement Order" style="background:#10B981;color:#fff;margin-left:4px;"><i class="ti ti-replace"></i> Issue Replacement</button>';
+          }
+        } else {
+          actions = '<span style="color:var(--accent-success);font-size:12px;"><i class="ti ti-check"></i> Done</span>';
+          if (canManageOrders()) {
+            actions += ivmBtn;
+            actions += ' <button class="btn btn-sm" onclick="openReturnModal(\'' + safeId + '\')" title="Process Return" style="background:#F59E0B;color:#fff;margin-left:4px;"><i class="ti ti-arrow-back-up"></i></button>';
+            actions += ' <button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel" style="margin-left:4px;"><i class="ti ti-x"></i></button>';
+          }
         }
       } else if (o.status === 'CANCELLED') {
         if (canManageOrders() && o.cancellationType === 'REPLACEMENT' && !o.replacementOrderId) {
@@ -922,9 +958,13 @@
       if (canAdmin) {
         actions += '<button class="btn btn-secondary btn-sm" onclick="printOrderReceipt(\'' + safeId + '\')" title="Print Receipt" style="margin-right:3px;"><i class="ti ti-printer"></i></button>';
       }
-      // N-6: only DELIVERED orders can have returns processed
-      if (canAdmin && o.status === 'DELIVERED') {
+      // N-6: only DELIVERED orders without a prior return can have returns processed
+      if (canAdmin && o.status === 'DELIVERED' && !o.refundedAt) {
         actions += '<button class="btn btn-sm" onclick="openReturnModal(\'' + safeId + '\')" title="Process Return" style="background:#F59E0B;color:#fff;margin-right:3px;"><i class="ti ti-arrow-back-up"></i></button>';
+      }
+      // After return is processed, offer replacement
+      if (canAdmin && o.refundedAt) {
+        actions += '<button class="btn btn-sm" onclick="openReturnReplacement(\'' + safeId + '\')" title="Issue Replacement Order" style="background:#10B981;color:#fff;margin-right:3px;"><i class="ti ti-replace"></i> Issue Replacement</button>';
       }
       // Step 9: CANCELLED + cancellationType REPLACEMENT → Create Replacement or Replaced indicator
       if (canAdmin && o.status === 'CANCELLED' && o.cancellationType === 'REPLACEMENT') {
@@ -4009,6 +4049,14 @@
     var addFcCheck = $('add-emp-force-change');
     if (addFcCheck) addFcCheck.checked = true;
     if ($('add-emp-role')) $('add-emp-role').value = 'STANDARD_USER';
+    // Pre-fill page access checkboxes for initial role and lock for non-Super-Admin
+    onRoleSelectChange('add');
+    var addPageAccess = $('add-emp-page-access');
+    if (addPageAccess) {
+      var addPagesDisabled = !isSuperAdmin();
+      addPageAccess.querySelectorAll('input').forEach(function(cb) { cb.disabled = addPagesDisabled; });
+      addPageAccess.style.opacity = addPagesDisabled ? '0.5' : '1';
+    }
     // Reset image preview
     const prev = $('add-emp-img-preview');
     if (prev) prev.innerHTML = '<i class="ti ti-user" style="font-size:32px;color:#bbb;"></i>';
@@ -4279,7 +4327,7 @@
   };
 
   window.askAssignRole = function (userId, userName, currentRole) {
-    if (!canManageEmployees()) { showToast('Administrator access required', 'error'); return; }
+    if (!isSuperAdmin()) { showToast('Super Admin access required', 'error'); return; }
     $('assign-role-user-id').value = userId;
     $('assign-role-user-name').textContent = userName;
     if ($('assign-role-select')) $('assign-role-select').value = currentRole;
@@ -5048,6 +5096,48 @@
     if (h4) h4.textContent = 'New Replacement Order';
     var submitBtn = document.querySelector('button[onclick="addOrder()"]');
     if (submitBtn) submitBtn.innerHTML = '<i class="ti ti-check"></i> Submit Replacement Order';
+  };
+
+  // ================================================================
+  // Return Replacement — open new order form pre-filled for returned order
+  // Does NOT set replacementMode; creates a normal new order for the same customer.
+  // ================================================================
+  window.openReturnReplacement = async function (returnedOrderId) {
+    var order = (appState.allOrders || []).find(function(o) { return o.id === returnedOrderId; })
+             || (appState.orderHistoryAll || []).find(function(o) { return o.id === returnedOrderId; });
+    if (!order) {
+      try {
+        var r = await fetch(API_BASE + '/api/orders/' + returnedOrderId, { headers: authHeaders() });
+        if (r.ok) order = await r.json();
+      } catch (e) {}
+    }
+    if (!order) { showToast('Could not load order details', 'error'); return; }
+
+    // Clear any existing replacement mode so this creates a plain new order
+    appState.replacementMode = null;
+    var banner = $('replacement-mode-banner');
+    if (banner) banner.style.display = 'none';
+    var h4 = document.querySelector('#view-new h4');
+    if (h4) h4.textContent = 'New Order';
+    var submitBtn = document.querySelector('button[onclick="addOrder()"]');
+    if (submitBtn) submitBtn.innerHTML = '<i class="ti ti-check"></i> Submit Order';
+
+    navigateTo('new');
+
+    if ($('field-customer'))   $('field-customer').value   = order.customerName || '';
+    if ($('field-source'))     $('field-source').value     = order.source       || '';
+    if (typeof window.onSourceChange === 'function') window.onSourceChange();
+    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller'))
+      $('field-reseller').value = order.agentName || '';
+    if (order.source === 'FACEBOOK_PAGE' && $('field-fb'))
+      $('field-fb').value = order.fbPage || '';
+    if (order.source === 'ECOMMERCE' && $('ecommercePlatform'))
+      $('ecommercePlatform').value = order.ecommercePlatform || '';
+    if ($('field-payment'))    $('field-payment').value    = order.paymentMode  || '';
+    if ($('field-order-type')) $('field-order-type').value = order.orderType    || 'STANDARD';
+    if ($('field-address'))    $('field-address').value    = order.address      || '';
+
+    showToast('New order opened for ' + (order.customerName || 'customer') + ' — return replacement for ' + returnedOrderId, 'success');
   };
 
   // ================================================================
@@ -5967,15 +6057,17 @@
       // Clear previous user's cached data before loading fresh data
       _clearSessionState();
 
-      // Always land on the dashboard after login
-      navigateTo('dash');
+      // Land on dashboard if accessible, otherwise order list
+      navigateTo(canAccessPage('dash') ? 'dash' : 'list');
 
       // Load live dashboard data after DOM has settled (charts need visible containers)
       setTimeout(function() {
-        renderDashboard();
-        renderTopProductsToday();
-        updateCollectionsBadge();
-        loadProductAnalytics();
+        if (canAccessPage('dash')) {
+          renderDashboard();
+          renderTopProductsToday();
+          loadProductAnalytics();
+        }
+        if (canAccessPage('collections')) updateCollectionsBadge();
       }, 150);
 
       // If admin set a temporary password, force the user to change it now
@@ -7848,8 +7940,14 @@
     var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     var items = po.items || [];
     var rows = items.map(function(item){
-      var fulfilled = item.isFulfilled;
-      var rowBg     = fulfilled ? 'background:#D1FAE5;' : '';
+      var fulfilled    = item.isFulfilled;
+      var rowBg        = fulfilled ? 'background:#D1FAE5;' : '';
+      var remaining    = (item.quantityOrdered || 0) - (item.fulfilledQty || 0);
+      var receiveBtn   = (!fulfilled && remaining > 0)
+        ? '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 8px;" ' +
+            'onclick="openPoReceiveModal(' + po.id + ',' + item.id + ',' + remaining + ')">' +
+            '<i class="ti ti-package-import"></i> Receive</button>'
+        : '';
       return '<tr style="' + rowBg + '">' +
         '<td style="font-family:monospace;font-size:12px;color:var(--text-muted);">' + escapeHtml(item.itemCode || '—') + '</td>' +
         '<td>' + escapeHtml(item.itemDescription) + '</td>' +
@@ -7862,7 +7960,11 @@
         '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(item.drNumber || '—') + '</td>' +
         '<td>' + (fulfilled
           ? '<span style="background:#10B981;color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;">Fulfilled</span>'
-          : '<span style="background:#9CA3AF;color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;">Pending</span>') + '</td>' +
+          : '<span style="background:#9CA3AF;color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;">Pending</span>')
+          + (item.isFinalDelivery
+          ? ' <span style="background:#F59E0B;color:#fff;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;">Final</span>'
+          : '') + '</td>' +
+        '<td style="text-align:center;">' + receiveBtn + '</td>' +
         '</tr>';
     }).join('');
     return '<div style="padding:10px 16px;">' +
@@ -7879,11 +7981,25 @@
           '<th style="max-width:90px;">Supplier Code</th><th>Supplier Desc</th>' +
           '<th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Cost</th>' +
           '<th style="text-align:right;">Line Total</th><th style="text-align:right;">Fulfilled</th>' +
-          '<th>DR #</th><th>Status</th>' +
+          '<th>DR #</th><th>Status</th><th></th>' +
         '</tr></thead>' +
-        '<tbody>' + (rows || '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">No items</td></tr>') + '</tbody>' +
+        '<tbody>' + (rows || '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);">No items</td></tr>') + '</tbody>' +
       '</table>' +
       (po.notes ? '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Notes: ' + escapeHtml(po.notes) + '</div>' : '') +
+      (function() {
+        var hasFinal = (po.items || []).some(function(i) { return i.isFinalDelivery; });
+        if (!hasFinal) return '';
+        var quoted   = Number(po.totalAmount || 0);
+        var effective = Number(po.effectiveTotalAmount != null ? po.effectiveTotalAmount : quoted);
+        if (Math.abs(quoted - effective) < 0.01) return '';
+        return '<div style="margin-top:8px;padding:8px 10px;background:#FEF3C7;border:1px solid #F59E0B;border-radius:6px;font-size:12px;">'
+          + '<i class="ti ti-receipt" style="margin-right:4px;color:#B45309;"></i>'
+          + '<strong>Quoted Total:</strong> ' + fmt(quoted)
+          + '&nbsp;&nbsp;·&nbsp;&nbsp;'
+          + '<strong style="color:#B45309;">Effective Payable: ' + fmt(effective) + '</strong>'
+          + ' <span style="color:var(--text-muted);font-size:10px;">(adjusted for final delivery)</span>'
+          + '</div>';
+      })() +
     '</div>';
   }
 
@@ -7894,6 +8010,72 @@
     var expanded = detailRow.style.display !== 'none';
     detailRow.style.display = expanded ? 'none' : '';
     if (chevron) chevron.style.transform = expanded ? '' : 'rotate(90deg)';
+  };
+
+  var _poReceiveCtx = { poId: null, itemId: null };
+
+  window.openPoReceiveModal = function(poId, itemId, remainingQty) {
+    _poReceiveCtx.poId   = poId;
+    _poReceiveCtx.itemId = itemId;
+
+    var po   = _allPoData.find(function(p){ return p.id === poId; });
+    var item = po ? (po.items || []).find(function(i){ return i.id === itemId; }) : null;
+
+    var labelEl = $('po-receive-item-label');
+    var qtyEl   = $('po-receive-qty');
+    var hintEl  = $('po-receive-qty-hint');
+    var drEl    = $('po-receive-dr');
+    var whEl    = $('po-receive-warehouse');
+
+    if (labelEl) labelEl.textContent = item ? item.itemDescription : 'Item #' + itemId;
+    if (qtyEl)  { qtyEl.value = remainingQty; qtyEl.max = remainingQty; }
+    if (hintEl) hintEl.innerHTML = item
+      ? 'Ordered: ' + (item.quantityOrdered || 0)
+        + '&nbsp;&nbsp;·&nbsp;&nbsp;Already received: ' + (item.fulfilledQty || 0)
+        + '&nbsp;&nbsp;·&nbsp;&nbsp;<strong style="color:var(--accent);">Remaining: ' + remainingQty + '</strong>'
+      : '';
+    if (drEl) drEl.value = '';
+    if (whEl) whEl.value = 'wh1';
+    var finalCb = $('po-receive-final-delivery');
+    if (finalCb) { finalCb.checked = false; }
+    // When Final Delivery is checked, relax the max so user can enter 0–remaining
+    if (finalCb) {
+      finalCb.onchange = function() {
+        if (qtyEl) qtyEl.max = finalCb.checked ? (item ? (item.quantityOrdered || 9999) : 9999) : remainingQty;
+      };
+    }
+
+    var overlay = $('modal-po-receive');
+    if (overlay) overlay.classList.add('open');
+  };
+
+  window.submitPoReceive = function() {
+    var poId   = _poReceiveCtx.poId;
+    var itemId = _poReceiveCtx.itemId;
+    if (!poId || !itemId) return;
+
+    var receivedQty = parseInt(($('po-receive-qty')  || {}).value || 0, 10);
+    var isFinalDelivery = ($('po-receive-final-delivery') || {}).checked || false;
+    if (receivedQty <= 0 && !isFinalDelivery) { showToast('Enter a valid received quantity', 'error'); return; }
+
+    var drNumber  = (($('po-receive-dr')        || {}).value || '').trim() || null;
+    var warehouse =  ($('po-receive-warehouse') || {}).value || 'wh1';
+
+    fetch(API_BASE + '/api/purchase-orders/' + poId + '/items/' + itemId + '/receive', {
+      method:  'PATCH',
+      headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+      body:    JSON.stringify({ receivedQty: receivedQty, drNumber: drNumber, warehouse: warehouse, isFinalDelivery: isFinalDelivery })
+    })
+    .then(function(res){ return res.json().then(function(d){ return {ok: res.ok, data: d}; }); })
+    .then(function(r) {
+      if (!r.ok) { showToast(r.data.message || 'Failed to record receipt', 'error'); return; }
+      var idx = _allPoData.findIndex(function(p){ return p.id === poId; });
+      if (idx >= 0) _allPoData[idx] = r.data;
+      filterPoList();
+      closeModal('modal-po-receive');
+      showToast('Receipt recorded' + (drNumber ? ' — DR: ' + drNumber : ''), 'success');
+    })
+    .catch(function(err){ showToast('Error: ' + (err.message || err), 'error'); });
   };
 
   window.togglePoStatus = function(id, newStatus) {
@@ -9010,6 +9192,12 @@
         h += '<td style="padding:3px 5px;border-bottom:1px solid #f0f0f0;font-size:10px;color:#666;">' + escapeHtml((log.description||'').substring(0,80)) + '</td></tr>';
       });
       h += '</tbody></table>';
+    } else {
+      var repToday = new Date().toISOString().slice(0, 10);
+      if (rep.reportDate && String(rep.reportDate) < repToday) {
+        h += sectHead('Activity Log');
+        h += '<div style="font-size:11px;color:#888;font-style:italic;padding:6px 0;margin-bottom:10px;">No activity log — this date was closed via batch import.</div>';
+      }
     }
 
     // ─── FOOTER ───
@@ -9024,10 +9212,14 @@
   /** Fetch all data needed for a daily report and return {rep, orders, logs} */
   async function _fetchDailyReportData(date) {
     var hdrs = authHeaders();
+    var today = new Date().toISOString().slice(0, 10);
+    var ordersUrl = (date && date < today)
+        ? API_BASE + '/api/orders/history?start=' + date + '&end=' + date
+        : API_BASE + '/api/orders/today';
     var results = await Promise.all([
       fetch(API_BASE + '/api/reports/daily/' + date, {headers: hdrs}).then(function(r){return r.json();}),
-      fetch(API_BASE + '/api/orders/today', {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];}),
-      fetch(API_BASE + '/api/reports/activity-log/today', {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];})
+      fetch(ordersUrl, {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];}),
+      fetch(API_BASE + '/api/reports/activity-log/' + date, {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];})
     ]);
     return { rep: results[0], orders: results[1], logs: results[2] };
   }
@@ -9082,6 +9274,7 @@
             '@media print{#dr-actions{display:none!important;}}' +
           '</style></head><body>' +
           '<div id="dr-actions">' +
+            '<button class="btn-html" onclick="downloadHTML()" style="background:#1D4ED8;color:#fff;border-color:#1D4ED8;">&#128190; Download HTML</button>' +
             '<button class="btn-pdf" onclick="window.print()">&#128438; Print / Save PDF</button>' +
             '<button id="dr-save-png" onclick="savePNG()" disabled title="Loading export library…" style="opacity:0.5;cursor:not-allowed;">&#128247; Save as PNG</button>' +
           '</div>' +
@@ -9098,6 +9291,15 @@
             '<span>INTERNAL DOCUMENT &mdash; CONFIDENTIAL</span>' +
           '</div>' +
           '<script>' +
+            'function downloadHTML(){' +
+              'var a=document.getElementById("dr-actions");if(a)a.style.display="none";' +
+              'var blob=new Blob([document.documentElement.outerHTML],{type:"text/html"});' +
+              'var url=URL.createObjectURL(blob);' +
+              'var l=document.createElement("a");l.download="daily-report-' + date + '.html";l.href=url;' +
+              'document.body.appendChild(l);l.click();document.body.removeChild(l);' +
+              'URL.revokeObjectURL(url);' +
+              'if(a)a.style.display="flex";' +
+            '}' +
             'function savePNG(){' +
               'if(!window.html2canvas){alert("Export library not available. Use Print / Save PDF instead.");return;}' +
               'var a=document.getElementById("dr-actions");if(a)a.style.display="none";' +

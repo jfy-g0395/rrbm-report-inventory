@@ -523,6 +523,86 @@ class OrderVoidReturnIT {
     }
 
     @Test
+    void t11_administratorCaller_voidReturns403() throws Exception {
+        String adminSecKey = "S3-admin-void-gate-" + RUN;
+        User adminUser = ITSupport.seedUser(userRepository, "ADMINISTRATOR",
+                "s3-void-admin-" + RUN + "@test.rrbm.internal", "S3 Void Admin", PASSWORD, adminSecKey);
+        String adminJwt = ITSupport.jwtFor(jwtUtil, adminUser);
+
+        try {
+            String orderId = createOrderViaApi("S3-Void-AdminGate-" + RUN, 3);
+            Order order = orderRepository.findByIdWithItems(orderId).get();
+            OrderItem item = order.getItems().get(0);
+            order.setStatus("DELIVERED");
+            orderRepository.save(order);
+
+            Map<String, Object> voidItem = new HashMap<>();
+            voidItem.put("orderItemId", item.getId());
+            voidItem.put("voidQuantity", 1);
+            voidItem.put("disposition", "SELLABLE");
+            voidItem.put("restockWarehouse", "wh2");
+
+            Map<String, Object> req = new HashMap<>();
+            req.put("items", List.of(voidItem));
+            req.put("reason", "Admin gate test");
+            req.put("securityKey", adminSecKey);
+
+            mockMvc.perform(post("/api/orders/" + orderId + "/void")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .header("Authorization", "Bearer " + adminJwt)
+                            .content(objectMapper.writeValueAsString(req)))
+                    .andExpect(status().isForbidden());
+
+            // No void quantity written
+            OrderItem unchanged = orderItemRepository.findById(item.getId()).get();
+            int voidedQty = unchanged.getVoidedQuantity() != null ? unchanged.getVoidedQuantity() : 0;
+            assertThat(voidedQty).isEqualTo(0);
+        } finally {
+            userRepository.deleteById(adminUser.getId());
+        }
+    }
+
+    @Test
+    void t12_administratorCaller_returnReturns403() throws Exception {
+        String adminSecKey = "S3-admin-return-gate-" + RUN;
+        User adminUser = ITSupport.seedUser(userRepository, "ADMINISTRATOR",
+                "s3-return-admin-" + RUN + "@test.rrbm.internal", "S3 Return Admin", PASSWORD, adminSecKey);
+        String adminJwt = ITSupport.jwtFor(jwtUtil, adminUser);
+
+        try {
+            String orderId = createOrderViaApi("S3-Return-AdminGate-" + RUN, 2);
+            Order order = orderRepository.findByIdWithItems(orderId).get();
+            OrderItem item = order.getItems().get(0);
+            order.setStatus("DELIVERED");
+            orderRepository.save(order);
+
+            Map<String, Object> returnItem = new HashMap<>();
+            returnItem.put("orderItemId", item.getId());
+            returnItem.put("totalReturned", 1);
+            returnItem.put("sellableQty", 1);
+            returnItem.put("rejectedQty", 0);
+            returnItem.put("restockWarehouse", "wh2");
+
+            Map<String, Object> req = new HashMap<>();
+            req.put("items", List.of(returnItem));
+            req.put("reason", "Admin gate test");
+            req.put("securityKey", adminSecKey);
+
+            mockMvc.perform(post("/api/orders/" + orderId + "/return")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .header("Authorization", "Bearer " + adminJwt)
+                            .content(objectMapper.writeValueAsString(req)))
+                    .andExpect(status().isForbidden());
+
+            // No return transaction written
+            List<Transaction> txns = transactionRepository.findByOrderIdOrderByCreatedAtDesc(orderId);
+            assertThat(txns.stream().anyMatch(t -> "RETURN".equals(t.getTransactionType()))).isFalse();
+        } finally {
+            userRepository.deleteById(adminUser.getId());
+        }
+    }
+
+    @Test
     void t10_cancelSellableWithBlankWarehouse_returns400() throws Exception {
         String orderId = createOrderViaApi("S3-Cancel-NoWh-" + RUN, 2);
         Order order = orderRepository.findByIdWithItems(orderId).get();

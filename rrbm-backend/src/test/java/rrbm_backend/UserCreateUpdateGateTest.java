@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   b. STANDARD_USER → PUT  /api/users/{id} (password reset)     → 403
  *   c. ADMINISTRATOR → POST /api/users (role=SUPER_ADMIN)        → 403 (no escalation)
  *   d. ADMINISTRATOR → PUT  /api/users/{superAdminId}            → 403 (can't touch a super admin)
- *   e. ADMINISTRATOR → POST /api/users (role=STAFF)              → 201 (workflow preserved)
+ *   e. ADMINISTRATOR → POST /api/users (role=STANDARD_USER)     → 201 (workflow preserved)
  *   f. SUPER_ADMIN   → POST /api/users (role=SUPER_ADMIN)        → 201 (allowed)
  */
 @SpringBootTest
@@ -137,13 +137,13 @@ class UserCreateUpdateGateTest {
                 .andExpect(status().isForbidden());
     }
 
-    // ── e: ADMINISTRATOR may still create a normal STAFF account ─────────────
+    // ── e: ADMINISTRATOR may create a STANDARD_USER account ──────────────────
     @Test @Order(5)
-    void administrator_createStaff_allowed() throws Exception {
+    void administrator_createStandardUser_allowed() throws Exception {
         MvcResult res = mockMvc.perform(post("/api/users")
                         .header("Authorization", "Bearer " + jwtAdministrator)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(createBody("STAFF", "admin-staff")))
+                        .content(createBody("STANDARD_USER", "admin-stduser")))
                 .andExpect(status().isCreated())
                 .andReturn();
         trackCreated(res);

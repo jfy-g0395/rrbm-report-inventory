@@ -51,7 +51,7 @@ shows as Standard User. Keep `ADMIN` legacy alias untouched.
 
 ---
 
-## Session 2 — Make Dashboard/Collections/Ledger/Agents/Import restrictable (plumbing only)
+## Session 2 — Make Dashboard/Collections/Ledger/Agents/Import restrictable (plumbing only) ✅ DONE (2026-06-13)
 **Goal:** the five currently-open-to-all pages become enforceable keys. No role defaults yet.
 
 **Backend**
@@ -72,9 +72,14 @@ shows as Standard User. Keep `ADMIN` legacy alias untouched.
 **Acceptance:** with a hand-set `allowedPages` lacking `dashboard`, `GET /api/dashboard` → 403 and the
 Dashboard nav item hides. Existing Super-Admin/Administrator (defaults/bypass) unaffected.
 
+**Delivered:** `PageAccessInterceptor` RULES updated (5 new keys, agents remapped); `WebMvcConfig`
+dashboard exclusion removed; `app.js` `viewToPageKey` updated; `index.html` 5 checkboxes added to
+both access grids. Stale "STAFF" reference in `AuthorizationGateIT.t06` fixed → "STANDARD_USER".
+39 assertions green (DashboardIT 15, AuthorizationGateIT 13, CollectionsIT 11).
+
 ---
 
-## Session 3 — Role-default auto-fill + Super-Admin customization
+## Session 3 — Role-default auto-fill + Super-Admin customization ✅ DONE (2026-06-13)
 **Goal:** picking a role fills the checkboxes; non-Super-Admin is locked to the role default.
 Depends on Session 2 keys existing.
 
@@ -96,13 +101,16 @@ Depends on Session 2 keys existing.
   `renderDashboard()/renderTopProductsToday()/loadProductAnalytics()` with `canAccessPage('dash')` and
   `updateCollectionsBadge()` with `canAccessPage('collections')`.
 
-**Acceptance:** Super Admin picks a role → boxes auto-fill, still editable. Standard User logs in →
-lands on Order List, only its 5 nav items. Accounting → its 15-page nav incl. Payables. Demoting a
-user via role change strips their extra pages.
+**Delivered:** `ALL_PAGES` updated to 19 keys (was 14, missing Session 2 additions); `ROLE_DEFAULT_PAGES`
+map added; POST/PATCH-role/PUT handlers enforce role defaults per caller; frontend `ROLE_DEFAULT_PAGES`
++ `applyRoleDefaultPages` + `onRoleSelectChange` wired to both role selects; add-modal pre-fills and
+locks checkboxes for non-Super-Admin; login landing guards dashboard route and data loads.
+Two stale STAFF references in `UserCreateUpdateGateTest` + `ImportU1Test` updated to STANDARD_USER.
+159 assertions green.
 
 ---
 
-## Session 4 — Order void/cancel/refund → Accounting + Super Admin only
+## Session 4 — Order void/cancel/refund → Accounting + Super Admin only ✅ DONE (2026-06-13)
 **Goal:** add a role gate on top of the existing key gate. Independent of S1–S3.
 
 **Backend** (`OrderController.java`)
@@ -122,6 +130,12 @@ user via role change strips their extra pages.
 
 **Acceptance:** Accounting + Super Admin can void/cancel/refund; Administrator gets 403 and the UI
 buttons are hidden.
+
+**Delivered:** `isOrderManager` helper added; role gate inserted in all 4 endpoints (`cancelOrder`,
+`voidOrderItems` — caller loaded early to avoid double DB hit in TIER_1 branch, `processReturn`,
+`cancelForReplacement`); `canManageOrders()` narrowed to `['SUPER_ADMIN','ACCOUNTING']`.
+`t06` added to `OrderCancelIT`; `t11`+`t12` added to `OrderVoidReturnIT`.
+29 assertions green (CollectionsIT 11, OrderCancelIT 6, OrderVoidReturnIT 12).
 
 ---
 
