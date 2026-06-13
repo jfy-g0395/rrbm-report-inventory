@@ -24,7 +24,7 @@ public class User {
     private String fullName;
     
     @Column(length = 20, nullable = false)
-    private String role = "STAFF";
+    private String role = "STANDARD_USER";
     
     @Column(length = 20)
     private String status = "ACTIVE";
