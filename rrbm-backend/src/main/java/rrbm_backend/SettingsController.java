@@ -1,5 +1,6 @@
 package rrbm_backend;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,11 +43,19 @@ public class SettingsController {
         return ResponseEntity.ok(result);
     }
 
-    /** Update editable settings. Body is a flat key→value map. */
+    /** Update editable settings. Body is a flat key→value map. SUPER_ADMIN only. */
     @PostMapping
     public ResponseEntity<?> updateSettings(@RequestBody Map<String, String> updates,
                                              @RequestHeader("Authorization") String authHeader) {
         Long userId = extractUserId(authHeader);
+        if (userId == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Authentication required"));
+
+        // GAP S10-01 fix: only SUPER_ADMIN may change system settings
+        if (!"SUPER_ADMIN".equals(extractRole(authHeader)))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Super Admins can update settings"));
 
         for (Map.Entry<String, String> entry : updates.entrySet()) {
             String key = entry.getKey();
@@ -65,5 +74,10 @@ public class SettingsController {
     private Long extractUserId(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) return null;
         try { return jwtUtil.extractUserId(authHeader.substring(7)); } catch (Exception e) { return null; }
+    }
+
+    private String extractRole(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) return null;
+        try { return jwtUtil.extractRole(authHeader.substring(7)); } catch (Exception e) { return null; }
     }
 }

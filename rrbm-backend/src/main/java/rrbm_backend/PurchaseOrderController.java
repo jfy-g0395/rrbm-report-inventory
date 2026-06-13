@@ -21,6 +21,9 @@ public class PurchaseOrderController {
     private final UserRepository          userRepository;
     private final PurchaseOrderService             poService;
     private final SupplierProductMappingRepository mappingRepository;
+    private final ProductRepository                productRepository;
+    private final InventoryService                 inventoryService;
+    private final PayableRepository                payableRepository;
 
     public PurchaseOrderController(PurchaseOrderRepository poRepository,
                                    PoItemRepository poItemRepository,
@@ -28,7 +31,10 @@ public class PurchaseOrderController {
                                    JwtUtil jwtUtil,
                                    UserRepository userRepository,
                                    PurchaseOrderService poService,
-                                   SupplierProductMappingRepository mappingRepository) {
+                                   SupplierProductMappingRepository mappingRepository,
+                                   ProductRepository productRepository,
+                                   InventoryService inventoryService,
+                                   PayableRepository payableRepository) {
         this.poRepository       = poRepository;
         this.poItemRepository   = poItemRepository;
         this.activityLogService = activityLogService;
@@ -36,6 +42,9 @@ public class PurchaseOrderController {
         this.userRepository     = userRepository;
         this.poService          = poService;
         this.mappingRepository  = mappingRepository;
+        this.productRepository  = productRepository;
+        this.inventoryService   = inventoryService;
+        this.payableRepository  = payableRepository;
     }
 
     /** Extract userId from Bearer token; returns null if header absent or invalid. */
@@ -136,6 +145,7 @@ public class PurchaseOrderController {
             // line item carries a productId that matches an existing supplier mapping.
             Long productId = ri.get("productId") != null
                     ? ((Number) ri.get("productId")).longValue() : null;
+            item.setProductId(productId);
             if (supplierId != null && productId != null) {
                 mappingRepository.findBySupplierIdAndProductId(supplierId, productId)
                         .ifPresent(mapping -> {
@@ -199,6 +209,104 @@ public class PurchaseOrderController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    // ── Receive goods against a PO line item ──────────────────────────────
+    @PatchMapping("/{id}/items/{itemId}/receive")
+    @Transactional
+    public ResponseEntity<?> receiveItem(
+            @PathVariable Long id,
+            @PathVariable Long itemId,
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        Long userId = userIdFromHeader(authHeader);
+        String actor = actorName(userId, "System");
+
+        PurchaseOrder po = poRepository.findByIdWithItems(id).orElse(null);
+        if (po == null) return ResponseEntity.notFound().build();
+
+        PoItem item = po.getItems().stream()
+                .filter(i -> i.getId().equals(itemId))
+                .findFirst().orElse(null);
+        if (item == null) return ResponseEntity.notFound().build();
+
+        int receivedQty = body.get("receivedQty") != null
+                ? ((Number) body.get("receivedQty")).intValue() : 0;
+
+        String drNumber  = body.get("drNumber")  != null ? body.get("drNumber").toString().trim()  : null;
+        String warehouse = body.get("warehouse") != null ? body.get("warehouse").toString().toLowerCase() : "wh1";
+        if (!List.of("wh1", "wh2", "wh3").contains(warehouse)) warehouse = "wh1";
+
+        boolean isFinalDelivery = Boolean.TRUE.equals(body.get("isFinalDelivery"));
+        if (receivedQty <= 0 && !isFinalDelivery) {
+            return ResponseEntity.badRequest().body(Map.of("message", "receivedQty must be greater than 0"));
+        }
+
+        // Update item fulfillment tracking
+        int newFulfilled = (item.getFulfilledQty() != null ? item.getFulfilledQty() : 0) + receivedQty;
+        item.setFulfilledQty(newFulfilled);
+        if (drNumber != null && !drNumber.isBlank()) item.setDrNumber(drNumber);
+        if (isFinalDelivery || newFulfilled >= item.getQuantityOrdered()) item.setIsFulfilled(true);
+        if (isFinalDelivery) item.setIsFinalDelivery(true);
+        poItemRepository.save(item);
+
+        // Update inventory stock if this item is linked to a product and goods were actually received
+        if (receivedQty > 0 && item.getProductId() != null) {
+            Product product = productRepository.findById(item.getProductId()).orElse(null);
+            if (product != null) {
+                switch (warehouse) {
+                    case "wh1": product.setStockWh1(product.getStockWh1() + receivedQty); break;
+                    case "wh2": product.setStockWh2(product.getStockWh2() + receivedQty); break;
+                    case "wh3": product.setStockWh3(product.getStockWh3() + receivedQty); break;
+                }
+                productRepository.save(product);
+                inventoryService.logMovement(
+                        product.getId(), "RESTOCK", warehouse, receivedQty,
+                        (drNumber != null && !drNumber.isBlank()) ? drNumber : po.getPoNumber(),
+                        "PO " + po.getPoNumber() + " — " + po.getVendorName(),
+                        userId);
+            }
+        }
+
+        // Create a PENDING payable for this receipt so the AP record exists
+        if (receivedQty > 0) {
+            BigDecimal unitCost = item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO;
+            Payable payable = new Payable();
+            payable.setDeliveryLogId(null);
+            payable.setReceiptNumber(drNumber != null && !drNumber.isBlank() ? drNumber : po.getPoNumber());
+            payable.setSupplierName(po.getVendorName());
+            payable.setTotalAmount(unitCost.multiply(BigDecimal.valueOf(receivedQty)));
+            payable.setAmountPaid(BigDecimal.ZERO);
+            payable.setStatus("PENDING");
+            payable.setCreatedBy(actor);
+            payableRepository.save(payable);
+        }
+
+        // Recompute PO status:
+        //   COMPLETE          — every item is fully fulfilled (isFulfilled=true)
+        //   PARTIALLY_RECEIVED — at least one item has had goods received (fulfilledQty > 0)
+        //   INCOMPLETE        — nothing received yet
+        List<PoItem> allItems = po.getItems();
+        boolean allFulfilled = allItems.stream().allMatch(i -> Boolean.TRUE.equals(i.getIsFulfilled()));
+        boolean anyReceived  = allItems.stream().anyMatch(i -> i.getFulfilledQty() != null && i.getFulfilledQty() > 0);
+        String newStatus = allFulfilled ? "COMPLETE" : anyReceived ? "PARTIALLY_RECEIVED" : "INCOMPLETE";
+        po.setStatus(newStatus);
+        poRepository.save(po);
+
+        String logMsg = isFinalDelivery && receivedQty == 0
+                ? "Final delivery (no goods) — closed PO line: " + item.getItemDescription() + " for PO " + po.getPoNumber()
+                : "Received " + receivedQty + " × " + item.getItemDescription()
+                  + " into " + warehouse.toUpperCase()
+                  + " for PO " + po.getPoNumber()
+                  + (isFinalDelivery ? " [FINAL]" : "")
+                  + (drNumber != null && !drNumber.isBlank() ? " | DR: " + drNumber : "");
+        activityLogService.log(userId, actor, "PURCHASE_ORDER_RECEIVE", logMsg,
+                "PURCHASE_ORDER", String.valueOf(id));
+
+        return poRepository.findByIdWithItems(id)
+                .map(full -> ResponseEntity.ok((Object) toMap(full)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     // ── Serialise PO → response map ───────────────────────────────────────
     Map<String, Object> toMap(PurchaseOrder po) {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -234,12 +342,27 @@ public class PurchaseOrderController {
             im.put("isFulfilled",          i.getIsFulfilled());
             im.put("supplierItemCode",     i.getSupplierItemCode());
             im.put("supplierDescription",  i.getSupplierDescription());
+            im.put("productId",            i.getProductId());
+            im.put("isFinalDelivery",      i.getIsFinalDelivery());
             items.add(im);
         }
         m.put("items",         items);
         m.put("totalItems",    items.size());
         m.put("fulfilledCount", items.stream()
                 .filter(i -> Boolean.TRUE.equals(i.get("isFulfilled"))).count());
+
+        // Effective payable: final-delivery items billed at fulfilledQty × unitPrice;
+        // all others at quantityOrdered × unitPrice (original quoted amount)
+        BigDecimal effectiveTotal = po.getItems().stream()
+                .map(i -> {
+                    BigDecimal cost = i.getUnitPrice() != null ? i.getUnitPrice() : BigDecimal.ZERO;
+                    int qty = Boolean.TRUE.equals(i.getIsFinalDelivery())
+                            ? (i.getFulfilledQty() != null ? i.getFulfilledQty() : 0)
+                            : (i.getQuantityOrdered() != null ? i.getQuantityOrdered() : 0);
+                    return cost.multiply(BigDecimal.valueOf(qty));
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        m.put("effectiveTotalAmount", effectiveTotal);
         return m;
     }
 

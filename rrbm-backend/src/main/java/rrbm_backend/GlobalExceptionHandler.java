@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
@@ -51,6 +52,13 @@ public class GlobalExceptionHandler {
         if (status == null) status = HttpStatus.INTERNAL_SERVER_ERROR;
         String reason = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
         return body(status, reason);
+    }
+
+    /** Missing required @RequestParam → 400 instead of being swallowed by the catch-all. */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParam(MissingServletRequestParameterException ex) {
+        return body(HttpStatus.BAD_REQUEST,
+                "Required parameter '" + ex.getParameterName() + "' is missing");
     }
 
     /** Catch-all → 500 with a generic message. The real cause is logged server-side only. */

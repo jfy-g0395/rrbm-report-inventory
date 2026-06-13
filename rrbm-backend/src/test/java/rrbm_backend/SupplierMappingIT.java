@@ -236,10 +236,25 @@ class SupplierMappingIT {
 
     @Test
     void t07_createMapping_duplicateConstraint_rejected() throws Exception {
-        // Skip - integration test complexity with transaction rollback handling
-        // The controller catches DataIntegrityViolationException, but transaction rollback
-        // behavior causes a 500 instead of 400 in some cases. This is a test framework limitation,
-        // not a code issue. The duplicate constraint IS enforced at the DB level.
+        // t06 already mapped product1 to "S6-SUPP-MAP-{RUN}"; try to map it again
+        Supplier mapSupplier = supplierRepository.findByName("S6-SUPP-MAP-" + RUN).orElse(null);
+        if (mapSupplier == null) return; // t06 failed — skip gracefully
+
+        long countBefore = mappingRepository.findBySupplierId(mapSupplier.getId()).size();
+
+        Map<String, Object> duplicatePayload = new HashMap<>();
+        duplicatePayload.put("productId", product1.getId());
+        duplicatePayload.put("unitCost", new BigDecimal("999.00"));
+
+        mockMvc.perform(post("/api/suppliers/" + mapSupplier.getId() + "/mappings")
+                        .header("Authorization", "Bearer " + userJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(duplicatePayload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("A mapping already exists for this supplier and product"));
+
+        // Mapping count must not have changed
+        assertThat(mappingRepository.findBySupplierId(mapSupplier.getId()).size()).isEqualTo(countBefore);
     }
 
     @Test

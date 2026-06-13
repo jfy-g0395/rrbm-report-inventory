@@ -46,6 +46,12 @@ public class PoItem {
     @Column(name = "supplier_description", columnDefinition = "TEXT")
     private String supplierDescription;
 
+    @Column(name = "product_id")
+    private Long productId;
+
+    @Column(name = "is_final_delivery")
+    private Boolean isFinalDelivery = false;
+
     // ── Getters & Setters ─────────────────────────────────────────────────
 
     public Long getId()                        { return id; }
@@ -71,4 +77,8 @@ public class PoItem {
     public void setSupplierItemCode(String v)  { this.supplierItemCode = v; }
     public String getSupplierDescription()     { return supplierDescription; }
     public void setSupplierDescription(String v) { this.supplierDescription = v; }
+    public Long getProductId()                 { return productId; }
+    public void setProductId(Long v)           { this.productId = v; }
+    public Boolean getIsFinalDelivery()        { return isFinalDelivery; }
+    public void setIsFinalDelivery(Boolean v)  { this.isFinalDelivery = v; }
 }

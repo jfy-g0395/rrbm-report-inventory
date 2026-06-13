@@ -22,4 +22,8 @@ public interface SupplierProductMappingRepository extends JpaRepository<Supplier
     /** All preferred mappings for a product — used by Option A enforcement to clear
      *  existing preferred flags before setting a new one. */
     List<SupplierProductMapping> findByProductIdAndIsPreferredTrue(Long productId);
+
+    /** Existence check used before insert to avoid DataIntegrityViolationException
+     *  on the (supplier_id, product_id) unique constraint. */
+    boolean existsBySupplierIdAndProductId(Long supplierId, Long productId);
 }

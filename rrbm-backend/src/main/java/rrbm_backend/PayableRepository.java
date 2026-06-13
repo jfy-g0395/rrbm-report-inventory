@@ -14,6 +14,8 @@ public interface PayableRepository extends JpaRepository<Payable, Long> {
 
     List<Payable> findByStatus(String status);
 
+    List<Payable> findByReceiptNumber(String receiptNumber);
+
     @Query("SELECT COALESCE(SUM(p.totalAmount - p.amountPaid), 0) FROM Payable p WHERE p.status <> 'PAID'")
     BigDecimal getTotalOutstanding();
 }

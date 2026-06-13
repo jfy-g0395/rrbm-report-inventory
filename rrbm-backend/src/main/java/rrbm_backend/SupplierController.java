@@ -1,6 +1,5 @@
 package rrbm_backend;
 
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -189,6 +188,11 @@ public class SupplierController {
                     .body(Map.of("message", "Product not found: " + productId));
         }
 
+        if (mappingRepository.existsBySupplierIdAndProductId(supplierId, productId)) {
+            return ResponseEntity.badRequest().body(Map.of("message",
+                    "A mapping already exists for this supplier and product"));
+        }
+
         boolean preferred = Boolean.TRUE.equals(body.get("isPreferred"));
 
         // Option A: clear preferred flag on all existing mappings for this product
@@ -206,17 +210,12 @@ public class SupplierController {
         }
         m.setIsPreferred(preferred);
 
-        try {
-            SupplierProductMapping saved = mappingRepository.save(m);
-            Long userId = userIdFromHeader(authHeader);
-            activityLogService.log(userId, actorName(userId), "CREATE_SUPPLIER_MAPPING",
-                    "Mapped product '" + product.getName() + "' to supplier '" + supplier.getName() + "'",
-                    "SUPPLIER_MAPPING", String.valueOf(saved.getId()));
-            return ResponseEntity.ok(toMappingMap(saved));
-        } catch (DataIntegrityViolationException e) {
-            return ResponseEntity.badRequest().body(Map.of("message",
-                    "A mapping already exists for this supplier and product"));
-        }
+        SupplierProductMapping saved = mappingRepository.save(m);
+        Long userId = userIdFromHeader(authHeader);
+        activityLogService.log(userId, actorName(userId), "CREATE_SUPPLIER_MAPPING",
+                "Mapped product '" + product.getName() + "' to supplier '" + supplier.getName() + "'",
+                "SUPPLIER_MAPPING", String.valueOf(saved.getId()));
+        return ResponseEntity.ok(toMappingMap(saved));
     }
 
     // ── PATCH /api/suppliers/{supplierId}/mappings/{mappingId} ────────────────

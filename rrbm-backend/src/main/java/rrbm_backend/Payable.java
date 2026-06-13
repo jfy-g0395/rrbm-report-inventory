@@ -12,7 +12,7 @@ public class Payable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "delivery_log_id", nullable = false)
+    @Column(name = "delivery_log_id", nullable = true)
     private Long deliveryLogId;
 
     @Column(name = "receipt_number")
