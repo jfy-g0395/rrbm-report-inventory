@@ -2941,3 +2941,28 @@ Drove the live app (backend :8080 + frontend :5500) via preview tools; verified 
 | 1 | Order-list **Cancel** button (`askCancel`) on ACTIVE/PENDING orders was **not gated** by `canManageOrders()` — showed for ADMINISTRATOR & STANDARD_USER (backend still 403'd, but plan requires the button hidden) | `app.js` (`renderOrderRows` ~556) | Added `cancelBtn` const gated by `canManageOrders()` (mirrors `ivmBtn`); ACTIVE/PENDING branches now use `+ cancelBtn`. DELIVERED branch was already gated. |
 
 **Notes:** screenshots unavailable (preview-renderer timeout) — used accessibility snapshots + DOM/eval evidence. Test-account permission changes reverted to clean role defaults; super-admin session restored.
+
+---
+
+## LAN Deploy — Session 3: Deploy-prep config (LAN scope) — Jun 13, 2026
+
+Found most of Session 3 already in place from earlier work (plan was partly stale). No code changes — config + docs only.
+
+**State verified / done:**
+
+| Item | Status |
+|------|--------|
+| `rrbm-backend/.dockerignore` excludes `application-local.properties` (+ `.env*`, build cruft) | ✅ already present; static-verified (build context `./rrbm-backend`, pattern matches, secret file really exists). Docker rebuild check deferred to Session 4 (no Docker on dev machine). |
+| `.env` secrets (`DB_PASSWORD` 32 / `RRBM_JWT_SECRET` 64 / `RRBM_INITIAL_MASTER_KEY` 24) | ✅ already set, gitignored, untracked |
+| `.env` CORS origin | ⏳ set to clear placeholder `http://SET-OFFICE-HOST-LAN-ORIGIN-BEFORE-FIRST-BOOT` (host IP not assigned yet); added `RRBM_FAIL_ON_DEFAULT_JWT_SECRET=true` |
+| All compose `${VARS}` resolve from `.env` | ✅ static cross-check (4/4); `docker compose config` deferred to Session 4 |
+
+**Decisions (user):** office DB = **brand-new/fresh** → V63 = no action (seeds 110 products + settings, `DELETE FROM activity_log` runs against empty log). CORS origin = not assigned yet → placeholder + Session-4 finalize step.
+
+**Findings surfaced:**
+- Production frontend nginx **proxies `/api/` same-origin** (`app.js` `API_BASE=''`) → CORS low-risk on LAN; still set exact origin (no wildcard). Audit "permissive CORS" finding is stale.
+- Master key on fresh boot comes from `RRBM_INITIAL_MASTER_KEY` → `master_keys` table; V63's `settings.master_key_hash` is legacy/unused (no conflict).
+- Fresh-DB login = seeded super-admin `admin@rrbm.com` / `ChangeMe123!` (V2).
+- ⚠️ **V19 `test_seed` runs on a fresh deploy** and inserts `TEST_`-tagged orders/transactions/daily_reports/expenses/payables/delivery — V63 doesn't purge them. Documented a first-boot purge (FK-safe SQL) for clean books.
+
+**Deliverable:** new `DEPLOYMENT-PROGRESS.md` — living status + Session-4 first-boot runbook (CORS finalize, image verify, Flyway→V74, V19 purge, first-boot security) + deferred LAN hardening + DEPLOYMENT-AUDIT.md status cross-ref.
