@@ -21,3 +21,7 @@ rrbm-backend/src/main/resources/application-local.properties
 # Node
 node_modules/
 package-lock.json
+
+# Captured build/test output (churns; not source)
+rrbm-backend/test_output.txt
+rrbm-backend/..backend-startup.log
