@@ -45,6 +45,40 @@ migration, and never restore a pre-V63 dump into the live DB without a baseline.
 
 ---
 
+## Session 4 — Pre-flight (Jun 13, 2026) — ⏸ PAUSED (no on-site access yet)
+
+Session 4 is the **on-host first boot**; it runs on the office machine. Pre-flighted the
+repo from the dev machine (at home) — everything that *can* be verified statically is green.
+**Not started:** the host is not yet accessible (building from home), so the live boot,
+backup, and smoke steps wait until on-site.
+
+### Pre-flight results (static, dev machine)
+| Check | Result |
+|-------|--------|
+| Session 3 committed + tag `v-predeploy-lan` present | ✅ |
+| `.env` strong secrets + `RRBM_FAIL_ON_DEFAULT_JWT_SECRET=true` | ✅ |
+| `nginx.conf` proxies `/api/` → `backend:8080` same-origin + SPA fallback + security headers | ✅ (`rrbm_frontend/nginx.conf`, baked into the frontend image) |
+| `/actuator/health` is `permitAll()` (`SecurityConfig.java:62`) **and** excluded from PageAccessInterceptor (`WebMvcConfig.java:26`) | ✅ compose readiness gate works — `frontend` starts only after `backend` is healthy |
+| `app.js` sets `API_BASE=''` for non-localhost hosts (`js/app.js:15`) | ✅ same-origin in prod |
+| `.dockerignore` excludes `application-local.properties` | ✅ present (build-context root) |
+
+### Blockers / open items before first boot
+1. 🔴 **CORS origin still a placeholder.** `.env` has
+   `RRBM_CORS_ALLOWED_ORIGINS=http://SET-OFFICE-HOST-LAN-ORIGIN-BEFORE-FIRST-BOOT`.
+   The office host LAN IP/hostname is **not available yet** — assign on-site and replace
+   the placeholder before first boot. (Lower risk because traffic is same-origin via nginx,
+   but it is not a valid origin value.)
+2. ⚠️ **Three steps can only run on the host** (no Docker on the dev machine):
+   `docker compose config`, `docker compose build` + backend-image secret-exclusion check,
+   and `docker compose up -d` + Flyway-head check. Sequenced into the on-host runbook below.
+3. ✅ **DB is brand-new** — confirmed; fresh-DB assumptions (no pre-existing `pg_dump`, V63
+   harmless) hold.
+
+**Next action when on-site:** assign the host LAN origin → finalize `.env` → run the
+finalize checklist below in order.
+
+---
+
 ## First-boot facts (fresh DB) — for Session 4
 
 1. **Login:** the only seeded account is super-admin **`admin@rrbm.com` / `ChangeMe123!`**

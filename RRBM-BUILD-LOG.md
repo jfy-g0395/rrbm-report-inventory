@@ -2966,3 +2966,27 @@ Found most of Session 3 already in place from earlier work (plan was partly stal
 - ⚠️ **V19 `test_seed` runs on a fresh deploy** and inserts `TEST_`-tagged orders/transactions/daily_reports/expenses/payables/delivery — V63 doesn't purge them. Documented a first-boot purge (FK-safe SQL) for clean books.
 
 **Deliverable:** new `DEPLOYMENT-PROGRESS.md` — living status + Session-4 first-boot runbook (CORS finalize, image verify, Flyway→V74, V19 purge, first-boot security) + deferred LAN hardening + DEPLOYMENT-AUDIT.md status cross-ref.
+
+---
+
+## LAN Deploy — Session 4: First-boot pre-flight — Jun 13, 2026 — ⏸ PAUSED
+
+On-host first boot. Pre-flighted the repo from the dev machine (building at home). No code/config changes — everything statically verifiable is green; live boot waits for on-site access.
+
+**Pre-flight (static) — all ✓:**
+
+| Check | Result |
+|-------|--------|
+| Session 3 committed + tag `v-predeploy-lan` | ✅ |
+| `.env` strong secrets + `RRBM_FAIL_ON_DEFAULT_JWT_SECRET=true` | ✅ |
+| `nginx.conf` proxies `/api/` → `backend:8080` same-origin + SPA fallback + security headers | ✅ (`rrbm_frontend/nginx.conf`) |
+| `/actuator/health` `permitAll()` (`SecurityConfig.java:62`) + excluded from PageAccessInterceptor (`WebMvcConfig.java:26`) | ✅ compose readiness gate works — frontend starts only after backend healthy |
+| `app.js` `API_BASE=''` for non-localhost (`js/app.js:15`) | ✅ same-origin in prod |
+| `.dockerignore` excludes `application-local.properties` | ✅ |
+
+**Blockers / open:**
+- 🔴 **CORS origin still placeholder** — office host LAN IP not accessible yet (at home). Assign on-site + replace `http://SET-OFFICE-HOST-LAN-ORIGIN-BEFORE-FIRST-BOOT`.
+- ⚠️ `docker compose config` / `build` + image secret-check / `up -d` + Flyway-head check — host-only (no Docker on dev machine), sequenced into the runbook.
+- ✅ DB confirmed brand-new — fresh-DB assumptions hold.
+
+**Status:** repo deploy-ready; Session 4 resumes on-site (assign LAN origin → finalize `.env` → run `DEPLOYMENT-PROGRESS.md` finalize checklist).
