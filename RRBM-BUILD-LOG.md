@@ -2915,3 +2915,29 @@ The print dialog path is preserved for real-browser users.
 mvn test -Dtest=SettingsIT,AuthorizationGateIT
 ```
 `18 tests, 0 failures, 0 errors, 0 skipped` — 13 AuthorizationGateIT + 5 SettingsIT. BUILD SUCCESS.
+
+---
+
+## LAN Deploy — Session 2: Browser-preview UI verification of role-gating — Jun 13, 2026
+
+Drove the live app (backend :8080 + frontend :5500) via preview tools; verified the role-gating UI (the one layer with no automated coverage) against the `ROLE-REGROUPING-PLAN.md` matrix for all four roles. Used existing test accounts `testuser2/3/04@rrbm.com` as fixtures (password set to `test123`, role-default permissions re-applied via `PATCH /role` — user-authorized).
+
+**Verified (all ✓):**
+
+| Area | Result |
+|------|--------|
+| SUPER_ADMIN | all nav incl. Settings; Add/Edit Employee role dropdown has no Staff; checkboxes auto-fill on role pick (STD 5 / ACCT 15 / ADMIN 19) and are **editable** |
+| ADMINISTRATOR | all 19 page-keys + Employee List; Settings hidden; order Cancel/Void/Return buttons **hidden**; live `POST /orders/{id}/cancel` → **403** "Only Accounting or Super Admin", order stays ACTIVE |
+| ACCOUNTING | nav = exact 15-key matrix (no employees/settings/order-history/delivery-reports/activity-log); order action buttons **shown** |
+| STANDARD_USER | lands on **Order List** (not Dashboard); nav = exact 5-key matrix; action buttons hidden |
+| Employee modal lock | non-Super-Admin (ADMINISTRATOR) → Add + Edit page-access checkboxes **disabled** (opacity 0.5), role pick still auto-fills |
+| Restricted allowedPages | removed `dashboard` from a user → Dashboard nav **hidden** + `GET /api/dashboard` → **403**; still-allowed `/api/orders/today` → 200 |
+| Return modal | per-row warehouse `<select>` appears only when `sellable>0`, **gates submit** (disabled until WH chosen), hides again when sellable→0; options WH1/WH2/Balagtas |
+
+**Bug found + fixed:**
+
+| # | Bug | File | Fix |
+|---|-----|------|-----|
+| 1 | Order-list **Cancel** button (`askCancel`) on ACTIVE/PENDING orders was **not gated** by `canManageOrders()` — showed for ADMINISTRATOR & STANDARD_USER (backend still 403'd, but plan requires the button hidden) | `app.js` (`renderOrderRows` ~556) | Added `cancelBtn` const gated by `canManageOrders()` (mirrors `ivmBtn`); ACTIVE/PENDING branches now use `+ cancelBtn`. DELIVERED branch was already gated. |
+
+**Notes:** screenshots unavailable (preview-renderer timeout) — used accessibility snapshots + DOM/eval evidence. Test-account permission changes reverted to clean role defaults; super-admin session restored.

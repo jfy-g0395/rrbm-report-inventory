@@ -557,17 +557,22 @@
         ? ' <button class="btn btn-sm" onclick="openItemVoidModal(\'' + safeId + '\')" title="Void Items" style="background:#F97316;color:#fff;"><i class="ti ti-scissors"></i></button>'
         : '';
 
+      // Cancel is an order-manager action (Accounting / Super Admin only) — gate it like ivmBtn.
+      const cancelBtn = canManageOrders()
+        ? '<button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel"><i class="ti ti-x"></i></button>'
+        : '';
+
       let actions = '';
       if (o.status === 'ACTIVE') {
         actions = '<button class="btn btn-success btn-sm" onclick="updateOrderStatus(\'' + safeId + '\', \'DELIVERED\')" title="Mark Delivered"><i class="ti ti-truck-delivery"></i></button>'
           + '<button class="btn btn-warning btn-sm" onclick="updateOrderStatus(\'' + safeId + '\', \'PENDING\')" title="Put on Hold"><i class="ti ti-clock-pause"></i></button>'
           + ivmBtn
-          + '<button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel"><i class="ti ti-x"></i></button>';
+          + cancelBtn;
       } else if (o.status === 'PENDING') {
         // All pending orders require password to resume — action is logged for audit
         actions = '<button class="btn btn-primary btn-sm" onclick="askCodResume(\'' + safeId + '\')" title="Resume (password required)"><i class="ti ti-player-play"></i><i class="ti ti-lock" style="font-size:9px;margin-left:2px;"></i></button>'
           + ivmBtn
-          + '<button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel"><i class="ti ti-x"></i></button>';
+          + cancelBtn;
       } else if (o.status === 'DELIVERED') {
         const safeTotal = Number(o.total || 0).toFixed(2);
         if (o.refundedAt) {
