@@ -1,0 +1,8 @@
+-- V71: Remove STAFF role — migrate users to STANDARD_USER, tighten constraint, update default.
+UPDATE users SET role = 'STANDARD_USER' WHERE role = 'STAFF';
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS chk_role;
+ALTER TABLE users ADD CONSTRAINT chk_role
+    CHECK (role IN ('SUPER_ADMIN','ADMIN','ADMINISTRATOR','ACCOUNTING','STANDARD_USER'));
+
+ALTER TABLE users ALTER COLUMN role SET DEFAULT 'STANDARD_USER';
