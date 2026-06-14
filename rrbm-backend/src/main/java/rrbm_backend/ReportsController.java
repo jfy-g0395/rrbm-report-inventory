@@ -34,6 +34,7 @@ public class ReportsController {
     private final TransactionService     transactionService;
     private final DailyReportRepository  dailyReportRepository;
     private final UserRepository         userRepository;
+    private final ExpenseRepository      expenseRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -41,11 +42,13 @@ public class ReportsController {
     public ReportsController(OrderRepository orderRepository,
                              TransactionService transactionService,
                              DailyReportRepository dailyReportRepository,
-                             UserRepository userRepository) {
+                             UserRepository userRepository,
+                             ExpenseRepository expenseRepository) {
         this.orderRepository       = orderRepository;
         this.transactionService    = transactionService;
         this.dailyReportRepository = dailyReportRepository;
         this.userRepository        = userRepository;
+        this.expenseRepository     = expenseRepository;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -919,5 +922,429 @@ public class ReportsController {
         }).collect(Collectors.toList());
 
         return ResponseEntity.ok(Map.of("reports", list, "total", list.size()));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // GET /api/reports/monthly-corporate?month=YYYY-MM
+    // Consolidated, reconciling payload for the corporate monthly PDF.
+    //   { month, prevMonth, summary, reconciliation, channels, pizza, expenses, mom }
+    //
+    // Revenue basis: NET is the transaction ledger (SALE positive; REFUND/VOID/RETURN
+    // negative; ADJUSTMENT ±) — identical to accounting-summary, so the headline ties to
+    // the channel breakdown by construction. Product sections (pizza) are GROSS because the
+    // ledger has no line-item detail; the reconciliation block bridges gross→net.
+    // ══════════════════════════════════════════════════════════════════════════
+    @GetMapping("/monthly-corporate")
+    @Transactional(readOnly = true)
+    public ResponseEntity<?> getMonthlyCorporate(@RequestParam(defaultValue = "") String month) {
+        YearMonth ym;
+        try { ym = parseMonth(month); } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid month format. Use YYYY-MM."));
+        }
+        YearMonth prevYm = ym.minusMonths(1);
+
+        Map<String, Object> cur  = computeMonthBlocks(ym);
+        Map<String, Object> prev = computeMonthBlocks(prevYm);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("month",          ym.toString());
+        result.put("prevMonth",      prevYm.toString());
+        result.put("summary",        cur.get("summary"));
+        result.put("reconciliation", cur.get("reconciliation"));
+        result.put("channels",       cur.get("channels"));
+        result.put("pizza",          cur.get("pizza"));
+        result.put("expenses",       cur.get("expenses"));
+        result.put("mom",            buildMom(cur, prev, prevYm));
+        return ResponseEntity.ok(result);
+    }
+
+    /** Pizza-box predicate, mirroring DashboardController.classifyProduct: category match,
+     *  or (blank category AND name contains "pizza box"). LEFT-JOIN safe (p may be null). */
+    private static final String PIZZA_PRED =
+            "(p.category ILIKE 'Pizza Box' OR " +
+            " (COALESCE(NULLIF(TRIM(p.category), ''), '') = '' AND oi.product_name ILIKE '%pizza box%'))";
+
+    /** Compute every report block for one month (reused for current + previous). */
+    private Map<String, Object> computeMonthBlocks(YearMonth ym) {
+        LocalDate start = ym.atDay(1);
+        LocalDate end   = ym.atEndOfMonth();
+
+        // ── Ledger: typed net (matches accounting-summary) ──────────────────────
+        List<Transaction> txns = transactionService.getByDateRange(start, end);
+        BigDecimal grossSales = BigDecimal.ZERO, refunds = BigDecimal.ZERO, adjustments = BigDecimal.ZERO;
+        for (Transaction t : txns) {
+            switch (t.getTransactionType()) {
+                case "SALE"                   -> grossSales  = grossSales.add(t.getAmount());
+                case "REFUND","VOID","RETURN" -> refunds     = refunds.add(t.getAmount());
+                case "ADJUSTMENT"             -> adjustments = adjustments.add(t.getAmount());
+            }
+        }
+        BigDecimal netSales = grossSales.add(refunds).add(adjustments);
+
+        // ── Orders (billed = not CANCELLED, not PENDING_COLLECTION) ─────────────
+        long totalOrders = ((Number) entityManager.createNativeQuery(
+                "SELECT COUNT(*) FROM orders " +
+                "WHERE status NOT IN ('CANCELLED','PENDING_COLLECTION') " +
+                "  AND created_at::date BETWEEN :start AND :end")
+                .setParameter("start", start).setParameter("end", end)
+                .getSingleResult()).longValue();
+
+        long totalItemsSold = ((Number) entityManager.createNativeQuery(
+                "SELECT COALESCE(SUM(oi.quantity),0) FROM order_items oi " +
+                "JOIN orders o ON oi.order_id = o.id " +
+                "WHERE o.status NOT IN ('CANCELLED','PENDING_COLLECTION') " +
+                "  AND o.created_at::date BETWEEN :start AND :end")
+                .setParameter("start", start).setParameter("end", end)
+                .getSingleResult()).longValue();
+
+        // ── Expenses (voided excluded) ──────────────────────────────────────────
+        BigDecimal totalExpenses = nz(expenseRepository.sumNonVoidedForDateRange(start, end));
+        BigDecimal netProfit     = netSales.subtract(totalExpenses);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalOrders",    totalOrders);
+        summary.put("netRevenue",     netSales);
+        summary.put("totalExpenses",  totalExpenses);
+        summary.put("netProfit",      netProfit);
+        summary.put("totalItemsSold", totalItemsSold);
+
+        Map<String, Object> reconciliation = new LinkedHashMap<>();
+        reconciliation.put("grossSales",       grossSales);
+        reconciliation.put("refundsTotal",     refunds);       // negative (REFUND/VOID/RETURN)
+        reconciliation.put("adjustmentsTotal", adjustments);
+        reconciliation.put("netSales",         netSales);
+
+        Map<String, Object> blocks = new LinkedHashMap<>();
+        blocks.put("summary",        summary);
+        blocks.put("reconciliation", reconciliation);
+        blocks.put("channels",       computeChannelsNet(start, end, netSales));
+        blocks.put("pizza",          computePizzaGross(start, end));
+        blocks.put("expenses",       computeExpenses(ym, start, end, netSales, totalExpenses));
+        return blocks;
+    }
+
+    /** Net revenue + order counts per channel (Direct vs Ecommerce → TikTok/Lazada/Shopee).
+     *  Net is the ledger joined to orders; the residual (manual adjustments with no order)
+     *  is surfaced as "unattributed" so the parts always sum to netSales. */
+    private Map<String, Object> computeChannelsNet(LocalDate start, LocalDate end, BigDecimal netSales) {
+        @SuppressWarnings("unchecked")
+        List<Object[]> netRows = entityManager.createNativeQuery(
+                "SELECT CASE WHEN o.source='ECOMMERCE' THEN COALESCE(o.ecommerce_platform,'UNKNOWN') ELSE 'DIRECT' END AS ch, " +
+                "       COALESCE(SUM(t.amount),0) AS net " +
+                "FROM transactions t JOIN orders o ON t.order_id = o.id " +
+                "WHERE t.effective_date BETWEEN :start AND :end " +
+                "  AND t.transaction_type IN ('SALE','REFUND','VOID','RETURN','ADJUSTMENT','DISCOUNT') " +
+                "GROUP BY ch")
+                .setParameter("start", start).setParameter("end", end)
+                .getResultList();
+
+        BigDecimal directNet = BigDecimal.ZERO, ecomNet = BigDecimal.ZERO, platOtherNet = BigDecimal.ZERO;
+        Map<String, BigDecimal> platNet = new LinkedHashMap<>();
+        platNet.put("TIKTOK", BigDecimal.ZERO);
+        platNet.put("LAZADA", BigDecimal.ZERO);
+        platNet.put("SHOPEE", BigDecimal.ZERO);
+        for (Object[] r : netRows) {
+            String ch = String.valueOf(r[0]);
+            BigDecimal net = bd(r[1]);
+            if ("DIRECT".equals(ch)) { directNet = directNet.add(net); }
+            else {
+                ecomNet = ecomNet.add(net);
+                if (platNet.containsKey(ch)) platNet.put(ch, platNet.get(ch).add(net));
+                else platOtherNet = platOtherNet.add(net);
+            }
+        }
+        BigDecimal unattributed = netSales.subtract(directNet.add(ecomNet));
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> cntRows = entityManager.createNativeQuery(
+                "SELECT CASE WHEN source='ECOMMERCE' THEN COALESCE(ecommerce_platform,'UNKNOWN') ELSE 'DIRECT' END AS ch, COUNT(*) " +
+                "FROM orders WHERE status NOT IN ('CANCELLED','PENDING_COLLECTION') " +
+                "  AND created_at::date BETWEEN :start AND :end GROUP BY ch")
+                .setParameter("start", start).setParameter("end", end)
+                .getResultList();
+
+        long directCount = 0, ecomCount = 0, platOtherCount = 0;
+        Map<String, Long> platCount = new LinkedHashMap<>();
+        platCount.put("TIKTOK", 0L); platCount.put("LAZADA", 0L); platCount.put("SHOPEE", 0L);
+        for (Object[] r : cntRows) {
+            String ch = String.valueOf(r[0]);
+            long c = ((Number) r[1]).longValue();
+            if ("DIRECT".equals(ch)) { directCount += c; }
+            else {
+                ecomCount += c;
+                if (platCount.containsKey(ch)) platCount.put(ch, platCount.get(ch) + c);
+                else platOtherCount += c;
+            }
+        }
+
+        List<Map<String, Object>> platforms = new ArrayList<>();
+        for (String p : new String[]{"TIKTOK", "LAZADA", "SHOPEE"}) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("platform",   p);
+            m.put("orderCount", platCount.get(p));
+            m.put("netRevenue", platNet.get(p));
+            platforms.add(m);
+        }
+        if (platOtherCount > 0 || platOtherNet.signum() != 0) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("platform", "OTHER");
+            m.put("orderCount", platOtherCount);
+            m.put("netRevenue", platOtherNet);
+            platforms.add(m);
+        }
+
+        Map<String, Object> direct = new LinkedHashMap<>();
+        direct.put("orderCount", directCount);
+        direct.put("netRevenue", directNet);
+
+        Map<String, Object> ecom = new LinkedHashMap<>();
+        ecom.put("orderCount", ecomCount);
+        ecom.put("netRevenue", ecomNet);
+        ecom.put("platforms",  platforms);
+
+        Map<String, Object> channels = new LinkedHashMap<>();
+        channels.put("direct",       direct);
+        channels.put("ecommerce",    ecom);
+        channels.put("unattributed", unattributed);
+        channels.put("netRevenue",   netSales);
+        return channels;
+    }
+
+    /** Pizza-box gross sales by category (qty + subtotal), split Direct/Ecommerce + per platform,
+     *  plus pizza-vs-rest share of gross item sales. Gross because the ledger has no item detail. */
+    private Map<String, Object> computePizzaGross(LocalDate start, LocalDate end) {
+        String billed = "o.status NOT IN ('CANCELLED','PENDING_COLLECTION') AND o.created_at::date BETWEEN :start AND :end";
+
+        Object[] tot = (Object[]) entityManager.createNativeQuery(
+                "SELECT " +
+                " COALESCE(SUM(CASE WHEN o.source!='ECOMMERCE' THEN oi.quantity ELSE 0 END),0), " +
+                " COALESCE(SUM(CASE WHEN o.source ='ECOMMERCE' THEN oi.quantity ELSE 0 END),0), " +
+                " COALESCE(SUM(CASE WHEN o.source!='ECOMMERCE' THEN oi.subtotal ELSE 0 END),0), " +
+                " COALESCE(SUM(CASE WHEN o.source ='ECOMMERCE' THEN oi.subtotal ELSE 0 END),0), " +
+                " COALESCE(SUM(oi.quantity),0), COALESCE(SUM(oi.subtotal),0) " +
+                "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
+                "LEFT JOIN products p ON p.id = oi.product_id " +
+                "WHERE " + billed + " AND " + PIZZA_PRED)
+                .setParameter("start", start).setParameter("end", end)
+                .getSingleResult();
+
+        long       directQty   = ((Number) tot[0]).longValue();
+        long       ecomQty     = ((Number) tot[1]).longValue();
+        BigDecimal directGross = bd(tot[2]);
+        BigDecimal ecomGross   = bd(tot[3]);
+        long       totalQty    = ((Number) tot[4]).longValue();
+        BigDecimal totalGross  = bd(tot[5]);
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> platRows = entityManager.createNativeQuery(
+                "SELECT COALESCE(o.ecommerce_platform,'UNKNOWN'), COALESCE(SUM(oi.quantity),0), COALESCE(SUM(oi.subtotal),0) " +
+                "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
+                "LEFT JOIN products p ON p.id = oi.product_id " +
+                "WHERE " + billed + " AND o.source='ECOMMERCE' AND " + PIZZA_PRED + " " +
+                "GROUP BY o.ecommerce_platform")
+                .setParameter("start", start).setParameter("end", end)
+                .getResultList();
+        Map<String, long[]> platQty = new LinkedHashMap<>();
+        Map<String, BigDecimal> platGross = new LinkedHashMap<>();
+        for (Object[] r : platRows) {
+            String plat = String.valueOf(r[0]);
+            platQty.put(plat, new long[]{((Number) r[1]).longValue()});
+            platGross.put(plat, bd(r[2]));
+        }
+        List<Map<String, Object>> platforms = new ArrayList<>();
+        for (String p : new String[]{"TIKTOK", "LAZADA", "SHOPEE"}) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("platform", p);
+            m.put("qty",      platQty.containsKey(p) ? platQty.get(p)[0] : 0L);
+            m.put("gross",    platGross.getOrDefault(p, BigDecimal.ZERO));
+            platforms.add(m);
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> topRows = entityManager.createNativeQuery(
+                "SELECT oi.product_name, COALESCE(SUM(oi.quantity),0) AS qty, COALESCE(SUM(oi.subtotal),0) AS gross " +
+                "FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
+                "LEFT JOIN products p ON p.id = oi.product_id " +
+                "WHERE " + billed + " AND " + PIZZA_PRED + " " +
+                "GROUP BY oi.product_name ORDER BY qty DESC LIMIT 5")
+                .setParameter("start", start).setParameter("end", end)
+                .getResultList();
+        List<Map<String, Object>> top5 = topRows.stream().map(r -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("productName", r[0]);
+            m.put("qty",         ((Number) r[1]).longValue());
+            m.put("gross",       bd(r[2]));
+            return m;
+        }).collect(Collectors.toList());
+
+        // Pizza-vs-rest share of gross item sales
+        BigDecimal allItemsGross = bd(entityManager.createNativeQuery(
+                "SELECT COALESCE(SUM(oi.subtotal),0) FROM order_items oi JOIN orders o ON oi.order_id = o.id " +
+                "WHERE " + billed)
+                .setParameter("start", start).setParameter("end", end)
+                .getSingleResult());
+        BigDecimal restGross = allItemsGross.subtract(totalGross);
+        BigDecimal pizzaSharePct = allItemsGross.signum() == 0 ? BigDecimal.ZERO
+                : totalGross.multiply(BigDecimal.valueOf(100)).divide(allItemsGross, 1, RoundingMode.HALF_UP);
+
+        Map<String, Object> pizza = new LinkedHashMap<>();
+        pizza.put("totalQty",      totalQty);
+        pizza.put("totalGross",    totalGross);
+        pizza.put("directQty",     directQty);
+        pizza.put("ecomQty",       ecomQty);
+        pizza.put("directGross",   directGross);
+        pizza.put("ecomGross",     ecomGross);
+        pizza.put("platforms",     platforms);
+        pizza.put("top5",          top5);
+        pizza.put("restGross",     restGross);
+        pizza.put("allItemsGross", allItemsGross);
+        pizza.put("pizzaSharePct", pizzaSharePct);
+        return pizza;
+    }
+
+    /** Category-based expense report (voided excluded), with sub-category detail, daily series,
+     *  avg/high/low day, an "Uncategorized" remainder so categories tie to grandTotal, and the
+     *  expense-to-net-revenue ratio. */
+    private Map<String, Object> computeExpenses(YearMonth ym, LocalDate start, LocalDate end,
+                                                BigDecimal netSales, BigDecimal grandTotal) {
+        int year = ym.getYear(), month = ym.getMonthValue();
+
+        List<Object[]> primRows = expenseRepository.sumByPrimaryCategoryForMonthWithCount(year, month);
+        List<Object[]> subRows  = expenseRepository.sumBySubCategoryForMonthWithCount(year, month);
+        List<Object[]> dayRows  = expenseRepository.sumByDayForDateRange(start, end);
+
+        BigDecimal categorized = BigDecimal.ZERO;
+        List<Map<String, Object>> byCategory = new ArrayList<>();
+        for (Object[] r : primRows) {
+            BigDecimal amt = bd(r[2]);
+            categorized = categorized.add(amt);
+            BigDecimal pct = grandTotal.signum() == 0 ? BigDecimal.ZERO
+                    : amt.multiply(BigDecimal.valueOf(100)).divide(grandTotal, 1, RoundingMode.HALF_UP);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("code",    r[0]);
+            m.put("name",    r[1]);
+            m.put("amount",  amt);
+            m.put("entries", ((Number) r[3]).longValue());
+            m.put("pct",     pct);
+            byCategory.add(m);
+        }
+        BigDecimal uncategorized = grandTotal.subtract(categorized);
+        if (uncategorized.signum() > 0) {
+            BigDecimal pct = grandTotal.signum() == 0 ? BigDecimal.ZERO
+                    : uncategorized.multiply(BigDecimal.valueOf(100)).divide(grandTotal, 1, RoundingMode.HALF_UP);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("code", "UNCATEGORIZED");
+            m.put("name", "Uncategorized");
+            m.put("amount", uncategorized);
+            m.put("entries", 0L);
+            m.put("pct", pct);
+            byCategory.add(m);
+        }
+
+        List<Map<String, Object>> bySubcategory = new ArrayList<>();
+        for (Object[] r : subRows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("primaryCode", r[0]);
+            m.put("primaryName", r[1]);
+            m.put("subName",     r[2]);
+            m.put("amount",      bd(r[3]));
+            m.put("entries",     ((Number) r[4]).longValue());
+            bySubcategory.add(m);
+        }
+
+        List<Map<String, Object>> daily = new ArrayList<>();
+        BigDecimal high = BigDecimal.ZERO, low = null;
+        String highDay = null, lowDay = null;
+        for (Object[] r : dayRows) {
+            BigDecimal amt = bd(r[1]);
+            String d = r[0].toString();
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("date", d);
+            m.put("amount", amt);
+            daily.add(m);
+            if (amt.compareTo(high) > 0) { high = amt; highDay = d; }
+            if (low == null || amt.compareTo(low) < 0) { low = amt; lowDay = d; }
+        }
+        BigDecimal dailyAvg = grandTotal.divide(BigDecimal.valueOf(ym.lengthOfMonth()), 2, RoundingMode.HALF_UP);
+        BigDecimal ratio = netSales.signum() == 0 ? BigDecimal.ZERO
+                : grandTotal.multiply(BigDecimal.valueOf(100)).divide(netSales, 1, RoundingMode.HALF_UP);
+
+        Map<String, Object> exp = new LinkedHashMap<>();
+        exp.put("grandTotal",          grandTotal);
+        exp.put("byCategory",          byCategory);
+        exp.put("bySubcategory",       bySubcategory);
+        exp.put("daily",               daily);
+        exp.put("dailyAvg",            dailyAvg);
+        exp.put("highestDay",          highDay);
+        exp.put("highestDayAmount",    high);
+        exp.put("lowestDay",           lowDay);
+        exp.put("lowestDayAmount",     low == null ? BigDecimal.ZERO : low);
+        exp.put("expenseToRevenuePct", ratio);
+        return exp;
+    }
+
+    /** Month-over-month deltas across the headline metrics. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> buildMom(Map<String, Object> cur, Map<String, Object> prev, YearMonth prevYm) {
+        Map<String, Object> cs = (Map<String, Object>) cur.get("summary");
+        Map<String, Object> ps = (Map<String, Object>) prev.get("summary");
+        Map<String, Object> cc = (Map<String, Object>) cur.get("channels");
+        Map<String, Object> pc = (Map<String, Object>) prev.get("channels");
+        Map<String, Object> cz = (Map<String, Object>) cur.get("pizza");
+        Map<String, Object> pz = (Map<String, Object>) prev.get("pizza");
+
+        List<Map<String, Object>> metrics = new ArrayList<>();
+        metrics.add(delta("Total orders",      bd(cs.get("totalOrders")),   bd(ps.get("totalOrders"))));
+        metrics.add(delta("Net revenue",       bd(cs.get("netRevenue")),    bd(ps.get("netRevenue"))));
+        metrics.add(delta("Total expenses",    bd(cs.get("totalExpenses")), bd(ps.get("totalExpenses"))));
+        metrics.add(delta("Net profit",        bd(cs.get("netProfit")),     bd(ps.get("netProfit"))));
+        metrics.add(delta("Direct revenue",    bd(((Map<String, Object>) cc.get("direct")).get("netRevenue")),
+                                               bd(((Map<String, Object>) pc.get("direct")).get("netRevenue"))));
+        metrics.add(delta("Ecommerce revenue", bd(((Map<String, Object>) cc.get("ecommerce")).get("netRevenue")),
+                                               bd(((Map<String, Object>) pc.get("ecommerce")).get("netRevenue"))));
+        for (String p : new String[]{"TIKTOK", "LAZADA", "SHOPEE"}) {
+            metrics.add(delta(p + " revenue", platNetOf(cc, p), platNetOf(pc, p)));
+        }
+        metrics.add(delta("Pizza box qty",   bd(cz.get("totalQty")),   bd(pz.get("totalQty"))));
+        metrics.add(delta("Pizza box sales", bd(cz.get("totalGross")), bd(pz.get("totalGross"))));
+
+        Map<String, Object> mom = new LinkedHashMap<>();
+        mom.put("prevMonth", prevYm.toString());
+        mom.put("metrics",   metrics);
+        return mom;
+    }
+
+    @SuppressWarnings("unchecked")
+    private BigDecimal platNetOf(Map<String, Object> channels, String platform) {
+        Map<String, Object> ecom = (Map<String, Object>) channels.get("ecommerce");
+        for (Map<String, Object> p : (List<Map<String, Object>>) ecom.get("platforms")) {
+            if (platform.equals(p.get("platform"))) return bd(p.get("netRevenue"));
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private Map<String, Object> delta(String label, BigDecimal cur, BigDecimal prev) {
+        BigDecimal d = cur.subtract(prev);
+        BigDecimal pct = prev.signum() == 0 ? null
+                : d.multiply(BigDecimal.valueOf(100)).divide(prev.abs(), 1, RoundingMode.HALF_UP);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("metric",    label);
+        m.put("current",   cur);
+        m.put("previous",  prev);
+        m.put("delta",     d);
+        m.put("deltaPct",  pct);   // null when previous month is 0 (avoid divide-by-zero / infinite %)
+        m.put("direction", d.signum() > 0 ? "up" : (d.signum() < 0 ? "down" : "flat"));
+        return m;
+    }
+
+    private static BigDecimal nz(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+
+    /** Coerce a native-query numeric (BigDecimal / BigInteger / Long / Integer) to BigDecimal. */
+    private static BigDecimal bd(Object o) {
+        if (o == null) return BigDecimal.ZERO;
+        if (o instanceof BigDecimal b) return b;
+        if (o instanceof java.math.BigInteger bi) return new BigDecimal(bi);
+        if (o instanceof Number n) return BigDecimal.valueOf(n.longValue());
+        return new BigDecimal(o.toString());
     }
 }

@@ -2990,3 +2990,47 @@ On-host first boot. Pre-flighted the repo from the dev machine (building at home
 - ✅ DB confirmed brand-new — fresh-DB assumptions hold.
 
 **Status:** repo deploy-ready; Session 4 resumes on-site (assign LAN origin → finalize `.env` → run `DEPLOYMENT-PROGRESS.md` finalize checklist).
+
+---
+
+## Monthly Report Redesign — Corporate PDF — Jun 14, 2026
+
+Rebuilt the downloadable monthly report into a corporate-presentation PDF with reconciling
+numbers, channel/pizza breakdowns, a redesigned expense report, charts, and month-over-month.
+Plan: `C:\Users\franc\.claude\plans\i-want-to-double-goofy-backus.md`.
+
+**Accuracy bugs found & fixed:**
+- Headline revenue (net ledger) didn't reconcile with channel/pizza/ecom breakdowns (gross by
+  `created_at`). Now **net everywhere** via the ledger joined to orders, + a reconciliation bridge.
+- Pizza boxes **undercounted** — matched on product *name* `ILIKE '%Pizza Box%'`, missing
+  category=`Pizza Box` items named otherwise (e.g. "Hot Fresh Pizza"). Now **category-based**.
+- Expense section grouped by free-text description **and counted voided expenses**. Now grouped
+  by the 8-category hierarchy, voided excluded, with sub-category detail + expense-to-revenue ratio.
+- MoM expanded from orders+revenue to 11 metrics (orders, net rev, expenses, profit, per-channel,
+  per-platform, pizza qty/sales).
+
+**Backend** (`ReportsController.java`): new `GET /api/reports/monthly-corporate?month=YYYY-MM` —
+one consolidated, testable payload `{summary, reconciliation, channels(net), pizza(category,gross),
+expenses(category), mom}` for the selected + previous month. Net-by-channel = ledger ⨝ orders
+(manual no-order adjustments surface as "unattributed" so parts sum to net). New repo method
+`ExpenseRepository.sumBySubCategoryForMonthWithCount`. Existing 12 report endpoints left intact.
+
+**Frontend** (`js/app.js` `printMonthlyReport`): consumes the new endpoint; charts rendered
+**off-screen** via `chart.toBase64Image()` (no more live-canvas scroll dependency). Chart rule —
+donut for ≤5-slice part-to-whole (channel, pizza), bar for ranking/period (expenses horizontal,
+MoM grouped), line for time (sales vs expenses). Appendix reuses existing endpoints.
+
+**Tests:** new `MonthlyCorporateReportIT` (9 tests, green) — reconciliation identity, channel
+parts == net, pizza counted by category for a name-less product, voided-expense exclusion (delta),
+MoM shape. Full unit suite green (159). Full IT run: 2 PRE-EXISTING unrelated setup failures
+(`AuthFlowIT` seeds removed STAFF role → `chk_role`; `DailyCloseIT` product `varchar(6)` overflow)
+— not caused by this change (diff touches only ReportsController/ExpenseRepository/app.js).
+
+**Verified live:** seeded 9 orders across channels; browser-rendered the real PDF — 6 charts,
+all sections, numbers reconcile (Direct ₱3,649.80 + Ecom ₱1,893 = ₱5,542.80 net = 100%), pizza
+320 pcs / 57.9% share, expenses tie to ₱14,050, 0 console errors.
+
+**⚠️ Tech-debt found:** the IT suite wipes the dev DB — `ProductInventoryIT.java:85-87`
+(`order/productRepository.deleteAll()`) + `transactionRepository.deleteAll()` in 9 ITs. Running
+the suite zeroed products/orders/transactions in `rrbm_db` (26 expenses survived). Catalog restored
+by re-running V72 seed (110 products). Flagged as a separate task to scope the test cleanups.

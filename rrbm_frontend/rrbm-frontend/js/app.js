@@ -2610,15 +2610,10 @@
     var month  = picker ? picker.value : new Date().toISOString().slice(0, 7);
     if (!month) { showToast('Select a month first', 'error'); return; }
 
-    // Capture live chart canvases as base64 images BEFORE opening print window
-    // Charts must already be rendered on screen; blank = not yet rendered (scroll down first)
+    // Charts are rendered OFF-SCREEN from the report data (see renderChartPng below) so the
+    // PDF no longer depends on the live canvases being scrolled into view. Each returns a
+    // base64 PNG embedded directly into the print document.
     var chartImages = {};
-    ['chart-daily-revenue', 'chart-sales-vs-exp', 'chart-source-donut'].forEach(function(id) {
-      var canvas = $(id);
-      if (canvas && canvas.tagName === 'CANVAS' && canvas.width > 0) {
-        try { chartImages[id] = canvas.toDataURL('image/png'); } catch(e) { chartImages[id] = null; }
-      }
-    });
 
     showToast('Preparing report…', 'success');
 
@@ -2651,6 +2646,38 @@
         + hdrs.map(function (h) { return '<th>' + h + '</th>'; }).join('')
         + '</tr></thead><tbody>' + rows + '</tbody></table>';
     }
+    // Render a Chart.js config to a PNG data-URL via a detached off-screen canvas.
+    // animation:false makes the first frame paint synchronously, so toBase64Image() is ready.
+    function renderChartPng(cfg, w, h) {
+      try {
+        if (typeof Chart === 'undefined') return null;
+        var holder = document.createElement('div');
+        holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:' + w + 'px;height:' + h + 'px;background:#ffffff;';
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        holder.appendChild(c);
+        document.body.appendChild(holder);
+        cfg.options = cfg.options || {};
+        cfg.options.animation = false;
+        cfg.options.responsive = false;
+        cfg.options.maintainAspectRatio = false;
+        var chart = new Chart(c, cfg);
+        var url = chart.toBase64Image('image/png', 1);
+        chart.destroy();
+        document.body.removeChild(holder);
+        return url;
+      } catch (e) { return null; }
+    }
+    // Wrap a captured chart PNG in a print-friendly <img> (or '' when capture failed).
+    function chartImg(url, widthPct) {
+      if (!url) return '';
+      return '<img src="' + url + '" style="width:' + (widthPct || 100)
+        + '%;border-radius:6px;border:1px solid #e0d4c0;margin:0 0 18px;" alt="chart" />';
+    }
+    // Palette — Direct = brand amber; platforms use brand-recognisable colours.
+    var COL = { direct:'#D4860A', ecom:'#8B5CF6', tiktok:'#111827', lazada:'#2563EB',
+                shopee:'#EE4D2D', green:'#27500A', red:'#791F1F', blue:'#042C53', amber:'#D4860A' };
+    function pesoTick(v){ return '₱' + Number(v||0).toLocaleString('en-PH'); }
 
     try {
       var results = await Promise.all([
@@ -2666,7 +2693,8 @@
         fetch(base + 'ecommerce-breakdown'   + q, { headers: headers }),
         fetch(base + 'non-pizza-summary'     + q, { headers: headers }),
         fetch(API_BASE + '/api/payables',         { headers: headers }),
-        fetch(API_BASE + '/api/orders/collections',{ headers: headers })
+        fetch(API_BASE + '/api/orders/collections',{ headers: headers }),
+        fetch(base + 'monthly-corporate'     + q, { headers: headers })
       ]);
 
       var ins  = results[0].ok  ? await results[0].json()  : {};
@@ -2683,49 +2711,111 @@
       var payAll = results[11].ok ? await results[11].json() : [];
       var collAll= results[12].ok ? await results[12].json() : [];
 
-      // ── 1. Summary stat boxes ───────────────────────────────────
-      var prevChange = '';
-      if (ins.prevMonthRevenue && ins.prevMonthRevenue > 0) {
-        var chg    = (ins.totalRevenue || 0) - ins.prevMonthRevenue;
-        var chgPct = ((chg / ins.prevMonthRevenue) * 100).toFixed(1);
-        prevChange = '<p style="margin:4px 0 0;font-size:11px;color:'
-          + (chg >= 0 ? '#27500A' : '#791F1F') + ';">'
-          + (chg >= 0 ? '&#9650;' : '&#9660;') + ' ' + Math.abs(chgPct)
-          + '% vs ' + (ins.prevMonth || 'prev month') + '</p>';
+      // ── Consolidated corporate report (net, reconciling) ──────────────────
+      var mc       = results[13].ok ? await results[13].json() : {};
+      var summary  = mc.summary        || {};
+      var recon    = mc.reconciliation || {};
+      var channels = mc.channels       || {};
+      var pizza    = mc.pizza          || {};
+      var expData  = mc.expenses       || {};
+      var mom      = mc.mom            || { metrics: [] };
+      var momByMetric = {};
+      (mom.metrics || []).forEach(function (m) { momByMetric[m.metric] = m; });
+
+      // MoM ▲/▼ badge for a KPI box. invertGood=true → a rise is bad (e.g. expenses).
+      function deltaBadge(metricName, invertGood) {
+        var m = momByMetric[metricName];
+        if (!m || m.deltaPct === null || m.deltaPct === undefined) return '';
+        var good = invertGood ? (m.direction === 'down') : (m.direction === 'up');
+        var color = m.direction === 'flat' ? '#888' : (good ? '#27500A' : '#791F1F');
+        var arrow = m.direction === 'up' ? '&#9650;' : (m.direction === 'down' ? '&#9660;' : '&#8212;');
+        return '<p style="margin:4px 0 0;font-size:11px;color:' + color + ';">'
+          + arrow + ' ' + Math.abs(m.deltaPct) + '% vs ' + (mom.prevMonth || 'prev') + '</p>';
       }
 
+      // ── 1. Executive summary KPIs (NET basis, with MoM movement) ─────────
+      var netProfit = Number(summary.netProfit || 0);
       var summaryBoxes =
         '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">'
-        + box('Total orders',   num(ins.totalOrders),   '#1A1208', '')
-        + box('Total revenue',  fmt(ins.totalRevenue),  '#633806', prevChange)
-        + box('Items sold',     num(ins.totalItemsSold),'#1A1208', '')
-        + box('Total expenses', fmt(ins.totalExpenses), '#791F1F', '')
+        + box('Total orders',  num(summary.totalOrders),  '#1A1208', deltaBadge('Total orders'))
+        + box('Net revenue',   fmt(summary.netRevenue),   '#633806', deltaBadge('Net revenue'))
+        + box('Total expenses',fmt(summary.totalExpenses),'#791F1F', deltaBadge('Total expenses', true))
+        + box('Net profit',    fmt(netProfit), netProfit >= 0 ? '#27500A' : '#791F1F', deltaBadge('Net profit'))
         + '</div>';
 
-      // ── 2. Accounting summary boxes ────────────────────────────
-      var accBoxes =
-        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">'
-        + box('Gross sales',     fmt(acc.grossSales),       '#27500A', '')
-        + box('Refunds & voids', fmt(acc.refundsTotal),     '#791F1F', '')
-        + box('Adjustments',     fmt(acc.adjustmentsTotal), '#633806', '')
-        + box('Net sales',       fmt(acc.netSales),         '#042C53', '')
-        + '</div>';
+      // ── 2. Revenue reconciliation bridge (gross → net) ──────────────────
+      var reconBoxes =
+        '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px;">'
+        + box('Gross sales',     fmt(recon.grossSales),       '#27500A', '')
+        + box('Refunds & voids', fmt(recon.refundsTotal),     '#791F1F', '')
+        + box('Adjustments',     fmt(recon.adjustmentsTotal), '#633806', '')
+        + box('Net sales',       fmt(recon.netSales),         '#042C53', '')
+        + '</div>'
+        + '<p style="font-size:11px;color:#666;margin:0 0 20px;">'
+        + 'Gross sales ' + fmt(recon.grossSales) + ' &minus; refunds/voids '
+        + fmt(Math.abs(Number(recon.refundsTotal || 0))) + ' &plusmn; adjustments '
+        + fmt(recon.adjustmentsTotal) + ' = <strong>Net sales ' + fmt(recon.netSales)
+        + '</strong>. All channel &amp; expense figures below are on this net basis '
+        + '(product/pizza tables are gross, as labelled).</p>';
 
-      // ── 3. Month-over-month ────────────────────────────────────
+      // ── Build charts off-screen from report data ────────────────────────
+      // Exec trend: daily sales vs expenses (from insights-summary daily series).
+      var salesExpPng = (function () {
+        var db = ins.dailyBreakdown || [];
+        if (!db.length) return null;
+        var expByDate = {};
+        (ins.dailyExpenses || []).forEach(function (e) { expByDate[e.date] = Number(e.amount || 0); });
+        var labels = db.map(function (d) { return d.date; });
+        return renderChartPng({
+          type: 'line',
+          data: { labels: labels, datasets: [
+            { label: 'Sales', data: db.map(function (d) { return Number(d.revenue || 0); }),
+              borderColor: COL.amber, backgroundColor: 'rgba(212,134,10,0.08)', borderWidth: 2,
+              pointRadius: 2, tension: 0.3, fill: true },
+            { label: 'Expenses', data: labels.map(function (l) { return expByDate[l] || 0; }),
+              borderColor: COL.red, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 2,
+              pointRadius: 2, tension: 0.3, fill: true }
+          ] },
+          options: { plugins: { legend: { position: 'top' } },
+                     scales: { y: { ticks: { callback: pesoTick } } } }
+        }, 860, 300);
+      })();
+
+      // ── 3. Month-over-month growth (compare & dissect) ──────────────────
       var momSection = '';
-      if (ins.prevMonth) {
-        var revChange = (ins.totalRevenue || 0) - (ins.prevMonthRevenue || 0);
-        momSection =
-          heading('Month-over-month comparison')
-          + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">'
-          + box('This month orders',  num(ins.totalOrders),  '#1A1208',
-              '<p style="font-size:11px;color:#888;margin:3px 0 0;">Prev (' + ins.prevMonth + '): ' + num(ins.prevMonthOrders) + '</p>')
-          + box('This month revenue', fmt(ins.totalRevenue), '#633806',
-              '<p style="font-size:11px;color:#888;margin:3px 0 0;">Prev: ' + fmt(ins.prevMonthRevenue) + '</p>')
-          + box('Revenue change',
-              (revChange >= 0 ? '+' : '') + fmt(revChange),
-              revChange >= 0 ? '#27500A' : '#791F1F', '')
-          + '</div>';
+      var momMetrics = mom.metrics || [];
+      if (momMetrics.length) {
+        var isCount = function (name) { return /orders|qty/i.test(name); };
+        var momRows = momMetrics.map(function (m) {
+          var f = isCount(m.metric) ? num : fmt;
+          var dColor = m.direction === 'flat' ? '#888' : (m.direction === 'up' ? '#27500A' : '#791F1F');
+          var arrow  = m.direction === 'up' ? '&#9650;' : (m.direction === 'down' ? '&#9660;' : '&#8212;');
+          var pctTxt = (m.deltaPct === null || m.deltaPct === undefined) ? '—' : (Math.abs(m.deltaPct) + '%');
+          var dVal   = (Number(m.delta) >= 0 ? '+' : '') + (isCount(m.metric) ? num(m.delta) : fmt(m.delta));
+          return '<tr>'
+            + '<td style="font-weight:500;">' + esc(m.metric) + '</td>'
+            + '<td style="text-align:right;">' + f(m.current) + '</td>'
+            + '<td style="text-align:right;color:#888;">' + f(m.previous) + '</td>'
+            + '<td style="text-align:right;color:' + dColor + ';">' + dVal + '</td>'
+            + '<td style="text-align:right;color:' + dColor + ';">' + arrow + ' ' + pctTxt + '</td>'
+            + '</tr>';
+        }).join('');
+        var pickC = function (name) { var m = momByMetric[name]; return m ? Number(m.current || 0) : 0; };
+        var pickP = function (name) { var m = momByMetric[name]; return m ? Number(m.previous || 0) : 0; };
+        var momBarPng = renderChartPng({
+          type: 'bar',
+          data: { labels: ['Net revenue', 'Total expenses', 'Net profit'], datasets: [
+            { label: (mc.month || 'This month'),
+              data: [pickC('Net revenue'), pickC('Total expenses'), pickC('Net profit')], backgroundColor: COL.amber },
+            { label: (mom.prevMonth || 'Last month'),
+              data: [pickP('Net revenue'), pickP('Total expenses'), pickP('Net profit')], backgroundColor: '#C9B79C' }
+          ] },
+          options: { plugins: { legend: { position: 'top' } },
+                     scales: { y: { ticks: { callback: pesoTick } } } }
+        }, 860, 320);
+        momSection = heading('Month-over-month — ' + (mc.month || '') + ' vs ' + (mom.prevMonth || ''))
+          + chartImg(momBarPng)
+          + tbl(['Metric', 'This month', 'Last month', 'Change', '%'], momRows);
       }
 
       // ── 4. Top 5 products ──────────────────────────────────────
@@ -2745,43 +2835,66 @@
           + tbl(['#','Product','Qty sold','Revenue','Share'], tpRows);
       }
 
-      // ── 5. Source breakdown ────────────────────────────────────
-      var srcSection = '';
-      var srcTable   = '';   // table only (no heading) — used next to donut image in PDF
-      var srcList = (src.breakdown || []);
-      if (srcList.length > 0) {
-        var srcLabel = { WALK_IN:'Walk-in', ECOMMERCE:'E-commerce',
-          RESELLER:'Reseller', AGENT:'Agent', DISTRIBUTOR:'Distributor',
-          FACEBOOK_PAGE:'Facebook Page' };
-        var srcRows = srcList.map(function (r) {
-          return '<tr>'
-            + '<td>' + esc(srcLabel[r.source] || r.source) + '</td>'
-            + '<td style="text-align:right;">' + num(r.orderCount) + '</td>'
-            + '<td style="text-align:right;">' + fmt(r.revenue) + '</td>'
-            + '<td style="text-align:right;">' + Number(r.pct || 0).toFixed(1) + '%</td>'
-            + '</tr>';
-        }).join('');
-        srcTable   = tbl(['Source','Orders','Revenue','%'], srcRows);
-        srcSection = heading('Orders by source') + srcTable;
+      // ── 4. Orders by channel (NET revenue, ledger-attributed) ───────────
+      var platLabel = { TIKTOK:'TikTok', LAZADA:'Lazada', SHOPEE:'Shopee',
+                        OTHER:'Other', UNKNOWN:'Unknown' };
+      var chDirect = channels.direct || { orderCount:0, netRevenue:0 };
+      var chEcom   = channels.ecommerce || { orderCount:0, netRevenue:0, platforms:[] };
+      var chPlats  = chEcom.platforms || [];
+      var chUnattr = Number(channels.unattributed || 0);
+      var chTotal  = Number(channels.netRevenue || 0);
+      var pctOf = function (v) { return chTotal ? (Number(v || 0) / chTotal * 100).toFixed(1) + '%' : '—'; };
+
+      var chRows =
+          '<tr><td style="font-weight:600;">Direct</td>'
+          + '<td style="text-align:right;">' + num(chDirect.orderCount) + '</td>'
+          + '<td style="text-align:right;font-weight:600;">' + fmt(chDirect.netRevenue) + '</td>'
+          + '<td style="text-align:right;">' + pctOf(chDirect.netRevenue) + '</td></tr>'
+        + '<tr><td style="font-weight:600;">E-commerce</td>'
+          + '<td style="text-align:right;">' + num(chEcom.orderCount) + '</td>'
+          + '<td style="text-align:right;font-weight:600;">' + fmt(chEcom.netRevenue) + '</td>'
+          + '<td style="text-align:right;">' + pctOf(chEcom.netRevenue) + '</td></tr>';
+      chPlats.forEach(function (p) {
+        chRows += '<tr><td style="padding-left:26px;color:#555;">&mdash; ' + esc(platLabel[p.platform] || p.platform) + '</td>'
+          + '<td style="text-align:right;color:#555;">' + num(p.orderCount) + '</td>'
+          + '<td style="text-align:right;color:#555;">' + fmt(p.netRevenue) + '</td>'
+          + '<td style="text-align:right;color:#555;">' + pctOf(p.netRevenue) + '</td></tr>';
+      });
+      if (Math.abs(chUnattr) >= 0.005) {
+        chRows += '<tr><td style="color:#888;font-style:italic;">Unattributed (manual adj.)</td>'
+          + '<td style="text-align:right;color:#888;">&mdash;</td>'
+          + '<td style="text-align:right;color:#888;">' + fmt(chUnattr) + '</td>'
+          + '<td style="text-align:right;color:#888;">' + pctOf(chUnattr) + '</td></tr>';
+      }
+      chRows += '<tr><td style="font-weight:700;border-top:2px solid #D4860A;">Net total</td>'
+        + '<td style="border-top:2px solid #D4860A;"></td>'
+        + '<td style="text-align:right;font-weight:700;border-top:2px solid #D4860A;">' + fmt(chTotal) + '</td>'
+        + '<td style="text-align:right;border-top:2px solid #D4860A;">100%</td></tr>';
+
+      var chDonutPng = renderChartPng({
+        type: 'doughnut',
+        data: {
+          labels: ['Direct', platLabel.TIKTOK, platLabel.LAZADA, platLabel.SHOPEE],
+          datasets: [{
+            data: [
+              Math.max(0, Number(chDirect.netRevenue || 0)),
+              Math.max(0, platNetByName('TIKTOK')),
+              Math.max(0, platNetByName('LAZADA')),
+              Math.max(0, platNetByName('SHOPEE'))
+            ],
+            backgroundColor: [COL.direct, COL.tiktok, COL.lazada, COL.shopee]
+          }]
+        },
+        options: { plugins: { legend: { position: 'right' } } }
+      }, 520, 300);
+      function platNetByName(name) {
+        var hit = chPlats.filter(function (p) { return p.platform === name; })[0];
+        return hit ? Number(hit.netRevenue || 0) : 0;
       }
 
-      // ── 5b. E-commerce breakdown ───────────────────────────────
-      var ecomSection = '';
-      var ecomPlatforms = ecom.platforms || [];
-      if (ecomPlatforms.length > 0) {
-        var platLabel = { SHOPEE: 'Shopee', TIKTOK: 'TikTok Shop', LAZADA: 'Lazada' };
-        var ecomRows = ecomPlatforms.map(function(p) {
-          return '<tr>'
-            + '<td style="font-weight:500;">' + esc(platLabel[p.platform] || p.platform) + '</td>'
-            + '<td style="text-align:right;">' + num(p.orderCount) + '</td>'
-            + '<td style="text-align:right;">' + fmt(p.revenue) + '</td>'
-            + '<td style="text-align:right;">' + Number(p.percentage || 0).toFixed(1) + '%</td>'
-            + '<td style="text-align:right;">' + fmt(p.avgOrder) + '</td>'
-            + '</tr>';
-        }).join('');
-        ecomSection = heading('E-commerce breakdown — Total: ' + fmt(ecom.totalRevenue))
-          + tbl(['Platform', 'Orders', 'Revenue', '%', 'Avg. Order'], ecomRows);
-      }
+      var channelSection = heading('Orders by channel (net revenue)')
+        + chartImg(chDonutPng, 58)
+        + tbl(['Channel', 'Orders', 'Net revenue', '% of net'], chRows);
 
       // ── 6. Top agents ──────────────────────────────────────────
       var agtSection = '';
@@ -2818,22 +2931,67 @@
           + tbl(['#','Date','Orders','Revenue'], dtsRows);
       }
 
-      // ── 8. Pizza box summary ───────────────────────────────────
-      var pzSection = heading('Pizza box summary — ' + num(pz.totalQty) + ' pcs total');
-      var pzList = (pz.top5 || []);
-      if (pzList.length > 0) {
-        var pzRows = pzList.map(function (r, i) {
-          return '<tr>'
-            + '<td>' + (i + 1) + '</td>'
-            + '<td>' + esc(r.productName) + '</td>'
-            + '<td style="text-align:right;font-weight:500;">' + num(r.qty) + ' pcs</td>'
-            + '<td style="text-align:right;">' + fmt(r.revenue) + '</td>'
-            + '</tr>';
-        }).join('');
-        pzSection += tbl(['#','Pizza box','Qty sold','Revenue'], pzRows);
-      } else {
-        pzSection += '<p style="color:#888;font-size:12px;margin-bottom:16px;">No pizza box sales this month.</p>';
-      }
+      // ── 5. Pizza Box report (headline product; category-based; GROSS) ───
+      var pzPlats = pizza.platforms || [];
+      var pzPlatQty = function (name) {
+        var hit = pzPlats.filter(function (p) { return p.platform === name; })[0];
+        return hit ? Number(hit.qty || 0) : 0;
+      };
+      var pzKpis =
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
+        + box('Total pizza boxes', num(pizza.totalQty) + ' pcs', '#633806', deltaBadge('Pizza box qty'))
+        + box('Pizza box sales (gross)', fmt(pizza.totalGross), '#633806', deltaBadge('Pizza box sales'))
+        + box('Share of all product sales', Number(pizza.pizzaSharePct || 0).toFixed(1) + '%', '#042C53', '')
+        + '</div>';
+
+      var pzChannelRows =
+          '<tr><td style="font-weight:600;">Direct</td>'
+          + '<td style="text-align:right;">' + num(pizza.directQty) + ' pcs</td>'
+          + '<td style="text-align:right;">' + fmt(pizza.directGross) + '</td></tr>'
+        + '<tr><td style="font-weight:600;">E-commerce</td>'
+          + '<td style="text-align:right;">' + num(pizza.ecomQty) + ' pcs</td>'
+          + '<td style="text-align:right;">' + fmt(pizza.ecomGross) + '</td></tr>';
+      pzPlats.forEach(function (p) {
+        pzChannelRows += '<tr><td style="padding-left:26px;color:#555;">&mdash; ' + esc(platLabel[p.platform] || p.platform) + '</td>'
+          + '<td style="text-align:right;color:#555;">' + num(p.qty) + ' pcs</td>'
+          + '<td style="text-align:right;color:#555;">' + fmt(p.gross) + '</td></tr>';
+      });
+      pzChannelRows += '<tr><td style="font-weight:700;border-top:2px solid #D4860A;">Total</td>'
+        + '<td style="text-align:right;font-weight:700;border-top:2px solid #D4860A;">' + num(pizza.totalQty) + ' pcs</td>'
+        + '<td style="text-align:right;font-weight:700;border-top:2px solid #D4860A;">' + fmt(pizza.totalGross) + '</td></tr>';
+
+      var pzDonutPng = renderChartPng({
+        type: 'doughnut',
+        data: { labels: ['Direct', 'E-commerce'],
+          datasets: [{ data: [Number(pizza.directQty || 0), Number(pizza.ecomQty || 0)],
+            backgroundColor: [COL.direct, COL.ecom] }] },
+        options: { plugins: { legend: { position: 'right' },
+          title: { display: true, text: 'Pizza qty — Direct vs E-commerce' } } }
+      }, 420, 280);
+      var pzBarPng = renderChartPng({
+        type: 'bar',
+        data: { labels: [platLabel.TIKTOK, platLabel.LAZADA, platLabel.SHOPEE],
+          datasets: [{ label: 'Pizza qty', data: [pzPlatQty('TIKTOK'), pzPlatQty('LAZADA'), pzPlatQty('SHOPEE')],
+            backgroundColor: [COL.tiktok, COL.lazada, COL.shopee] }] },
+        options: { plugins: { legend: { display: false },
+          title: { display: true, text: 'Pizza qty by platform' } } }
+      }, 420, 280);
+
+      var pzTop5 = (pizza.top5 || []);
+      var pzTopRows = pzTop5.map(function (r, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(r.productName) + '</td>'
+          + '<td style="text-align:right;font-weight:500;">' + num(r.qty) + ' pcs</td>'
+          + '<td style="text-align:right;">' + fmt(r.gross) + '</td></tr>';
+      }).join('');
+
+      var pzSection = heading('Pizza Box report — headline product (gross sales)')
+        + pzKpis
+        + chartImg(pzDonutPng, 48) + chartImg(pzBarPng, 48)
+        + tbl(['Channel', 'Qty sold', 'Gross sales'], pzChannelRows)
+        + (pzTop5.length
+            ? '<p style="font-size:11px;color:#666;margin:0 0 6px;">Top pizza-box SKUs</p>'
+              + tbl(['#', 'Pizza box', 'Qty sold', 'Gross sales'], pzTopRows)
+            : '');
 
       // ── 9. Hot & selling items ─────────────────────────────────
       var hotSection = '';
@@ -2873,23 +3031,62 @@
         dfSection += '<p style="color:#888;font-size:12px;margin-bottom:16px;">No delivery fees this month.</p>';
       }
 
-      // ── 11. Expense breakdown ──────────────────────────────────
-      var expSection = heading('Monthly expense breakdown — Total: ' + fmt(exp.grandTotal));
-      var expList = (exp.breakdown || []);
-      if (expList.length > 0) {
-        var expRows = expList.map(function (r) {
-          var pct = exp.grandTotal > 0
-            ? ((r.totalAmount / exp.grandTotal) * 100).toFixed(1) : '0.0';
+      // ── 6. Expense report (by category; voided excluded) ────────────────
+      var expCats = expData.byCategory || [];
+      var expSection;
+      if (Number(expData.grandTotal || 0) === 0 && !expCats.length) {
+        expSection = heading('Expense report (by category)')
+          + '<p style="color:#888;font-size:12px;margin-bottom:16px;">No expenses this month.</p>';
+      } else {
+        var expKpis =
+          '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">'
+          + box('Total expenses', fmt(expData.grandTotal), '#791F1F', deltaBadge('Total expenses', true))
+          + box('Daily average', fmt(expData.dailyAvg), '#633806', '')
+          + box('Expense-to-revenue', Number(expData.expenseToRevenuePct || 0).toFixed(1) + '%', '#042C53', '')
+          + '</div>';
+
+        var expCatRows = expCats.map(function (r) {
           return '<tr>'
-            + '<td style="font-weight:500;">' + esc(r.description) + '</td>'
-            + '<td style="text-align:right;font-weight:500;">' + fmt(r.totalAmount) + '</td>'
-            + '<td style="text-align:right;color:#555;">' + num(r.count) + '&times;</td>'
-            + '<td style="text-align:right;">' + pct + '%</td>'
+            + '<td style="font-weight:500;">' + esc(r.name) + '</td>'
+            + '<td style="text-align:right;font-weight:500;">' + fmt(r.amount) + '</td>'
+            + '<td style="text-align:right;">' + Number(r.pct || 0).toFixed(1) + '%</td>'
+            + '<td style="text-align:right;color:#555;">' + num(r.entries) + '</td>'
             + '</tr>';
         }).join('');
-        expSection += tbl(['Expense type','Total','Times','%'], expRows);
-      } else {
-        expSection += '<p style="color:#888;font-size:12px;margin-bottom:16px;">No expenses this month.</p>';
+
+        var expBarPng = renderChartPng({
+          type: 'bar',
+          data: { labels: expCats.map(function (r) { return r.name; }),
+            datasets: [{ label: 'Amount', data: expCats.map(function (r) { return Number(r.amount || 0); }),
+              backgroundColor: COL.amber }] },
+          options: { indexAxis: 'y', plugins: { legend: { display: false } },
+            scales: { x: { ticks: { callback: pesoTick } } } }
+        }, 860, Math.max(220, 36 * expCats.length + 60));
+
+        var hiLo = (expData.highestDay
+          ? '<p style="font-size:11px;color:#666;margin:0 0 14px;">Highest spend day: <strong>'
+            + esc(expData.highestDay) + '</strong> (' + fmt(expData.highestDayAmount) + ') &nbsp;&middot;&nbsp; '
+            + 'Lowest: <strong>' + esc(expData.lowestDay || '—') + '</strong> (' + fmt(expData.lowestDayAmount) + ')</p>'
+          : '');
+
+        var subs = (expData.bySubcategory || []).filter(function (s) { return s.subName !== s.primaryName; });
+        var subSection = '';
+        if (subs.length) {
+          var subRows = subs.map(function (s) {
+            return '<tr><td style="color:#555;">' + esc(s.primaryName) + ' &rsaquo; ' + esc(s.subName) + '</td>'
+              + '<td style="text-align:right;">' + fmt(s.amount) + '</td>'
+              + '<td style="text-align:right;color:#555;">' + num(s.entries) + '</td></tr>';
+          }).join('');
+          subSection = '<p style="font-size:11px;color:#666;margin:4px 0 6px;">Sub-category detail</p>'
+            + tbl(['Category &rsaquo; sub-category', 'Amount', 'Entries'], subRows);
+        }
+
+        expSection = heading('Expense report (by category)')
+          + expKpis
+          + chartImg(expBarPng)
+          + tbl(['Category', 'Amount', '% of expenses', 'Entries'], expCatRows)
+          + hiLo
+          + subSection;
       }
 
       // ── 12. Non-pizza items full breakdown ─────────────────────
@@ -2996,38 +3193,25 @@
         + '<div class="rpt-meta">Period: ' + month + ' &nbsp;&middot;&nbsp; Generated: '
         + new Date().toLocaleString('en-PH') + '</div>'
         + '<hr class="divider">'
-        + heading('Summary')
+        + heading('Executive summary')
         + summaryBoxes
-        + heading('Accounting summary')
-        + accBoxes
-
-        // ── Chart images (captured from live canvas before this window opened) ──
-        + (chartImages['chart-daily-revenue']
-           ? heading('Daily revenue breakdown')
-             + '<img src="' + chartImages['chart-daily-revenue']
-             + '" style="width:100%;border-radius:6px;border:1px solid #e0d4c0;margin-bottom:20px;" alt="Daily revenue chart" />'
-           : '')
-        + (chartImages['chart-sales-vs-exp']
-           ? heading('Sales vs expenses — daily trend')
-             + '<img src="' + chartImages['chart-sales-vs-exp']
-             + '" style="width:100%;border-radius:6px;border:1px solid #e0d4c0;margin-bottom:20px;" alt="Sales vs expenses chart" />'
-           : '')
-        + (chartImages['chart-source-donut']
-           ? heading('Orders by source')
-             + '<img src="' + chartImages['chart-source-donut']
-             + '" style="width:48%;border-radius:6px;border:1px solid #e0d4c0;margin-bottom:12px;" alt="Source breakdown donut" />'
-             + srcTable     // table immediately below the donut — no confusion about what it shows
-           : srcSection)    // fallback: heading + table when no chart image was captured
-
+        + (salesExpPng ? heading('Sales vs expenses — daily trend') + chartImg(salesExpPng) : '')
+        + heading('Revenue reconciliation')
+        + reconBoxes
+        + channelSection
+        + '<div class="page-break"></div>'
+        + pzSection
+        + '<div class="page-break"></div>'
+        + expSection
+        + '<div class="page-break"></div>'
         + momSection
+        + '<div class="page-break"></div>'
+        + heading('Appendix — supporting detail')
         + topProdSection
-        + ecomSection
         + agtSection
         + dtsSection
-        + pzSection
         + hotSection
         + dfSection
-        + expSection
         + npzSection
         + paySection
         + collSection

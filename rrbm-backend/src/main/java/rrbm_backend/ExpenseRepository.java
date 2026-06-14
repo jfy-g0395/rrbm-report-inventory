@@ -156,6 +156,36 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     List<Object[]> sumByPrimaryCategoryForDateRange(@Param("start") LocalDate start,
                                                     @Param("end") LocalDate end);
 
+    // ── Corporate monthly report query ──────────────────────────────────────────
+
+    /**
+     * Monthly spend grouped by sub-category (leaf), carrying its primary category for
+     * nesting in the corporate report. Mirrors {@link #sumByPrimaryCategoryForMonthWithCount}
+     * but keeps the leaf category split out so the report can show sub-category detail
+     * under each primary.
+     *
+     * <p>Walk-up rule for the primary columns is the same: a sub-category's parent is the
+     * primary; a category that is itself a primary (parentId IS NULL) reports itself as both
+     * primary and leaf. Voided expenses and null-category items are excluded.
+     *
+     * Returns rows of [primaryCode (String), primaryName (String), subName (String),
+     * total (BigDecimal), entries (Long)], ordered by primary total then sub total DESC.
+     */
+    @Query("SELECT COALESCE(prim.code, cat.code), COALESCE(prim.name, cat.name), cat.name, " +
+           "SUM(i.amount), COUNT(DISTINCT e.id) " +
+           "FROM Expense e JOIN e.items i " +
+           "JOIN ExpenseCategory cat ON cat.id = i.categoryId " +
+           "LEFT JOIN ExpenseCategory prim ON prim.id = cat.parentId " +
+           "WHERE e.voided = false AND e.status <> 'VOIDED' " +
+           "AND i.categoryId IS NOT NULL " +
+           "AND EXTRACT(YEAR FROM e.date) = :year " +
+           "AND EXTRACT(MONTH FROM e.date) = :month " +
+           "GROUP BY COALESCE(prim.code, cat.code), COALESCE(prim.name, cat.name), cat.name " +
+           "HAVING SUM(i.amount) > 0 " +
+           "ORDER BY COALESCE(prim.name, cat.name) ASC, SUM(i.amount) DESC")
+    List<Object[]> sumBySubCategoryForMonthWithCount(@Param("year") int year,
+                                                     @Param("month") int month);
+
     // ── U1 queries ─────────────────────────────────────────────────────────────
 
     /**
