@@ -123,6 +123,35 @@ DELETE FROM payables            WHERE supplier_name LIKE 'TEST%';
 
 ---
 
+## Office server prep — Windows host (do BEFORE going on-site)
+
+Deploy target is a **Windows** office server (confirmed Jun 13). The repo ships to it via
+**GitHub** (`origin` = `github.com/jfy-g0395/rrbm-report-inventory`, private) — the server
+does a fresh `git clone` and builds with Docker. Lay all of this in advance; only the LAN IP
+(item 4) needs you physically on-site.
+
+| # | Prepare | Detail / gotcha |
+|---|---------|-----------------|
+| 1 | **Docker Desktop + WSL2** | Needs the WSL2 backend → requires **virtualization enabled in BIOS/UEFI** (VT-x/AMD-V) + Windows features *Virtual Machine Platform* and *WSL*. Check first; may need a BIOS reboot. |
+| 1a | **Unattended auto-start** | `restart: unless-stopped` only restarts *containers* once the engine runs. Set Docker Desktop → **"Start when you sign in"** **and** enable machine **auto-login** (or run the engine as a service) so a power-loss/reboot brings the stack back with nobody logged in. |
+| 2 | **Git for Windows + GitHub auth** | Repo is private → server needs a **Personal Access Token** (simplest) or SSH key to clone. *Alt:* bring the repo on USB (but loses easy `git pull` for updates). |
+| 3 | **Port 80 free** | Windows IIS / *World Wide Web Publishing Service* often holds it. Check `netstat -ano | findstr :80`; stop/disable the owner (frontend binds `80:80`). |
+| 4 | **Static LAN IP** ⏳on-site | Static IPv4 on the adapter **or** a DHCP reservation on the router. Becomes both the `RRBM_CORS_ALLOWED_ORIGINS` value and the address staff type — must not float. |
+| 5 | **Firewall — inbound TCP 80** | `New-NetFirewallRule -DisplayName "RRBM web" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow` (private profile). |
+| 6 | **Backup destination + Task Scheduler** | A second drive / USB / network share + one off-machine copy. Nightly `pg_dump` runs via **Windows Task Scheduler** (a `.ps1`/`.bat` calling `docker exec rrbm_db pg_dump ...`) — script authored in Session 4. |
+| 7 | **Disk** | ~5–10 GB free for the Postgres volume + Docker images. |
+
+### `.env` does NOT travel via git (it's gitignored)
+`git clone` brings everything **except** `.env`. Before `docker compose up`, the repo root on
+the server must contain `.env` with the **real LAN origin** in `RRBM_CORS_ALLOWED_ORIGINS`.
+Two options:
+- **Reuse the dev `.env`** — copy it over USB / paste values. Its secrets are already strong
+  random values; just fix the CORS line.
+- **Regenerate on the server** — recreate from `.env.example` with fresh `openssl rand -hex 32`
+  etc. (cleaner dev/prod separation, not required).
+
+---
+
 ## Before Session-4 first boot — finalize checklist
 1. **Assign the host's LAN IP/hostname** and set `RRBM_CORS_ALLOWED_ORIGINS` in `.env`
    to that exact origin, e.g. `http://192.168.1.50` (add `,http://rrbm-host` if a
