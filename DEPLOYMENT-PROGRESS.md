@@ -79,6 +79,127 @@ finalize checklist below in order.
 
 ---
 
+## Session 5 — On-host first boot, ON-SITE — Jun 18, 2026 — 🟡 IN PROGRESS
+
+On-site at the office host. This is the live first boot that Session 4 paused for. The host
+is a fresh Windows box (user `PC`, no Docker, no `.env`). Pre-flight blockers from Session 4
+are now being cleared in order.
+
+### Resolved this session
+| Item | Result |
+|------|--------|
+| **Host LAN IP assigned** | `192.168.0.234` (adapter `Ethernet 2`, gateway/DNS `192.168.0.1`, MAC `00-E0-4C-A0-D6-52`). Port 80 is **free** (no IIS/W3SVC). |
+| **CORS placeholder resolved** | `RRBM_CORS_ALLOWED_ORIGINS=http://192.168.0.234` — the Session-4 🔴 blocker is cleared. |
+| **`.env` created on host** | Strong random secrets via `openssl`: `DB_PASSWORD` (32 hex), `RRBM_JWT_SECRET` (64 hex), `RRBM_INITIAL_MASTER_KEY` (24 hex), real CORS origin, `RRBM_FAIL_ON_DEFAULT_JWT_SECRET=true`. Confirmed **gitignored** (`git check-ignore .env` ✓). Does not travel via git — lives only on the host. |
+| **Docker Desktop installed** | `winget install Docker.DockerDesktop` → **v4.78.0**, Docker CLI **29.5.3**. Exit 0. |
+
+### Boot completed — stack is LIVE ✅
+Post-reboot, WSL2 active, Docker engine running. Full sequence executed:
+`compose config` ✓ → `build` ✓ → image secret-exclusion verified ✓ → `up -d` → **Flyway head V74** ✓
+→ **V19 purge** ✓. All three containers healthy; app serves on `http://192.168.0.234` (and `localhost`).
+
+| Container | Status |
+|-----------|--------|
+| `rrbm_db` (postgres:16-alpine) | Up (healthy) |
+| `rrbm_backend` | Up (healthy) — 8080 **not** host-exposed (fix 1E verified) |
+| `rrbm_frontend` (nginx) | Up — `0.0.0.0:80→80` |
+
+Smoke test: `GET /` → 200 (SPA, 253 KB) on localhost + LAN IP; `GET /api/products` → 401
+(proxy works, auth enforced); `:8080` not reachable from host (correct).
+
+### 🐞 Two fresh-deploy bugs found & fixed on-host (NOT in any prior audit)
+Both only manifest on a **clean DB / image without `application-local.properties`** — i.e. they
+were invisible in dev and would have blocked any first deploy.
+
+1. **Flyway V5 ↔ V7 ordering bug.** `V5__phase5_features.sql` `ALTER`s `activity_log`, but that
+   table is created in `V7`. On a fresh DB Flyway applies in ascending order (V5 before V7) →
+   `relation "activity_log" does not exist`, backend crash-loop. In dev it never surfaced because
+   V7 was applied before V5 was authored (out-of-order history).
+   **Fix:** prepended V7's exact `CREATE TABLE IF NOT EXISTS activity_log (...)` to the top of V5,
+   making it self-contained; V7's own `IF NOT EXISTS` is then a no-op. *(Edits file content, not
+   version → changes V5's checksum. See "Uncommitted changes" note below.)*
+2. **Missing `JavaMailSender` bean.** `LowStockEmailService` requires a `JavaMailSender` (hard
+   constructor dep) even though the email feature is flag-gated off (`rrbm.mail.enabled=false`).
+   Spring Boot only creates that bean when `spring.mail.host` is set — config that lived in the
+   (correctly-excluded) `application-local.properties`. Result: context init failed.
+   **Fix:** added `SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-localhost}` to the backend service in
+   `docker-compose.yml` (runtime env, no rebuild). Placeholder host → bean exists; no SMTP
+   connection unless mail is enabled later. Also removed the obsolete compose `version:` key.
+
+### V19 purge result (committed)
+Deleted 142 orders, 283 order_items, 141 transactions, 42 expense_items, 14 expenses,
+35 daily_reports, 1 delivery_log (+item); the 1 test payable cascade-deleted via the
+V74 payables→delivery_log FK. **Post-purge:** all transactional tables = 0; seed intact
+(products 111, settings 12, users 1 = `admin@rrbm.com`).
+
+### ⚠️ Uncommitted changes on the host (tracked files)
+`V5__phase5_features.sql` and `docker-compose.yml` are edited but **not committed**. Note: the
+V5 edit changes its Flyway checksum, so a pre-existing dev DB will report a checksum mismatch on
+next boot (run `flyway repair` or rebuild the dev DB). Commit + push when ready so the fixes are
+in the canonical history.
+
+### 🔑 Admin login — V2 seed password was wrong (3rd fresh-deploy issue)
+The `V2__seed_initial_data.sql` comment says the super-admin password is `ChangeMe123!`, but
+the seeded BCrypt hash (`$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy`) does
+**not** verify against `ChangeMe123!`, `password`, or any common candidate (checked via
+`pgcrypto crypt()` — no login attempts consumed). The intended plaintext is effectively
+unrecoverable. Combined with the in-memory login lockout (`LoginAttemptService`, 5 tries /
+15 min), the default credentials were a dead end.
+
+**Resolution:** restarted `rrbm_backend` to clear the lockout, then reset the admin password
+directly in the DB to a known temp value using pgcrypto (Spring-compatible `$2a$` bcrypt):
+`UPDATE users SET password_hash = crypt('<TEMP_PASSWORD>', gen_salt('bf',10)) WHERE email='admin@rrbm.com';`
+(the temp password was shared out-of-band during the deploy session, **not** stored here — it
+must be changed in the UI on first login.)
+Verified **200 + token** through the real `/api/auth/login`. **This temp password must be
+changed in the UI immediately** (it lives in the deploy transcript). The bogus
+`settings.master_key_hash` row (same hash) is legacy/unused — master key is seeded from
+`RRBM_INITIAL_MASTER_KEY`; no action.
+
+> **Repo follow-up:** fix the V2 seed so a future fresh deploy has working, documented
+> credentials (regenerate the hash to match a known password, or correct the comment).
+
+### Still TODO this session
+| Item | Status | Notes |
+|------|--------|-------|
+| **First-boot security rotation** | 🟡 **login restored — rotation still required** | See "🔑 Admin login" note below. Temp password set via DB; user must change password, set admin security key, and rotate master key in the UI. |
+| **Backups** | 🟡 built & tested; **schedule pending** | Script `C:\rrbm-backups\rrbm-backup.ps1` (online `pg_dump -Fc`, copy out, 14-day retention) authored + run once (valid 231 KB archive); **full restore test into a throwaway DB passed** (products 111, settings 12 — live DB untouched). Nightly Task Scheduler job **not yet registered** (harness blocks persistent-task creation without explicit per-action OK; see register command in doc/below). **Still need: one off-machine copy** (USB/share) — `C:\rrbm-backups` is on the same disk as the DB. |
+| Firewall inbound TCP 80 (elevated) + DHCP reservation (router) | ⏳ | See manual items above. Verify reachability from another LAN PC. |
+
+### Server operation & resilience (Jun 18)
+This unit is now the **always-on office server**; staff reach it from their own devices at
+`http://192.168.0.234`. Nobody works on the box directly — lock it (Win+L), don't sign out.
+- ✅ **Sleep disabled** (`powercfg /change standby-timeout-ac 0`, hibernate + disk too). Screen
+  may turn off; machine stays running.
+- ✅ **Containers auto-restart** (`restart: unless-stopped`); ✅ **Docker Desktop auto-starts on
+  login** (`autoStart: true`).
+- ❌ **Windows auto-login is OFF** (`AutoAdminLogon=0`). After a power loss the box stops at the
+  lock screen and Docker won't start until someone signs in → **app stays down**. Decide:
+  enable auto-login (hands-off recovery, physically-secure the unit) vs. manual login after
+  outages. A small **UPS** is recommended either way.
+
+### Register the nightly backup task (run in a normal PowerShell window)
+```powershell
+$action  = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NonInteractive -NoProfile -ExecutionPolicy RemoteSigned -File "C:\rrbm-backups\rrbm-backup.ps1"'
+$trigger = New-ScheduledTaskTrigger -Daily -At 2:00AM
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+Register-ScheduledTask -TaskName 'RRBM Nightly Backup' -Action $action -Trigger $trigger -Settings $settings -Description 'Nightly pg_dump of rrbm_db.' -Force
+```
+
+### Manual items deferred (need elevated shell / router — NOT blocking first boot)
+- **Firewall inbound TCP 80** — `New-NetFirewallRule -DisplayName "RRBM web" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow -Profile Private` (attempted non-elevated → Access denied; run elevated).
+- **DHCP reservation** on router `192.168.0.1` for MAC `00-E0-4C-A0-D6-52` → `192.168.0.234` (so the address staff type never floats).
+
+### Remaining sequence after Docker engine is up (resume here)
+1. `docker compose config` — all `${VARS}` resolve from `.env`, no warnings.
+2. `docker compose build` → inspect backend image: `application-local.properties` **absent** (validates `.dockerignore`).
+3. `docker compose up -d` → confirm **Flyway head V74** in `docker compose logs backend`, no errors.
+4. Run the **V19 test-data purge** (block below).
+5. First-boot security: rotate `admin@rrbm.com` password, set admin security keys, rotate master key, disable inactive accounts.
+6. Backups: nightly `pg_dump` via Windows Task Scheduler + one off-machine copy.
+
+---
+
 ## First-boot facts (fresh DB) — for Session 4
 
 1. **Login:** the only seeded account is super-admin **`admin@rrbm.com` / `ChangeMe123!`**
@@ -153,20 +274,20 @@ Two options:
 ---
 
 ## Before Session-4 first boot — finalize checklist
-1. **Assign the host's LAN IP/hostname** and set `RRBM_CORS_ALLOWED_ORIGINS` in `.env`
-   to that exact origin, e.g. `http://192.168.1.50` (add `,http://rrbm-host` if a
-   hostname is also used). Replace the `SET-OFFICE-HOST-LAN-ORIGIN-BEFORE-FIRST-BOOT`
-   placeholder.
-2. `docker compose config` — confirm every variable resolves, no warnings.
-3. `docker compose build` then inspect the backend image to confirm
-   `application-local.properties` is **absent** (verifies `.dockerignore`):
-   `docker run --rm rrbm_daily-backend sh -c "ls -la /app && unzip -l app.jar | grep -i application-local || echo 'NOT in jar ✓'"`.
-4. `pg_dump` any existing DB first (N/A for a brand-new host).
-5. `docker compose up -d`; confirm Flyway reaches head **V74** in
-   `docker compose logs backend` with no errors.
-6. Run the **V19 purge** above.
-7. First-boot security: rotate `admin@rrbm.com` password, set admin security keys,
-   rotate the master key, disable any inactive accounts.
+*(Status as of Session 5, Jun 18 — see Session 5 section above.)*
+1. ✅ **Assign the host's LAN IP/hostname** and set `RRBM_CORS_ALLOWED_ORIGINS` in `.env`
+   to that exact origin. **Done:** `http://192.168.0.234`. Placeholder replaced; `.env`
+   created on host with strong secrets.
+2. ✅ `docker compose config` — all variables resolved, no warnings (only the obsolete
+   `version:` warning, since removed).
+3. ✅ `docker compose build` + backend-image inspection — `application-local.properties`
+   **absent** from the jar (only `application.properties` present). `.dockerignore` verified.
+4. ✅ `pg_dump` any existing DB first — **N/A**, brand-new host.
+5. ✅ `docker compose up -d`; **Flyway reached head V74** ("Successfully applied 71
+   migrations, now at version v74"), no errors. *(Required two code fixes first — see
+   Session 5 "Two fresh-deploy bugs".)*
+6. ✅ Ran the **V19 purge** — books clean, seed intact.
+7. 🔴 **First-boot security: NOT DONE YET — do now** (default admin password is live/public).
 
 ---
 

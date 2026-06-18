@@ -5,6 +5,32 @@
 
 ---
 
+## 🟡 DEPLOYMENT STATUS — updated Jun 18, 2026 (Session 5, on-site)
+
+**Scope note:** the live deployment is **office-LAN only** (one Windows host, Docker Compose,
+nginx on port 80 — no public domain, no internet exposure). The authoritative, current runbook
+is **[`DEPLOYMENT-PROGRESS.md`](../DEPLOYMENT-PROGRESS.md)** (repo root). This guide remains the
+generic reference; the domain/HTTPS-dependent parts below (1C, 2D, 5.4) are **descoped** for the
+LAN deploy — CORS is locked to the exact LAN origin instead.
+
+| Phase | Guide section | LAN-deploy status |
+|-------|---------------|-------------------|
+| Phase 1 — Security fixes (code) | 1A–1E | ✅ Done (1A/1B/1D/1E committed; **1C** satisfied via exact LAN origin, not a domain) |
+| Phase 2 — Server setup | 2A `.env` | ✅ `.env` created on host (strong secrets, `RRBM_CORS_ALLOWED_ORIGINS=http://192.168.0.234`, gitignored) |
+| | Docker Desktop + WSL2 | 🟡 Installed v4.78; **reboot pending** to activate WSL2, engine not yet up |
+| | 2B/2C/2E hardening | ⏳ Deferred post-go-live (trusted LAN) |
+| | 2D HTTPS/TLS | ⛔ Descoped (no domain on LAN) |
+| Phase 3 — First boot | build → up → Flyway → security | ⏳ Blocked on Docker engine; **Flyway head is now V74** (not V58 as written below) |
+| Phase 4 — Backups | nightly `pg_dump` | ⏳ Via **Windows Task Scheduler** (not cron) — not yet configured |
+| Phase 5 — Post-go-live | smoke checks | ⏳ Not started |
+
+**Host facts:** LAN IP `192.168.0.234`, MAC `00-E0-4C-A0-D6-52`, port 80 free.
+**Next action:** reboot host → launch Docker Desktop → `docker compose config/build/up` → Flyway
+V74 check → V19 test-data purge → first-boot security rotation. See the progress doc for the
+exact ordered steps and the V19 purge SQL.
+
+---
+
 ## PHASE 1 — Critical Security Fixes (Code Changes)
 
 These are code changes that must be made before any server work begins.
@@ -269,7 +295,7 @@ Do these steps in exact order on first deploy.
 4. docker-compose up -d
 5. Watch logs: docker-compose logs -f backend
    - Confirm "Started RrbmBackendApplication" appears
-   - Confirm Flyway shows "Successfully applied X migrations" (last should be V58)
+   - Confirm Flyway shows "Successfully applied X migrations" (head should be **V74**)
    - Confirm NO "rrbm2024" appears in logs (seed used RRBM_INITIAL_MASTER_KEY instead)
 6. Open the app in browser — log in with SUPER_ADMIN credentials
 7. Navigate to Settings → immediately change the master key from the value in .env

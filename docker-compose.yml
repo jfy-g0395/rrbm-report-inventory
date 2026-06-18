@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # ── PostgreSQL database ────────────────────────────────────────────────────
@@ -36,6 +34,12 @@ services:
       # M-2.4 / M-2.2 production hardening
       RRBM_CORS_ALLOWED_ORIGINS:        ${RRBM_CORS_ALLOWED_ORIGINS}
       RRBM_FAIL_ON_DEFAULT_JWT_SECRET:  "true"
+      # Mail: low-stock email alerts are disabled by default (rrbm.mail.enabled=false).
+      # Spring Boot only creates the JavaMailSender bean when a host is set, and
+      # LowStockEmailService requires that bean to exist even while disabled, so we
+      # supply a placeholder host. No SMTP connection is made unless mail is enabled.
+      # To enable real alerts later: set a real SPRING_MAIL_HOST + RRBM_MAIL_ENABLED=true.
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-localhost}
     # M-4.3: readiness gate — busybox wget ships in the temurin-alpine runtime image
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health | grep -q UP || exit 1"]

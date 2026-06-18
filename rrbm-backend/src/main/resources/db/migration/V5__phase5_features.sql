@@ -23,6 +23,18 @@ CREATE TABLE daily_reports (
 
 -- Upgrade activity_log from V7's minimal schema to the full schema the app needs.
 -- V7 created: id, user_id (NOT NULL), action, details, created_at
+-- NOTE: V5 precedes V7 in version order, so on a FRESH database activity_log does
+-- not exist yet when this runs. Create the minimal table here first (mirrors V7
+-- exactly); V7's own CREATE TABLE IF NOT EXISTS then becomes a no-op. Existing DBs
+-- that already have the table are unaffected (IF NOT EXISTS).
+CREATE TABLE IF NOT EXISTS activity_log (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    details TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS user_name  VARCHAR(120);
 ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE activity_log ADD COLUMN IF NOT EXISTS entity_type VARCHAR(50);
