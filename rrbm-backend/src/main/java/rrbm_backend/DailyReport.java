@@ -47,6 +47,10 @@ public class DailyReport {
     @Column(name = "total_expenses") private BigDecimal totalExpenses = BigDecimal.ZERO;
     @Column(name = "expenses_count") private int expensesCount;
 
+    // ── Pizza box volume (V75) ──────────────────────────────────────
+    // Total quantity sold for products in the "Pizza Box" category that day.
+    @Column(name = "total_pizza_boxes") private int totalPizzaBoxes;
+
     // --- Getters & Setters ---
     public Long getId() { return id; }
     public LocalDate getReportDate() { return reportDate; }
@@ -100,6 +104,9 @@ public class DailyReport {
     public void setTotalExpenses(BigDecimal v)             { this.totalExpenses = v; }
     public int getExpensesCount()                          { return expensesCount; }
     public void setExpensesCount(int v)                    { this.expensesCount = v; }
+
+    public int getTotalPizzaBoxes()                        { return totalPizzaBoxes; }
+    public void setTotalPizzaBoxes(int v)                  { this.totalPizzaBoxes = v; }
 
     public OffsetDateTime getCreatedAt()                   { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt)     { this.createdAt = createdAt; }

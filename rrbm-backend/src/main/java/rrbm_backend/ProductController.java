@@ -102,7 +102,12 @@ public class ProductController {
      * Non-set products are left untouched.
      */
     private void populateSetComponents(List<Product> products) {
+        // Flag every product that is a component of at least one set (not independently
+        // sellable in the order form). Single read-only query for the whole list.
+        java.util.Set<Long> componentIds =
+                new java.util.HashSet<>(productSetComponentRepository.findAllComponentProductIds());
         for (Product p : products) {
+            p.setIsComponent(componentIds.contains(p.getId()));
             if (Boolean.TRUE.equals(p.getIsSet())) {
                 List<ProductSetComponent> rows = productSetComponentRepository.findBySetProductId(p.getId());
                 List<Map<String, Object>> comps = new ArrayList<>();
@@ -116,6 +121,8 @@ public class ProductController {
                     });
                 }
                 p.setComponents(comps);
+                // Authoritative available-set count (component stock across all warehouses)
+                p.setSetAvailableQty(inventoryService.computeSetAvailableQty(p, rows));
             }
         }
     }

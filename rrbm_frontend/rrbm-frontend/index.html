@@ -523,9 +523,6 @@
                         <input type="hidden" id="field-agent-id" value="">
                         <div class="product-dropdown" id="field-agent-dropdown"></div>
                       </div>
-                      <div style="margin-top:4px;">
-                        <a href="#" onclick="openRegisterAgentModal();return false;" style="font-size:11px;color:var(--accent);">+ Register new agent</a>
-                      </div>
                   </div>
                   <!-- conditional: Reseller / Distributor name -->
                   <div class="col-md-4" id="field-reseller-wrap" style="display: none;">
@@ -745,6 +742,15 @@
                   style="width:160px;padding:6px 24px 6px 10px;font-size:12px;"
                   onchange="filterInventory()">
                   <option value="">All sub-categories</option>
+                </select>
+                <select class="form-control form-select" id="inv-status-filter"
+                  style="width:150px;padding:6px 24px 6px 10px;font-size:12px;"
+                  onchange="filterInventory()">
+                  <option value="">All statuses</option>
+                  <option value="OK">OK</option>
+                  <option value="LOW">Low</option>
+                  <option value="CRIT">Critical</option>
+                  <option value="OOS">Out of Stock</option>
                 </select>
                 <button type="button" class="btn btn-primary btn-sm" onclick="askAddProductKey()" style="white-space:nowrap;">
                   <i class="ti ti-plus"></i>Add Product
@@ -3183,6 +3189,18 @@
           Order <strong id="cod-resume-order-id"></strong> is currently on hold.<br/>
           Enter your admin security key to resume it. This action will be logged.
         </p>
+        <div id="cod-resume-paymode-wrap" style="display:none;margin-bottom:14px;">
+          <label class="form-label">How was this COD order paid? <span class="text-danger">*</span></label>
+          <select class="form-control form-select" id="cod-resume-paymode">
+            <option value="">Select payment method…</option>
+            <option value="CASH">Cash</option>
+            <option value="GCASH">GCash</option>
+            <option value="PAYMAYA">PayMaya</option>
+            <option value="BANK_TRANSFER">Bank Transfer</option>
+            <option value="BANK_DEPOSIT">Bank Deposit</option>
+            <option value="ONLINE">Online</option>
+          </select>
+        </div>
         <label class="form-label">Admin Security Key <span class="text-danger">*</span></label>
         <input type="password" class="form-control" id="cod-resume-password" placeholder="Enter your admin security key" />
       </div>
@@ -3776,7 +3794,7 @@
               <th>Notes</th>
             </tr>
           </thead>
-          <tbody id="ledger-tbody">
+          <tbody id="order-ledger-tbody">
             <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>
           </tbody>
         </table>
@@ -3787,6 +3805,66 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-order-ledger')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CORRECT RECORDED ITEM (standalone wrong-input failsafe) -->
+  <div class="modal-overlay" id="modal-correct-item">
+    <div class="modal-box" style="max-width:640px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;"><i class="ti ti-edit-circle" style="margin-right:6px;color:#C25A0A;"></i>Correct Recorded Item — Order <span id="ci-order-id-label"></span></div>
+        <button class="icon-btn" onclick="closeModal('modal-correct-item')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body" style="padding:16px;">
+        <div style="font-size:11px;color:var(--text-muted);background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;padding:8px 10px;margin-bottom:12px;">
+          <i class="ti ti-info-circle"></i> Fix a wrongly-recorded item. The recorded item below is restored to stock, the replacement is deducted, and the price difference posts to <strong>today's</strong> report as an adjustment (closed days stay unchanged).
+        </div>
+
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px;">Recorded Item (read-only)</div>
+        <div id="ci-recorded-list" style="margin-bottom:14px;"></div>
+
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px;">Replace With</div>
+        <input type="hidden" id="ci-order-id" />
+        <input type="hidden" id="ci-order-item-id" />
+        <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px;">
+          <select class="form-control form-select" id="ci-replacement-product" onchange="onCorrectItemProductChange()">
+            <option value="">Select replacement product…</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);">Quantity</label>
+            <input type="number" min="1" class="form-control" id="ci-replacement-qty" oninput="updateCorrectItemPreview()" />
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);">Unit Price (₱)</label>
+            <input type="number" min="0" step="0.01" class="form-control" id="ci-replacement-unit-price" oninput="updateCorrectItemPreview()" />
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-muted);">Deduct From</label>
+            <select class="form-control form-select" id="ci-warehouse">
+              <option value="wh1">WH1</option>
+              <option value="wh2">WH2</option>
+              <option value="wh3">WH3</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="ci-preview" style="font-size:12px;background:#F8FAFC;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;padding:10px 12px;margin-bottom:12px;display:none;"></div>
+
+        <div style="margin-bottom:10px;">
+          <label style="font-size:11px;color:var(--text-muted);">Reason <span style="color:#EF4444;">*</span></label>
+          <input type="text" class="form-control" id="ci-reason" placeholder="e.g. wrong item encoded on the order" />
+        </div>
+        <div style="margin-bottom:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Admin Security Key <span style="color:#EF4444;">*</span></label>
+          <input type="password" class="form-control" id="ci-security-key" placeholder="Your admin security key" autocomplete="off" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-correct-item')">Cancel</button>
+        <button class="btn" style="background:#C25A0A;color:#fff;" id="ci-submit-btn" onclick="submitCorrectItem()">Apply Correction</button>
       </div>
     </div>
   </div>

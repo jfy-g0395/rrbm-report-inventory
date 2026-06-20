@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import rrbm_backend.dto.CreateOrderRequest;
 import rrbm_backend.dto.OrderResponse;
 import rrbm_backend.dto.CancelForReplacementRequest;
+import rrbm_backend.dto.CorrectItemRequest;
 import rrbm_backend.dto.ReturnOrderRequest;
 import rrbm_backend.dto.VoidOrderRequest;
 
@@ -287,6 +288,29 @@ public class OrderController {
     }
     
     /**
+     * Minimal active-agent list for the New Order form's agent picker.
+     * GET /api/orders/agent-options
+     *
+     * Lives under /api/orders so PageAccessInterceptor gates it by the "orders"
+     * page — order creators who lack the Agents page can still assign an agent
+     * (the /api/agents endpoints remain gated to the "agents" page).
+     */
+    @GetMapping("/agent-options")
+    public ResponseEntity<?> getAgentOptions() {
+        List<Map<String, Object>> options = agentRepository.findByStatusOrderByFullNameAsc("ACTIVE")
+                .stream()
+                .map(a -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id",        a.getId());
+                    m.put("fullName",  a.getFullName());
+                    m.put("agentCode", a.getAgentCode());
+                    return m;
+                })
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(options);
+    }
+
+    /**
      * Get all orders
      * GET /api/orders
      */
@@ -355,6 +379,21 @@ public class OrderController {
                         || !passwordEncoder.matches(secKey, caller.getAdminSecurityKey())) {
                     return ResponseEntity.status(HttpStatus.FORBIDDEN)
                             .body(Map.of("message", "Invalid admin security key"));
+                }
+
+                // COD resolution: a COD order's real payment mode is captured at resume.
+                // If the caller supplies a concrete (non-COD) mode, record it on the order
+                // so the payment summary classifies it correctly (cash vs e-wallet/online).
+                String chosenMode = request.getOrDefault("paymentMode", "").trim().toUpperCase();
+                if (!chosenMode.isEmpty()) {
+                    java.util.Set<String> accepted = java.util.Set.of(
+                            "CASH", "GCASH", "PAYMAYA", "BANK_TRANSFER", "BANK_DEPOSIT", "ONLINE");
+                    if (!accepted.contains(chosenMode)) {
+                        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                                .body(Map.of("message", "Invalid payment mode: " + chosenMode));
+                    }
+                    existingOrder.setPaymentMode(chosenMode);
+                    orderRepository.save(existingOrder);
                 }
             }
 
@@ -1026,6 +1065,63 @@ public class OrderController {
         try {
             Order cancelled = orderService.cancelOrderForReplacement(id, request, userId);
             return ResponseEntity.ok(convertToResponse(cancelled));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/orders/{id}/correct-item
+     *
+     * "Correct Recorded Item" failsafe for wrong inputs — works on order-history
+     * orders including those whose daily report is already closed.  Standalone
+     * feature: distinct endpoint, request type, and service path from
+     * return / replacement / void.
+     *
+     * Auth: JWT + Accounting/Super-Admin role + caller's admin security key
+     * (NOT the master key).  All financial deltas post to TODAY so closed daily
+     * reports stay immutable.
+     */
+    @PostMapping("/{id}/correct-item")
+    public ResponseEntity<?> correctOrderItem(
+            @PathVariable String id,
+            @RequestBody CorrectItemRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        // ── Auth ──────────────────────────────────────────────────────────
+        Long userId = userIdFromHeader(authHeader);
+        if (userId == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Authentication required"));
+
+        // ── Basic request validation ──────────────────────────────────────
+        if (request.getSecurityKey() == null || request.getSecurityKey().trim().isEmpty())
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Admin security key is required to correct an item"));
+        if (request.getReason() == null || request.getReason().isBlank())
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "A reason is required"));
+
+        // ── Security key validation (same mechanism as returns) ───────────
+        User caller = userRepository.findById(userId).orElse(null);
+        if (caller == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "User not found"));
+        if (!isOrderManager(caller))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Only Accounting or Super Admin can correct recorded items"));
+        if (caller.getAdminSecurityKey() == null)
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message",
+                            "No admin security key has been set for your account. Ask your Super Admin to assign one."));
+        if (!passwordEncoder.matches(request.getSecurityKey().trim(), caller.getAdminSecurityKey()))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Invalid admin security key"));
+
+        // ── Delegate transactional work to service ────────────────────────
+        try {
+            Map<String, Object> result = orderService.correctRecordedItem(id, request, userId);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }

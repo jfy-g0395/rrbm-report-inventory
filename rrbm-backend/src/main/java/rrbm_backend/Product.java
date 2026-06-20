@@ -89,6 +89,18 @@ public class Product {
     @Transient
     private List<Map<String, Object>> components = new ArrayList<>();
 
+    // Transient: for set products only — the number of complete sets that can be
+    // assembled from current component stock across ALL warehouses combined.
+    // Populated by ProductController on GET; NOT persisted. Null for non-set products.
+    @Transient
+    private Integer setAvailableQty;
+
+    // Transient: true when this product is a component of at least one set.
+    // Such products are not independently sellable in the order form (sell the SET).
+    // Populated by ProductController on GET; NOT persisted.
+    @Transient
+    private Boolean isComponent = false;
+
     // Soft delete flag — false means discontinued/hidden
     private Boolean active = true;
 

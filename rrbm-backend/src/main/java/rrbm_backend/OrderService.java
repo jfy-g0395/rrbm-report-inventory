@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import rrbm_backend.dto.CancelForReplacementRequest;
+import rrbm_backend.dto.CorrectItemRequest;
 import rrbm_backend.dto.CreateOrderRequest;
 import rrbm_backend.dto.ReturnOrderRequest;
 import rrbm_backend.dto.VoidOrderRequest;
@@ -40,6 +41,7 @@ public class OrderService {
     private final TransactionService transactionService;
     private final CommissionService  commissionService;
     private final DailyReportRepository dailyReportRepository;
+    private final ProductRepository  productRepository;
 
     public OrderService(OrderRepository orderRepository,
                         OrderIdGenerator orderIdGenerator,
@@ -49,7 +51,8 @@ public class OrderService {
                         ActivityLogService activityLogService,
                         TransactionService transactionService,
                         CommissionService commissionService,
-                        DailyReportRepository dailyReportRepository) {
+                        DailyReportRepository dailyReportRepository,
+                        ProductRepository productRepository) {
         this.orderRepository    = orderRepository;
         this.orderIdGenerator   = orderIdGenerator;
         this.userRepository     = userRepository;
@@ -59,6 +62,7 @@ public class OrderService {
         this.transactionService = transactionService;
         this.commissionService  = commissionService;
         this.dailyReportRepository = dailyReportRepository;
+        this.productRepository  = productRepository;
     }
 
     /**
@@ -687,6 +691,115 @@ public class OrderService {
         result.put("returnedItems", resultItems);
         result.put("refundIssued",  refundIssued);
         result.put("refundAmount",  refundAmt);
+        return result;
+    }
+
+    /**
+     * "Correct Recorded Item" failsafe — swap one wrongly-recorded order item for
+     * the correct product/quantity/price.  Standalone feature: shares no code path
+     * with return / replacement / void.
+     *
+     * Atomic sequence (all-or-nothing):
+     *   1. Restore the recorded item's stock to its origin warehouse, and deduct the
+     *      replacement product's stock from the chosen warehouse (validates stock).
+     *   2. Mutate the order_item in place to the replacement and recompute the order total.
+     *   3. Post one ADJUSTMENT to the ledger for (new value − old value), dated TODAY,
+     *      so closed daily reports stay immutable and the correction lands on the current day.
+     *   4. Write a CORRECT_ORDER_ITEM audit entry.
+     *
+     * Caller (controller) has already verified JWT, role, and the admin security key.
+     */
+    @Transactional
+    public Map<String, Object> correctRecordedItem(String orderId,
+                                                   CorrectItemRequest request,
+                                                   Long userId) {
+        Order order = orderRepository.findByIdWithItems(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
+
+        if ("CANCELLED".equals(order.getStatus()))
+            throw new RuntimeException("Cannot correct an item on a cancelled order");
+
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (request.getOrderItemId() == null)
+            throw new RuntimeException("orderItemId is required");
+        OrderItem item = order.getItems().stream()
+                .filter(i -> i.getId().equals(request.getOrderItemId()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException(
+                        "Item id " + request.getOrderItemId() + " does not belong to order " + orderId));
+
+        // Guard: a partially-voided line is excluded — its stock/ledger state is
+        // entangled with the void flow, so correcting it could double-count.
+        int alreadyVoided = item.getVoidedQuantity() != null ? item.getVoidedQuantity() : 0;
+        if (alreadyVoided > 0)
+            throw new RuntimeException("This item has voided units and cannot be corrected. "
+                    + "Use the void/return flow instead.");
+
+        if (request.getReplacementProductId() == null)
+            throw new RuntimeException("A replacement product must be selected");
+        Product replacement = productRepository.findById(request.getReplacementProductId())
+                .orElseThrow(() -> new RuntimeException("Replacement product not found"));
+        if (!Boolean.TRUE.equals(replacement.getActive()))
+            throw new RuntimeException("Replacement product \"" + replacement.getName() + "\" is inactive");
+
+        int newQty = request.getReplacementQty() != null ? request.getReplacementQty() : 0;
+        if (newQty <= 0)
+            throw new RuntimeException("Replacement quantity must be at least 1");
+        BigDecimal newUnit = request.getReplacementUnitPrice();
+        if (newUnit == null || newUnit.compareTo(BigDecimal.ZERO) <= 0)
+            throw new RuntimeException("Replacement unit price must be greater than 0");
+
+        // Snapshot the recorded (old) values before mutation
+        String     oldName  = item.getProductName();
+        int        oldQty   = item.getQuantity() != null ? item.getQuantity() : 0;
+        BigDecimal oldUnit  = item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO;
+        BigDecimal oldValue = item.getSubtotal() != null
+                ? item.getSubtotal()
+                : oldUnit.multiply(BigDecimal.valueOf(oldQty));
+        BigDecimal newValue = newUnit.multiply(BigDecimal.valueOf(newQty));
+        BigDecimal delta    = newValue.subtract(oldValue);
+
+        // 1. Inventory: restore recorded item + deduct replacement (validates stock, may throw)
+        String destWh = inventoryService.requireValidWarehouse(request.getWarehouse(), replacement.getName());
+        inventoryService.applyItemCorrection(item, replacement, newQty, destWh, orderId, userId);
+
+        // 2. Mutate the order line to the replacement, recompute the order total
+        item.setProductId(replacement.getId());
+        item.setProductName(replacement.getName());
+        item.setQuantity(newQty);
+        item.setUnitPrice(newUnit);
+        item.setSubtotal(newValue);
+        item.setWarehouse(destWh);
+        order.calculateTotals();
+        orderRepository.save(order);
+
+        // 3. Ledger: post the net difference as an ADJUSTMENT dated today (skip if zero)
+        String summary = "Item correction on " + orderId + ": \"" + oldName + "\" ("
+                + oldQty + "×₱" + oldUnit + ") → \"" + replacement.getName() + "\" ("
+                + newQty + "×₱" + newUnit + "), net ₱" + delta
+                + (request.getReason() != null && !request.getReason().isBlank()
+                    ? " — " + request.getReason() : "");
+        if (delta.compareTo(BigDecimal.ZERO) != 0) {
+            transactionService.recordAdjustment(orderId, delta, summary, userId, actor.getFullName());
+        }
+
+        // 4. Audit
+        activityLogService.log(userId, actor.getFullName(), "CORRECT_ORDER_ITEM",
+                summary, "ORDER", orderId);
+
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("orderId",        orderId);
+        result.put("orderItemId",    item.getId());
+        result.put("oldProductName", oldName);
+        result.put("oldQty",         oldQty);
+        result.put("oldUnitPrice",   oldUnit);
+        result.put("newProductName", replacement.getName());
+        result.put("newQty",         newQty);
+        result.put("newUnitPrice",   newUnit);
+        result.put("netAdjustment",  delta);
+        result.put("newOrderTotal",  order.getTotal());
         return result;
     }
 

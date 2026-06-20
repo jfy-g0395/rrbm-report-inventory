@@ -49,44 +49,48 @@ public class InventoryService {
             int qty = item.getQuantity();
 
             if (Boolean.TRUE.equals(product.getIsSet())) {
-                // ── SET PRODUCT: deduct each component ──────────────────────────
+                // ── SET PRODUCT: deduct each component across ALL warehouses ─────
+                // A set has no stock of its own; availability is derived from its
+                // components. Components are sourced greedily across wh1→wh2→wh3 so a
+                // set is fulfillable whenever combined component stock is sufficient.
                 List<ProductSetComponent> comps = productSetComponentRepository.findBySetProductId(product.getId());
                 if (comps.isEmpty()) {
                     throw new RuntimeException("Set product \"" + product.getName() + "\" has no components defined.");
                 }
-                String warehouse = item.getWarehouse();
-                if (warehouse == null || warehouse.isBlank()) {
-                    warehouse = findBestWarehouseForSet(comps, qty);
-                    item.setWarehouse(warehouse);
-                } else {
-                    warehouse = warehouse.toLowerCase();
+
+                // Pre-validate combined availability with a clear set-level message
+                int setAvailable = computeSetAvailableQty(product, comps);
+                if (setAvailable < qty) {
+                    throw new RuntimeException(
+                        "Insufficient stock for set \"" + product.getName() + "\". "
+                        + "Available: " + setAvailable + " set(s), requested: " + qty + ".");
                 }
-                // Pre-validate all components before deducting anything
+
+                // Deduct each component greedily across warehouses; record the first
+                // warehouse drawn from so the order line carries a representative value.
+                String primaryWh = null;
                 for (ProductSetComponent comp : comps) {
                     Product compProduct = productRepository.findById(comp.getComponentProductId())
                             .orElseThrow(() -> new RuntimeException(
                                     "Component product (id=" + comp.getComponentProductId() + ") not found."));
                     int needed = qty * comp.getQuantityPerSet();
-                    int available = getWhStock(compProduct, warehouse);
-                    if (available < needed) {
-                        throw new RuntimeException(
-                            "Insufficient stock in " + warehouse.toUpperCase()
-                            + " for component \"" + compProduct.getName()
-                            + "\" (part of set \"" + product.getName() + "\"). "
-                            + "Available: " + available + ", Needed: " + needed);
+                    for (String wh : new String[]{"wh1", "wh2", "wh3"}) {
+                        if (needed <= 0) break;
+                        int avail = getWhStock(compProduct, wh);
+                        if (avail <= 0) continue;
+                        int take = Math.min(avail, needed);
+                        deductWhStock(compProduct, wh, take);
+                        logMovement(compProduct.getId(), "ORDER_OUT", wh, -take,
+                                order.getId(),
+                                "Set order by " + order.getCustomerName() + " (set: " + product.getName() + ")",
+                                userId);
+                        if (primaryWh == null) primaryWh = wh;
+                        needed -= take;
                     }
-                }
-                // All components OK — deduct
-                for (ProductSetComponent comp : comps) {
-                    Product compProduct = productRepository.findById(comp.getComponentProductId()).get();
-                    int needed = qty * comp.getQuantityPerSet();
-                    deductWhStock(compProduct, warehouse, needed);
                     productRepository.save(compProduct);
-                    logMovement(compProduct.getId(), "ORDER_OUT", warehouse, -needed,
-                            order.getId(),
-                            "Set order by " + order.getCustomerName() + " (set: " + product.getName() + ")",
-                            userId);
+                    // Combined availability was pre-validated, so needed must be 0 here.
                 }
+                item.setWarehouse(primaryWh != null ? primaryWh : "wh1");
                 // Do NOT deduct from the set product itself — it has no physical stock
 
             } else {
@@ -142,6 +146,37 @@ public class InventoryService {
             // Non-critical — don't let email failures break orders
             System.err.println("Low stock check failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * Number of complete sets that can be assembled from current component stock,
+     * counting stock across ALL warehouses combined.
+     *
+     * = min over components of floor((wh1 + wh2 + wh3) / quantityPerSet)
+     *
+     * Returns 0 when the set has no components or a component is missing.
+     * Authoritative server-side mirror of the frontend effectiveSetStock().
+     */
+    public int computeSetAvailableQty(Product setProduct) {
+        if (setProduct == null || !Boolean.TRUE.equals(setProduct.getIsSet())) return 0;
+        return computeSetAvailableQty(setProduct,
+                productSetComponentRepository.findBySetProductId(setProduct.getId()));
+    }
+
+    /** Overload reusing an already-loaded component list (avoids a repeat query). */
+    int computeSetAvailableQty(Product setProduct, List<ProductSetComponent> comps) {
+        if (comps == null || comps.isEmpty()) return 0;
+        int min = Integer.MAX_VALUE;
+        for (ProductSetComponent comp : comps) {
+            int perSet = comp.getQuantityPerSet() != null && comp.getQuantityPerSet() > 0
+                    ? comp.getQuantityPerSet() : 1;
+            Product compProduct = productRepository.findById(comp.getComponentProductId()).orElse(null);
+            if (compProduct == null) return 0; // a missing component means none can be made
+            int total = compProduct.getTotalStock();
+            int possible = total / perSet;
+            if (possible < min) min = possible;
+        }
+        return min == Integer.MAX_VALUE ? 0 : min;
     }
 
     /** Returns the stock level for a given warehouse key (wh1/wh2/wh3). */
@@ -506,6 +541,111 @@ public class InventoryService {
                     "Return — " + rejectedQty + " rejected unit(s) of \""
                         + item.getProductName() + "\" (no stock restore) — order " + orderId,
                     userId);
+        }
+    }
+
+    /**
+     * Inventory side-effects for the "Correct Recorded Item" failsafe.
+     *
+     * Atomically: (1) restores the recorded (wrong) item's stock back to ITS OWN
+     * original warehouse, then (2) deducts the replacement product's stock from
+     * the chosen warehouse — validating availability first so the whole correction
+     * rolls back if stock is insufficient.
+     *
+     * SET products are decomposed into their components for both sides, mirroring
+     * the existing order/return stock logic. Manual (productId == null) recorded
+     * items contribute no restore. Movement types are dedicated to this feature:
+     * CORRECTION_IN (restore) and CORRECTION_OUT (deduct).
+     *
+     * This method writes stock only — it does not touch the order, ledger, or
+     * activity log; OrderService owns the surrounding transaction.
+     */
+    @Transactional
+    public void applyItemCorrection(OrderItem recordedItem, Product replacement,
+                                    int replacementQty, String replacementWarehouse,
+                                    String orderId, Long userId) {
+        // ── 1. Restore the recorded (wrong) item to its origin warehouse ──
+        if (recordedItem.getProductId() != null) {
+            Product recorded = productRepository.findById(recordedItem.getProductId()).orElse(null);
+            if (recorded != null) {
+                String originWh = recordedItem.getWarehouse() != null
+                        ? recordedItem.getWarehouse().toLowerCase() : "wh1";
+                int recordedQty = recordedItem.getQuantity() != null ? recordedItem.getQuantity() : 0;
+                if (recordedQty > 0) {
+                    if (Boolean.TRUE.equals(recorded.getIsSet())) {
+                        for (ProductSetComponent comp :
+                                productSetComponentRepository.findBySetProductId(recorded.getId())) {
+                            Product compProduct = productRepository.findById(comp.getComponentProductId()).orElse(null);
+                            if (compProduct == null) continue;
+                            int restore = recordedQty * comp.getQuantityPerSet();
+                            addWhStock(compProduct, originWh, restore);
+                            productRepository.save(compProduct);
+                            logMovement(compProduct.getId(), "CORRECTION_IN", originWh, +restore, orderId,
+                                    "Item correction — restored " + restore + " unit(s) of set component \""
+                                        + compProduct.getName() + "\" (recorded set \"" + recorded.getName()
+                                        + "\") — order " + orderId, userId);
+                        }
+                    } else {
+                        addWhStock(recorded, originWh, recordedQty);
+                        productRepository.save(recorded);
+                        logMovement(recorded.getId(), "CORRECTION_IN", originWh, +recordedQty, orderId,
+                                "Item correction — restored " + recordedQty + " unit(s) of \""
+                                    + recorded.getName() + "\" — order " + orderId, userId);
+                    }
+                }
+            }
+        }
+
+        // ── 2. Deduct the replacement from the chosen warehouse (validate first) ──
+        String destWh = requireValidWarehouse(replacementWarehouse, replacement.getName());
+        if (Boolean.TRUE.equals(replacement.getIsSet())) {
+            List<ProductSetComponent> comps =
+                    productSetComponentRepository.findBySetProductId(replacement.getId());
+            if (comps.isEmpty())
+                throw new RuntimeException("Replacement set product \"" + replacement.getName()
+                        + "\" has no components defined.");
+            for (ProductSetComponent comp : comps) {
+                Product compProduct = productRepository.findById(comp.getComponentProductId())
+                        .orElseThrow(() -> new RuntimeException(
+                                "Replacement component (id=" + comp.getComponentProductId() + ") not found."));
+                int needed = replacementQty * comp.getQuantityPerSet();
+                int available = getWhStock(compProduct, destWh);
+                if (available < needed)
+                    throw new RuntimeException("Insufficient stock in " + destWh.toUpperCase()
+                            + " for replacement component \"" + compProduct.getName() + "\". Available: "
+                            + available + ", Needed: " + needed);
+            }
+            for (ProductSetComponent comp : comps) {
+                Product compProduct = productRepository.findById(comp.getComponentProductId()).get();
+                int needed = replacementQty * comp.getQuantityPerSet();
+                deductWhStock(compProduct, destWh, needed);
+                productRepository.save(compProduct);
+                logMovement(compProduct.getId(), "CORRECTION_OUT", destWh, -needed, orderId,
+                        "Item correction — deducted " + needed + " unit(s) of set component \""
+                            + compProduct.getName() + "\" (replacement set \"" + replacement.getName()
+                            + "\") — order " + orderId, userId);
+            }
+        } else {
+            int available = getWhStock(replacement, destWh);
+            if (available < replacementQty)
+                throw new RuntimeException("Insufficient stock in " + destWh.toUpperCase()
+                        + " for replacement \"" + replacement.getName() + "\". Available: "
+                        + available + ", Requested: " + replacementQty);
+            deductWhStock(replacement, destWh, replacementQty);
+            productRepository.save(replacement);
+            logMovement(replacement.getId(), "CORRECTION_OUT", destWh, -replacementQty, orderId,
+                    "Item correction — deducted " + replacementQty + " unit(s) of \""
+                        + replacement.getName() + "\" — order " + orderId, userId);
+        }
+    }
+
+    /** Adds qty to the given warehouse column on the product (mutates, does not save). */
+    private void addWhStock(Product p, String warehouse, int qty) {
+        switch (warehouse) {
+            case "wh1": p.setStockWh1((p.getStockWh1() != null ? p.getStockWh1() : 0) + qty); break;
+            case "wh2": p.setStockWh2((p.getStockWh2() != null ? p.getStockWh2() : 0) + qty); break;
+            case "wh3": p.setStockWh3((p.getStockWh3() != null ? p.getStockWh3() : 0) + qty); break;
+            default: throw new RuntimeException("Unknown warehouse: " + warehouse);
         }
     }
 

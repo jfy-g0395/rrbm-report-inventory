@@ -155,6 +155,15 @@ public class DailyReportService {
             "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
+        // Total pizza boxes sold (V75) — quantity for products in the "Pizza Box" category
+        Object pizzaBoxesResult = em.createNativeQuery(
+            "SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi " +
+            "JOIN orders o ON oi.order_id = o.id " +
+            "JOIN products p ON oi.product_id = p.id " +
+            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION') " +
+            "AND p.category = 'Pizza Box'"
+        ).setParameter("prefix", datePrefix + "-%").getSingleResult();
+
         @SuppressWarnings("unchecked")
         List<Object[]> topProductResult = em.createNativeQuery(
             "SELECT oi.product_name, SUM(oi.quantity) AS total_qty FROM order_items oi " +
@@ -190,6 +199,7 @@ public class DailyReportService {
         report.setEcommerceCount(((Number) stats[4]).intValue());
         report.setFbPageCount(((Number) stats[5]).intValue());
         report.setTotalItemsSold(((Number) itemsSoldResult).intValue());
+        report.setTotalPizzaBoxes(((Number) pizzaBoxesResult).intValue());
 
         if (!topProductResult.isEmpty()) {
             report.setTopProduct((String) topProductResult.get(0)[0]);
@@ -283,6 +293,15 @@ public class DailyReportService {
             "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
+        // Total pizza boxes sold (V75) — quantity for products in the "Pizza Box" category
+        Object pizzaBoxesResult = em.createNativeQuery(
+            "SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi " +
+            "JOIN orders o ON oi.order_id = o.id " +
+            "JOIN products p ON oi.product_id = p.id " +
+            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION') " +
+            "AND p.category = 'Pizza Box'"
+        ).setParameter("prefix", datePrefix + "-%").getSingleResult();
+
         @SuppressWarnings("unchecked")
         List<Object[]> topProductResult = em.createNativeQuery(
             "SELECT oi.product_name, SUM(oi.quantity) AS total_qty FROM order_items oi " +
@@ -322,6 +341,7 @@ public class DailyReportService {
         report.setEcommerceCount(((Number) stats[4]).intValue());
         report.setFbPageCount(((Number) stats[5]).intValue());
         report.setTotalItemsSold(((Number) itemsSoldResult).intValue());
+        report.setTotalPizzaBoxes(((Number) pizzaBoxesResult).intValue());
 
         if (!topProductResult.isEmpty()) {
             report.setTopProduct((String) topProductResult.get(0)[0]);

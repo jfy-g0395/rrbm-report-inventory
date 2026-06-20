@@ -570,7 +570,7 @@
           + cancelBtn;
       } else if (o.status === 'PENDING') {
         // All pending orders require password to resume — action is logged for audit
-        actions = '<button class="btn btn-primary btn-sm" onclick="askCodResume(\'' + safeId + '\')" title="Resume (password required)"><i class="ti ti-player-play"></i><i class="ti ti-lock" style="font-size:9px;margin-left:2px;"></i></button>'
+        actions = '<button class="btn btn-primary btn-sm" onclick="askCodResume(\'' + safeId + '\', \'' + (o.paymentMode || '') + '\')" title="Resume (password required)"><i class="ti ti-player-play"></i><i class="ti ti-lock" style="font-size:9px;margin-left:2px;"></i></button>'
           + ivmBtn
           + cancelBtn;
       } else if (o.status === 'DELIVERED') {
@@ -673,10 +673,11 @@
     renderOrderRows(filtered);
   };
 
-  window.updateOrderStatus = async function (orderId, newStatus, securityKey) {
+  window.updateOrderStatus = async function (orderId, newStatus, securityKey, paymentMode) {
     try {
       const bodyPayload = { status: newStatus };
       if (securityKey) bodyPayload.securityKey = securityKey;
+      if (paymentMode) bodyPayload.paymentMode = paymentMode;
       const res = await fetch('' + API_BASE + '/api/orders/' + orderId + '/status', {
         method: 'PUT', headers: authHeaders(), body: JSON.stringify(bodyPayload)
       });
@@ -696,10 +697,16 @@
   // ================================================================
   // COD RESUME — admin password confirmation
   // ================================================================
-  window.askCodResume = function (orderId) {
+  window.askCodResume = function (orderId, paymentMode) {
     appState.codResumeTargetId = orderId;
+    appState.codResumeIsCod = (paymentMode === 'COD');
     $('cod-resume-order-id').textContent = orderId;
     $('cod-resume-password').value = '';
+    // Payment-mode picker is only relevant for COD orders (resolve cash vs online).
+    var pmWrap = $('cod-resume-paymode-wrap');
+    var pmSel  = $('cod-resume-paymode');
+    if (pmSel) pmSel.value = '';
+    if (pmWrap) pmWrap.style.display = appState.codResumeIsCod ? '' : 'none';
     $('modal-cod-resume').classList.add('open');
   };
 
@@ -707,12 +714,18 @@
     const key = ($('cod-resume-password') || {}).value || '';
     if (!key) { showToast('Admin security key is required', 'error'); return; }
 
+    var payMode = null;
+    if (appState.codResumeIsCod) {
+      payMode = ($('cod-resume-paymode') || {}).value || '';
+      if (!payMode) { showToast('Select how this COD order was paid', 'error'); return; }
+    }
+
     const btn = document.querySelector('#modal-cod-resume .btn-primary');
     if (btn) { btn.disabled = true; btn.textContent = 'Resuming…'; }
 
     try {
       closeModal('modal-cod-resume');
-      await updateOrderStatus(appState.codResumeTargetId, 'ACTIVE', key);
+      await updateOrderStatus(appState.codResumeTargetId, 'ACTIVE', key, payMode);
     } catch (err) {
       showToast('Connection error', 'error');
     } finally {
@@ -962,6 +975,11 @@
         + '<button class="btn btn-secondary btn-sm" onclick="openOrderDetail(\'' + safeId + '\')" title="View Details" style="margin-right:3px;"><i class="ti ti-eye"></i></button>';
       if (canAdmin) {
         actions += '<button class="btn btn-secondary btn-sm" onclick="printOrderReceipt(\'' + safeId + '\')" title="Print Receipt" style="margin-right:3px;"><i class="ti ti-printer"></i></button>';
+      }
+      // Correct Recorded Item — standalone wrong-input failsafe (order history only).
+      // Available on any non-cancelled order, including closed-day orders.
+      if (canAdmin && o.status !== 'CANCELLED') {
+        actions += '<button class="btn btn-sm" onclick="openCorrectItemModal(\'' + safeId + '\')" title="Correct Recorded Item" style="background:#C25A0A;color:#fff;margin-right:3px;"><i class="ti ti-edit-circle"></i></button>';
       }
       // N-6: only DELIVERED orders without a prior return can have returns processed
       if (canAdmin && o.status === 'DELIVERED' && !o.refundedAt) {
@@ -1746,6 +1764,17 @@
 
   window.filterInventory = function () { applyInventoryFilters(); };
 
+  // Stock status of a product — mirrors the badge logic in applyInventoryFilters' row
+  // render (total stock vs the product's tag thresholds). Returns OOS|CRIT|LOW|OK.
+  function stockStatusOf(p) {
+    var total = (p.stockWh1 || 0) + (p.stockWh2 || 0) + (p.stockWh3 || 0);
+    var th = getTagThresholds((p.sellingTag || 'SELLING').toUpperCase());
+    if (total === 0)            return 'OOS';
+    if (total <= th.critical)   return 'CRIT';
+    if (total <= th.low)        return 'LOW';
+    return 'OK';
+  }
+
   function applyInventoryFilters() {
     const tb = $('inv-tbody');
     if (!tb) return;
@@ -1771,6 +1800,9 @@
           || (p.sku || '').toLowerCase().includes(kw)
           || (p.description || '').toLowerCase().includes(kw);
     });
+
+    const filterStatus = ($('inv-status-filter') ? $('inv-status-filter').value : '').trim();
+    if (filterStatus) products = products.filter(function (p) { return stockStatusOf(p) === filterStatus; });
 
     if (products.length === 0) {
       tb.innerHTML = '<tr><td colspan="' + (canEdit ? '12' : '11') + '" style="text-align:center;color:var(--text-muted);padding:20px;">No products found</td></tr>';
@@ -1825,6 +1857,10 @@
       const setBadge = p.isSet
         ? ' <span style="font-size:10px;font-weight:700;background:#D4860A;color:#fff;padding:1px 5px;border-radius:3px;vertical-align:middle;">SET</span>'
         : '';
+      // Component of a set — not independently sellable; only the SET is sold.
+      const componentBadge = p.isComponent
+        ? ' <span style="font-size:10px;font-weight:700;background:#6B7280;color:#fff;padding:1px 5px;border-radius:3px;vertical-align:middle;" title="Part of a set — sold via the set, not on its own">COMPONENT</span>'
+        : '';
       let setEffectiveNote = '';
       if (p.isSet) {
         const eff = effectiveSetStock(p);
@@ -1838,7 +1874,7 @@
       return '<tr class="' + rowClass + '">'
         + '<td>' + codeCell + '</td>'
         + '<td>' + itemCodeCell + '</td>'
-        + '<td><span style="' + nameStyle + '">' + p.name + '</span>' + setBadge + subCatLabel + inactiveLabel + setEffectiveNote + '</td>'
+        + '<td><span style="' + nameStyle + '">' + p.name + '</span>' + setBadge + componentBadge + subCatLabel + inactiveLabel + setEffectiveNote + '</td>'
         + '<td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (p.description ? escapeHtml(p.description) : '') + '">' + descCell + '</td>'
         + '<td>' + tagSelect + '</td>'
         + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">—</span>' : wh1.toLocaleString()) + '</td>'
@@ -4978,7 +5014,9 @@
     var input = $('field-agent-input');
     if (input) input.placeholder = 'Loading agents…';
     try {
-      var res = await fetch(API_BASE + '/api/agents?status=ACTIVE', { headers: authHeaders() });
+      // Use the order-scoped endpoint so admins without the Agents page can still
+      // assign an agent (gated by the "orders" page, not "agents").
+      var res = await fetch(API_BASE + '/api/orders/agent-options', { headers: authHeaders() });
       if (!res.ok) { if (input) input.placeholder = 'Failed to load agents'; return; }
       _cachedAgents = await res.json();
       if (input) input.placeholder = 'Type to search agents…';
@@ -5146,21 +5184,25 @@
   }
 
   function renderProductDropdown(dropdown, products, rowNum) {
+    // Set components are not independently sellable — only the SET is sold.
+    products = (products || []).filter(function (p) { return !p.isComponent; });
     if (products.length === 0) { dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>'; dropdown.classList.add('show'); return; }
     let html = '';
     products.forEach(function (product) {
       const wh1 = product.stockWh1 || 0, wh2 = product.stockWh2 || 0, wh3 = product.stockWh3 || 0, total = wh1 + wh2 + wh3;
-      let stockClass, stockLabel, whParts, primaryWh;
+      let stockClass, stockLabel, whParts, primaryWh, setAvail = null;
 
       if (product.isSet) {
-        // For set products: show effective set stock (limited by components)
-        const eff = effectiveSetStock(product);
+        // For set products: availability = sets buildable from component stock across
+        // ALL warehouses combined (backend setAvailableQty; falls back to client calc).
+        const eff = (product.setAvailableQty != null) ? product.setAvailableQty : effectiveSetStock(product);
+        setAvail = (eff == null ? 0 : eff);
         stockClass = (eff === null || eff <= 0) ? 'critical' : 'ok';
         stockLabel = eff === null ? 'no components' : (eff + ' sets');
         whParts = product.components && product.components.length
           ? product.components.map(function (c) { return escapeHtml(c.componentProductName || '') + ' ×' + c.quantityPerSet; })
           : ['no components'];
-        primaryWh = 'wh1'; // set products use wh1 as default; deduction targets all components in same wh
+        primaryWh = ''; // sets are sourced across warehouses; backend allocates
       } else {
         stockClass = 'ok'; stockLabel = total.toLocaleString() + ' pcs';
         if (total <= 0) { stockClass = 'critical'; stockLabel = 'Out of stock'; }
@@ -5171,19 +5213,35 @@
       }
 
       const setLabel = product.isSet ? ' <span style="font-size:9px;font-weight:700;background:#D4860A;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle;">SET</span>' : '';
-      html += '<div class="product-dropdown-item" data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '" data-price="' + product.unitPrice + '" data-wh="' + primaryWh + '" data-wh1="' + wh1 + '" data-wh2="' + wh2 + '" data-wh3="' + wh3 + '" data-row="' + rowNum + '"><div style="flex:1;"><div class="product-name">' + product.name + setLabel + '</div><div style="font-size:10px;color:#888;">' + (whParts.join(' · ') || 'No stock') + '</div></div><div style="text-align:right;"><span class="product-price">₱' + parseFloat(product.unitPrice).toFixed(2) + '</span><br><span class="product-stock ' + stockClass + '">' + stockLabel + '</span></div></div>';
+      html += '<div class="product-dropdown-item" data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '" data-price="' + product.unitPrice + '" data-wh="' + primaryWh + '" data-wh1="' + wh1 + '" data-wh2="' + wh2 + '" data-wh3="' + wh3 + '" data-isset="' + (product.isSet ? '1' : '0') + '" data-setavail="' + (setAvail == null ? '' : setAvail) + '" data-row="' + rowNum + '"><div style="flex:1;"><div class="product-name">' + product.name + setLabel + '</div><div style="font-size:10px;color:#888;">' + (whParts.join(' · ') || 'No stock') + '</div></div><div style="text-align:right;"><span class="product-price">₱' + parseFloat(product.unitPrice).toFixed(2) + '</span><br><span class="product-stock ' + stockClass + '">' + stockLabel + '</span></div></div>';
     });
     dropdown.innerHTML = html; dropdown.classList.add('show');
     dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
       item.addEventListener('click', function () {
         const rn = this.getAttribute('data-row'), wh1 = parseInt(this.getAttribute('data-wh1')) || 0, wh2 = parseInt(this.getAttribute('data-wh2')) || 0, wh3 = parseInt(this.getAttribute('data-wh3')) || 0, pw = this.getAttribute('data-wh');
+        const isSetItem = this.getAttribute('data-isset') === '1';
+        const setAvail  = parseInt(this.getAttribute('data-setavail'));
         $('productInput-' + rn).value = this.getAttribute('data-name');
         $('productId-' + rn).value = this.getAttribute('data-id');
         var ps = $('productStatus-' + rn); if (ps) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = '✓ Catalog product'; }
         $('unitPrice-' + rn).value = parseFloat(this.getAttribute('data-price')).toFixed(2);
-        $('warehouse-' + rn).value = pw;
         const si = $('stockInfo-' + rn);
-        if (si) { let pts = []; if (wh1 > 0) pts.push('<span style="color:' + (pw === 'wh1' ? '#10B981;font-weight:600' : '#666') + '">WH1: ' + wh1.toLocaleString() + '</span>'); if (wh2 > 0) pts.push('<span style="color:' + (pw === 'wh2' ? '#10B981;font-weight:600' : '#666') + '">WH2: ' + wh2.toLocaleString() + '</span>'); if (wh3 > 0) pts.push('<span style="color:' + (pw === 'wh3' ? '#10B981;font-weight:600' : '#666') + '">Balagtas: ' + wh3.toLocaleString() + '</span>'); si.innerHTML = pts.length > 0 ? '📦 ' + pts.join(' · ') : '<span style="color:#EF4444;">No stock</span>'; }
+        const qEl = $('quantity-' + rn);
+        if (isSetItem) {
+          // Sets are sourced across all warehouses; backend allocates. Show set availability.
+          $('warehouse-' + rn).value = '';
+          var avail = isNaN(setAvail) ? 0 : setAvail;
+          if (qEl) { qEl.max = avail > 0 ? avail : ''; qEl.setAttribute('data-setmax', avail); }
+          if (si) {
+            si.innerHTML = avail > 0
+              ? '📦 <span style="color:#10B981;font-weight:600;">' + avail.toLocaleString() + ' sets available</span> <span style="color:#888;">(all warehouses)</span>'
+              : '<span style="color:#EF4444;">No sets available</span>';
+          }
+        } else {
+          $('warehouse-' + rn).value = pw;
+          if (qEl) { qEl.removeAttribute('max'); qEl.removeAttribute('data-setmax'); }
+          if (si) { let pts = []; if (wh1 > 0) pts.push('<span style="color:' + (pw === 'wh1' ? '#10B981;font-weight:600' : '#666') + '">WH1: ' + wh1.toLocaleString() + '</span>'); if (wh2 > 0) pts.push('<span style="color:' + (pw === 'wh2' ? '#10B981;font-weight:600' : '#666') + '">WH2: ' + wh2.toLocaleString() + '</span>'); if (wh3 > 0) pts.push('<span style="color:' + (pw === 'wh3' ? '#10B981;font-weight:600' : '#666') + '">Balagtas: ' + wh3.toLocaleString() + '</span>'); si.innerHTML = pts.length > 0 ? '📦 ' + pts.join(' · ') : '<span style="color:#EF4444;">No stock</span>'; }
+        }
         dropdown.classList.remove('show'); calcItemSubtotal(rn);
       });
     });
@@ -5481,11 +5539,19 @@
       const productId = ($('productId-' + rn) || {}).value || '';
       const quantity  = parseInt(($('quantity-' + rn) || {}).value) || 0;
       const unitPrice = parseFloat(($('unitPrice-' + rn) || {}).value) || 0;
-      const warehouse = ($('warehouse-' + rn) || {}).value || 'wh1';
+      var _prodObj = (appState.cachedProducts || []).find(function (pp) { return String(pp.id) === String(productId); });
+      var _isSetItem = !!(_prodObj && _prodObj.isSet);
+      // Sets are sourced across warehouses (backend allocates) — send blank warehouse.
+      const warehouse = _isSetItem ? '' : (($('warehouse-' + rn) || {}).value || 'wh1');
       if (!productName.trim()) { showToast('Please select a product for all items', 'error'); hasError = true; return; }
       if (!productId || productId === '') { showToast('Select "' + productName + '" from the product catalog — type and choose from the list', 'error'); var ps0 = $('productStatus-' + rn); if (ps0) { ps0.style.display = ''; ps0.style.color = '#D97706'; ps0.textContent = '⚠ Select from catalog'; } hasError = true; return; }
       if (quantity <= 0)       { showToast('Quantity must be at least 1 for ' + productName, 'error'); hasError = true; return; }
       if (unitPrice <= 0)      { showToast('Unit price must be greater than 0 for ' + productName, 'error'); hasError = true; return; }
+      if (_isSetItem) {
+        var _avail = (_prodObj.setAvailableQty != null) ? _prodObj.setAvailableQty : effectiveSetStock(_prodObj);
+        _avail = (_avail == null ? 0 : _avail);
+        if (quantity > _avail) { showToast('Only ' + _avail + ' set(s) of "' + productName + '" available', 'error'); hasError = true; return; }
+      }
       const item = { productName: productName.trim(), quantity, unitPrice, warehouse };
       item.productId = parseInt(productId);
       if (source === 'AGENT') {
@@ -5524,6 +5590,8 @@
       const created = await res.json();
       showToast('Order created: ' + created.id, 'success');
       clearOrderForm();
+      // Refresh the product cache so set availability reflects the just-deducted components
+      try { await loadProducts(); } catch (e) {}
       renderOrders();
     } catch (err) {
       showToast('Connection error. Is the backend running?', 'error');
@@ -6639,10 +6707,16 @@
       }
 
       // ── Payment breakdown cards ───────────────────────────────────
+      // Rule: Cash = CASH; E-wallet/Online = every non-cash electronic mode
+      // (GCASH, PAYMAYA, ONLINE, BANK_TRANSFER, BANK_DEPOSIT, …). COD is excluded
+      // here — its real mode is captured when the order is resumed.
       const pd = s.paymentBreakdown || {};
       const cashTotal    = (pd['CASH'] || 0);
-      const ewalletTotal = (pd['GCASH'] || 0) + (pd['PAYMAYA'] || 0) + (pd['ONLINE'] || 0);
       const codTotal     = (pd['COD'] || 0);
+      let ewalletTotal = 0;
+      Object.keys(pd).forEach(function (mode) {
+        if (mode !== 'CASH' && mode !== 'COD') ewalletTotal += (Number(pd[mode]) || 0);
+      });
       const bankTotal    = (pd['BANK_TRANSFER'] || 0) + (pd['BANK_DEPOSIT'] || 0);
       if ($('stat-cash'))           $('stat-cash').textContent           = fmt(cashTotal);
       if ($('stat-ewallet'))        $('stat-ewallet').textContent        = fmt(ewalletTotal);
@@ -6658,22 +6732,17 @@
       }
 
       // ── Payment donut chart ───────────────────────────────────────
+      // Two slices matching the cards: Cash vs E-wallet/Online (all non-cash,
+      // COD excluded until resolved at resume).
       if (appState.chartPayment) {
-        const payColors = {
-          CASH:          '#C25A0A',
-          GCASH:         '#D4860A',
-          PAYMAYA:       '#F0A830',
-          BANK_TRANSFER: '#7A4A05',
-          BANK_DEPOSIT:  '#5C3604',
-          ONLINE:        '#FAD16A',
-          COD:           '#E8972E'
-        };
         const isDark  = document.body.dataset.theme === 'dark';
         const cardBg  = isDark ? '#1E1208' : '#FFFFFF';
-        const entries = Object.entries(pd).filter(function(e) { return Number(e[1]) > 0; });
+        const entries = [];
+        if (cashTotal > 0)    entries.push(['Cash', cashTotal, '#C25A0A']);
+        if (ewalletTotal > 0) entries.push(['E-wallet / Online', ewalletTotal, '#D4860A']);
         appState.chartPayment.data.labels                            = entries.map(function(e) { return e[0]; });
         appState.chartPayment.data.datasets[0].data                  = entries.map(function(e) { return Number(e[1]); });
-        appState.chartPayment.data.datasets[0].backgroundColor       = entries.map(function(e) { return payColors[e[0]] || '#9C8B70'; });
+        appState.chartPayment.data.datasets[0].backgroundColor       = entries.map(function(e) { return e[2]; });
         appState.chartPayment.data.datasets[0].borderColor           = cardBg;
         appState.chartPayment.update();
       }
@@ -7411,7 +7480,16 @@
   // E-COMMERCE CSV IMPORT
   // ================================================================
 
-  window.openImportModal = function() {
+  window.openImportModal = async function() {
+    // Ensure inventory products are loaded so CSV SKU/name matching works even if
+    // the user hasn't opened the Inventory page yet this session. Without this the
+    // matcher has an empty product list, every line shows "Fix needed", and the
+    // Import button stays disabled.
+    var _pc = appState.cachedProducts, _pi = appState.inventoryAllProducts;
+    if (!((_pc && _pc.length) || (_pi && _pi.length))) {
+      await loadProducts();
+    }
+
     // Reset state
     _importParsed = [];
     _lastCsvText  = '';
@@ -7451,7 +7529,7 @@
         _lastCsvText  = e.target.result;
         var parsed = parseCsvOrders(_lastCsvText);
         _importParsed = parsed;
-        renderImportPreview(parsed);
+        renderEcomImportPreview(parsed);
       } catch (err) {
         showToast('Could not parse CSV: ' + err.message, 'error');
       }
@@ -7581,7 +7659,7 @@
     if (!_lastCsvText) return;
     try {
       _importParsed = parseCsvOrders(_lastCsvText);
-      renderImportPreview(_importParsed);
+      renderEcomImportPreview(_importParsed);
     } catch(err) {
       showToast('Could not regroup orders: ' + err.message, 'error');
     }
@@ -7713,7 +7791,7 @@
   }
 
   // Render the preview table from _importParsed
-  function renderImportPreview(orders) {
+  function renderEcomImportPreview(orders) {
     var wrap  = document.getElementById('import-preview-wrap');
     var empty = document.getElementById('import-empty-state');
     var tbody = document.getElementById('import-preview-tbody');
@@ -9293,10 +9371,11 @@
     var h = '';
 
     // ─── SUMMARY ───
-    h += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px;">';
+    h += '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px;">';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Total Orders</div><div style="font-size:20px;font-weight:700;">' + (rep.totalOrders||0) + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Net Revenue</div><div style="font-size:16px;font-weight:700;color:#10B981;">' + fmt(netVal) + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Items Sold</div><div style="font-size:20px;font-weight:700;">' + (rep.totalItemsSold||0) + '</div></div>';
+    h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Pizza Boxes Sold</div><div style="font-size:20px;font-weight:700;color:#C25A0A;">' + (rep.totalPizzaBoxes||0).toLocaleString() + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Cancelled</div><div style="font-size:20px;font-weight:700;color:#EF4444;">' + (rep.totalCancelled||0) + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Expenses</div><div style="font-size:16px;font-weight:700;color:#EF4444;">' + fmt(rep.totalExpenses) + '</div><div style="font-size:9px;color:#888;">' + (rep.expensesCount||0) + ' entries</div></div>';
     h += '</div>';
@@ -9317,6 +9396,8 @@
     h += '<tr><td style="padding:4px 0;">Adjustments</td><td style="text-align:right;color:#F59E0B;font-weight:600;">' + fmt(rep.adjustmentsTotal) + '</td></tr>';
     h += '<tr><td style="padding:4px 0;">Total Expenses</td><td style="text-align:right;color:#EF4444;font-weight:600;">' + fmt(rep.totalExpenses) + '</td></tr>';
     h += '<tr style="border-top:2px solid var(--border,#ddd);"><td style="font-weight:700;padding:6px 0;">Net Sales</td><td style="text-align:right;font-weight:700;font-size:14px;">' + fmt(netVal) + '</td></tr>';
+    var _netIncome = Number(netVal||0) - Number(rep.totalExpenses||0);
+    h += '<tr><td style="font-weight:700;padding:6px 0;color:#042C53;">Net Income (after expenses)</td><td style="text-align:right;font-weight:700;font-size:14px;color:' + (_netIncome>=0?'#10B981':'#EF4444') + ';">' + fmt(_netIncome) + '</td></tr>';
     h += '</table>';
 
     // ─── SOURCE BREAKDOWN ───
@@ -10375,7 +10456,7 @@
   // ================================================================
   window.viewOrderLedger = function (orderId) {
     $('ledger-order-id-label').textContent = orderId;
-    $('ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+    $('order-ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
     $('ledger-net').textContent = '—';
     $('modal-order-ledger').classList.add('open');
 
@@ -10383,13 +10464,13 @@
       .then(function (res) { return res.json(); })
       .then(function (txns) {
         if (!txns.length) {
-          $('ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No transactions recorded for this order</td></tr>';
+          $('order-ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No transactions recorded for this order</td></tr>';
           $('ledger-net').textContent = '₱0.00';
           return;
         }
         const typeColor = { SALE:'#10B981', REFUND:'#EF4444', VOID:'#EF4444', RETURN:'#EF4444', ADJUSTMENT:'#F59E0B', DISCOUNT:'#F59E0B' };
         let net = 0;
-        $('ledger-tbody').innerHTML = txns.map(function (t) {
+        $('order-ledger-tbody').innerHTML = txns.map(function (t) {
           const amt = parseFloat(t.amount) || 0;
           net += amt;
           const color = typeColor[t.transactionType] || 'inherit';
@@ -10408,8 +10489,161 @@
         $('ledger-net').style.color  = netColor;
       })
       .catch(function () {
-        $('ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#EF4444;">Failed to load ledger</td></tr>';
+        $('order-ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#EF4444;">Failed to load ledger</td></tr>';
       });
+  };
+
+  // ================================================================
+  // Correct Recorded Item — standalone wrong-input failsafe.
+  // Order History only. No shared code with return/replacement/void.
+  // All element IDs are ci-* and all functions are correctItem-scoped.
+  // ================================================================
+  var _ciOrder = null; // the order currently loaded in the correction modal
+
+  window.openCorrectItemModal = async function (orderId) {
+    _ciOrder = null;
+    $('ci-order-id').value          = orderId;
+    $('ci-order-id-label').textContent = orderId;
+    $('ci-order-item-id').value     = '';
+    $('ci-recorded-list').innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading…</div>';
+    $('ci-replacement-qty').value        = '';
+    $('ci-replacement-unit-price').value = '';
+    $('ci-warehouse').value         = 'wh1';
+    $('ci-reason').value            = '';
+    $('ci-security-key').value      = '';
+    $('ci-preview').style.display   = 'none';
+    $('ci-preview').innerHTML       = '';
+    var sb = $('ci-submit-btn'); if (sb) sb.disabled = false;
+    $('modal-correct-item').classList.add('open');
+
+    // Ensure the product catalog is available for the replacement dropdown
+    var prods = appState.cachedProducts;
+    if (!(prods && prods.length)) {
+      try { await loadProducts(); } catch (e) {}
+      prods = appState.cachedProducts;
+    }
+    var sel = $('ci-replacement-product');
+    sel.innerHTML = '<option value="">Select replacement product…</option>' +
+      (prods || []).filter(function (p) { return !p.isComponent; })
+        .slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); })
+        .map(function (p) {
+          var code = p.productCode ? ' [' + p.productCode + ']' : '';
+          return '<option value="' + p.id + '" data-price="' + (p.unitPrice || 0) + '">'
+            + escapeHtml(p.name) + escapeHtml(code) + '</option>';
+        }).join('');
+
+    // Load the order and show its recorded items (read-only)
+    try {
+      var res = await fetch(API_BASE + '/api/orders/' + encodeURIComponent(orderId), { headers: authHeaders() });
+      var order = await res.json();
+      _ciOrder = order;
+      var items = (order.items || []).filter(function (it) { return (it.voidedQuantity || 0) === 0; });
+      if (!items.length) {
+        $('ci-recorded-list').innerHTML = '<div style="color:#EF4444;font-size:12px;">No correctable items on this order (all voided).</div>';
+        return;
+      }
+      renderCorrectItemRecorded(items);
+    } catch (e) {
+      $('ci-recorded-list').innerHTML = '<div style="color:#EF4444;font-size:12px;">Failed to load order.</div>';
+    }
+  };
+
+  function renderCorrectItemRecorded(items) {
+    var single = items.length === 1;
+    $('ci-recorded-list').innerHTML = items.map(function (it) {
+      var sub = it.subtotal != null ? it.subtotal : (it.quantity || 0) * Number(it.unitPrice || 0);
+      var line = (it.quantity || 0) + ' × ₱' + Number(it.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })
+        + ' = ₱' + Number(sub).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+      return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;margin-bottom:6px;cursor:pointer;">'
+        + '<input type="radio" name="ci-recorded-radio" value="' + it.id + '" ' + (single ? 'checked' : '') + ' onchange="onCorrectItemTargetChange()" />'
+        + '<span style="flex:1;"><strong>' + escapeHtml(it.productName) + '</strong>'
+        + '<div style="font-size:11px;color:var(--text-muted);">' + line + '</div></span>'
+        + '</label>';
+    }).join('');
+    if (single) $('ci-order-item-id').value = items[0].id;
+    updateCorrectItemPreview();
+  }
+
+  window.onCorrectItemTargetChange = function () {
+    var r = document.querySelector('input[name="ci-recorded-radio"]:checked');
+    $('ci-order-item-id').value = r ? r.value : '';
+    updateCorrectItemPreview();
+  };
+
+  window.onCorrectItemProductChange = function () {
+    var sel = $('ci-replacement-product');
+    var opt = sel.options[sel.selectedIndex];
+    // Prefill the unit price with the chosen product's catalog price (editable)
+    if (opt && opt.value) $('ci-replacement-unit-price').value = opt.getAttribute('data-price') || '';
+    updateCorrectItemPreview();
+  };
+
+  window.updateCorrectItemPreview = function () {
+    var prev = $('ci-preview');
+    var itemId = $('ci-order-item-id').value;
+    if (!_ciOrder || !itemId) { prev.style.display = 'none'; return; }
+    var rec = (_ciOrder.items || []).find(function (it) { return String(it.id) === String(itemId); });
+    if (!rec) { prev.style.display = 'none'; return; }
+    var oldQty = rec.quantity || 0, oldUnit = Number(rec.unitPrice || 0);
+    var oldVal = Number(rec.subtotal != null ? rec.subtotal : oldQty * oldUnit);
+    var newQty = parseInt($('ci-replacement-qty').value) || 0;
+    var newUnit = parseFloat($('ci-replacement-unit-price').value) || 0;
+    if (newQty <= 0 || newUnit <= 0) { prev.style.display = 'none'; return; }
+    var newVal = newQty * newUnit;
+    var delta = newVal - oldVal;
+    var f = function (v) { return '₱' + Number(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    prev.style.display = 'block';
+    prev.innerHTML =
+      '<div style="display:flex;justify-content:space-between;"><span>Recorded value</span><span>' + f(oldVal) + '</span></div>'
+      + '<div style="display:flex;justify-content:space-between;"><span>Replacement value</span><span>' + f(newVal) + '</span></div>'
+      + '<div style="display:flex;justify-content:space-between;border-top:1px solid var(--border-light,#e5e7eb);margin-top:4px;padding-top:4px;font-weight:700;">'
+      + '<span>Net adjustment (posts to today)</span><span style="color:' + (delta >= 0 ? '#10B981' : '#EF4444') + ';">'
+      + (delta >= 0 ? '+' : '') + f(delta) + '</span></div>';
+  };
+
+  window.submitCorrectItem = async function () {
+    var orderId     = $('ci-order-id').value;
+    var orderItemId = $('ci-order-item-id').value;
+    var productId   = $('ci-replacement-product').value;
+    var qty         = parseInt($('ci-replacement-qty').value) || 0;
+    var unitPrice   = parseFloat($('ci-replacement-unit-price').value) || 0;
+    var warehouse   = $('ci-warehouse').value;
+    var reason      = ($('ci-reason').value || '').trim();
+    var secKey      = ($('ci-security-key').value || '').trim();
+
+    if (!orderItemId) { showToast('Select which recorded item to correct', 'error'); return; }
+    if (!productId)   { showToast('Choose a replacement product', 'error'); return; }
+    if (qty <= 0)     { showToast('Enter a valid replacement quantity', 'error'); return; }
+    if (unitPrice <= 0) { showToast('Enter a valid unit price', 'error'); return; }
+    if (!reason)      { showToast('Reason is required', 'error'); return; }
+    if (!secKey)      { showToast('Admin security key is required', 'error'); return; }
+
+    var btn = $('ci-submit-btn'); if (btn) btn.disabled = true;
+    try {
+      var res = await fetch(API_BASE + '/api/orders/' + encodeURIComponent(orderId) + '/correct-item', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          securityKey:          secKey,
+          reason:               reason,
+          orderItemId:          Number(orderItemId),
+          replacementProductId: Number(productId),
+          replacementQty:       qty,
+          replacementUnitPrice: unitPrice,
+          warehouse:            warehouse
+        })
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast('Correction failed: ' + (data.message || res.status), 'error'); if (btn) btn.disabled = false; return; }
+      closeModal('modal-correct-item');
+      var delta = Number(data.netAdjustment || 0);
+      var f = function (v) { return '₱' + Number(Math.abs(v)).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
+      showToast('Item corrected — net ' + (delta >= 0 ? '+' : '−') + f(delta) + ' posted to today', 'success');
+      renderOrderHistory();
+    } catch (err) {
+      showToast('Error: ' + (err.message || err), 'error');
+      if (btn) btn.disabled = false;
+    }
   };
 
   // ================================================================
@@ -10749,6 +10983,35 @@
 
     // Hide role-restricted items until login
     applyRoleRestrictions(null);
+
+    // Restore session on refresh: if a token + user are already in localStorage,
+    // re-enter the app instead of showing the login screen. (Mirrors the success
+    // path of doLogin.) If the token is expired, authenticated calls will 401 and
+    // the user can log in again.
+    (function restoreSession() {
+      var token = localStorage.getItem('rrbm_token');
+      var user;
+      try { user = JSON.parse(localStorage.getItem('rrbm_user') || 'null'); } catch (e) { user = null; }
+      if (!token || !user) return;   // not logged in — leave login screen visible
+
+      var av = $('sidebar-avatar'), un = $('sidebar-name'), ur = $('sidebar-role');
+      if (av && user.fullName) av.textContent = user.fullName.split(' ').map(function (n) { return n[0]; }).join('').slice(0, 2).toUpperCase();
+      if (un) un.textContent = user.fullName;
+      if (ur && user.role) ur.textContent = user.role.replace(/_/g, ' ');
+
+      applyRoleRestrictions(user.role);
+      applyPageAccessToNav();
+
+      var ls = $('login-screen');
+      if (ls) ls.style.display = 'none';
+
+      navigateTo(canAccessPage('dash') ? 'dash' : 'list');
+
+      setTimeout(function () {
+        if (canAccessPage('dash')) { renderDashboard(); renderTopProductsToday(); loadProductAnalytics(); }
+        if (canAccessPage('collections')) updateCollectionsBadge();
+      }, 150);
+    })();
 
     // ----------------------------------------------------------------
     // Global Enter key handler — modals + login screen
