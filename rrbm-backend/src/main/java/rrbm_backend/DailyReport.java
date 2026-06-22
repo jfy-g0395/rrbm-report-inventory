@@ -51,6 +51,11 @@ public class DailyReport {
     // Total quantity sold for products in the "Pizza Box" category that day.
     @Column(name = "total_pizza_boxes") private int totalPizzaBoxes;
 
+    // ── Cash on hand snapshot (V80) ─────────────────────────────────
+    // Running cash-on-hand balance frozen at close time. Independent of daily
+    // sales — persists until cash is physically deposited to the bank.
+    @Column(name = "cash_on_hand") private BigDecimal cashOnHand;
+
     // --- Getters & Setters ---
     public Long getId() { return id; }
     public LocalDate getReportDate() { return reportDate; }
@@ -107,6 +112,9 @@ public class DailyReport {
 
     public int getTotalPizzaBoxes()                        { return totalPizzaBoxes; }
     public void setTotalPizzaBoxes(int v)                  { this.totalPizzaBoxes = v; }
+
+    public BigDecimal getCashOnHand()                      { return cashOnHand; }
+    public void setCashOnHand(BigDecimal v)                { this.cashOnHand = v; }
 
     public OffsetDateTime getCreatedAt()                   { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt)     { this.createdAt = createdAt; }

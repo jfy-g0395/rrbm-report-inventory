@@ -355,6 +355,7 @@
   function viewToPageKey(view) {
     const map = {
       'new': 'orders', 'list': 'orders', 'order-history': 'order-history',
+      'cashflow': 'cash-flow',
       'daily-reports': 'daily-reports',
       'inv': 'inventory',
       'delivery': 'receive-stocks', 'rejected-items': 'rejected-items',
@@ -5089,6 +5090,7 @@
       dash:           ['Dashboard',        "Today's overview"],
       new:            ['New Order',         'Create an order'],
       list:           ['Order List',        "Today's orders"],
+      cashflow:       ['Cash Flow',         'Cash on hand — inflows & outflows'],
       inv:            ['Inventory',         'Stock levels'],
       delivery:       ['Receive Stock',     'Delivery receipt & stock in'],
       'rejected-items':    ['Rejected Items',    'Items rejected during delivery'],
@@ -5119,6 +5121,7 @@
       renderOrders();
     }
     if (view === 'list')     renderOrderList();
+    if (view === 'cashflow') loadCashFlow();
     if (view === 'inv')      renderInventory();
     if (view === 'delivery') {
       initDeliveryForm(); // always refreshes PO dropdown; form body resets only when !deliveryFormReady
@@ -5151,6 +5154,132 @@
     if (view === 'emp')          renderUsers();
     if (view === 'dash')         { renderDashboard(); renderTopProductsToday(); loadProductAnalytics(); }
     if (view === 'set')          loadSettings();
+  };
+
+  // ================================================================
+  // Cash Flow (cash on hand)
+  // ================================================================
+  function cashMoney(v) {
+    return '₱' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  const CASH_TYPE_LABELS = {
+    OPENING_BALANCE: 'Opening Balance',
+    ADD_CASH:        'Add Cash',
+    CASH_SALE:       'Cash Sale',
+    CASH_EXPENSE:    'Cash Expense',
+    DEPOSIT:         'Bank Deposit',
+    ADJUSTMENT:      'Adjustment',
+  };
+
+  function loadCashFlow() {
+    const tb = $('cashflow-tbody');
+    if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+    fetch(API_BASE + '/api/cash-flow', { headers: authHeaders() })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (data) { renderCashFlow(data); })
+      .catch(function (err) {
+        if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#EF4444;padding:20px;">Failed to load: ' + err.message + '</td></tr>';
+      });
+  }
+
+  function renderCashFlow(data) {
+    const bal = Number(data.cashOnHand || 0);
+    const balEl = $('cashflow-balance');
+    if (balEl) {
+      balEl.textContent = cashMoney(bal);
+      balEl.style.color = bal < 0 ? '#EF4444' : '#059669';
+    }
+    const note = $('cashflow-balance-note');
+    if (note) note.textContent = bal < 0 ? 'Negative — reconcile with an Adjustment' : '';
+
+    // Show the one-time opening-balance button only while the ledger is empty
+    const openBtn = $('cashflow-opening-btn');
+    if (openBtn) openBtn.style.display = data.ledgerEmpty ? 'inline-flex' : 'none';
+
+    const tb = $('cashflow-tbody');
+    if (!tb) return;
+    const entries = data.entries || [];
+    if (!entries.length) {
+      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No cash movements yet.</td></tr>';
+      return;
+    }
+    tb.innerHTML = entries.map(function (e) {
+      const amt = Number(e.amount || 0);
+      const color = amt < 0 ? '#EF4444' : '#059669';
+      const sign = amt > 0 ? '+' : '';
+      const label = CASH_TYPE_LABELS[e.entryType] || e.entryType;
+      const ref = (e.referenceType === 'ORDER' && e.referenceId) ? ' · Order ' + e.referenceId
+                : (e.referenceType === 'EXPENSE' && e.referenceId) ? ' · Expense #' + e.referenceId : '';
+      return '<tr>'
+        + '<td style="white-space:nowrap;">' + (e.entryDate || '') + '</td>'
+        + '<td><span style="font-weight:600;">' + label + '</span></td>'
+        + '<td style="color:var(--text-secondary);">' + (e.note || '') + ref + '</td>'
+        + '<td style="text-align:right;font-weight:600;color:' + color + ';white-space:nowrap;">' + sign + cashMoney(amt) + '</td>'
+        + '<td style="color:var(--text-muted);white-space:nowrap;">' + (e.createdBy || '') + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  // Shared POST helper for the cash-flow action modals.
+  function cashFlowAction(path, payload, modalId, fieldIds) {
+    fetch(API_BASE + path, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify(payload)
+    })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (res) {
+        if (!res.ok) { showToast(res.body.message || 'Action failed', 'error'); return; }
+        (fieldIds || []).forEach(function (id) { if ($(id)) $(id).value = ''; });
+        closeModal(modalId);
+        showToast('Cash on hand updated', 'success');
+        loadCashFlow();
+      })
+      .catch(function () { showToast('Connection error', 'error'); });
+  }
+
+  window.submitAddCash = function () {
+    const amount = $('cash-add-amount').value;
+    const key = $('cash-add-key').value.trim();
+    if (!amount || Number(amount) <= 0) { showToast('Enter a positive amount', 'error'); return; }
+    if (!key) { showToast('Admin security key is required', 'error'); return; }
+    cashFlowAction('/api/cash-flow/add-cash', {
+      amount: amount, date: $('cash-add-date').value || null,
+      note: $('cash-add-note').value.trim(), securityKey: key
+    }, 'modal-cash-add', ['cash-add-amount', 'cash-add-note', 'cash-add-key']);
+  };
+
+  window.submitCashAdjust = function () {
+    const amount = $('cash-adjust-amount').value;
+    const note = $('cash-adjust-note').value.trim();
+    const key = $('cash-adjust-key').value.trim();
+    if (!amount || Number(amount) === 0) { showToast('Enter a non-zero amount (negative to deduct)', 'error'); return; }
+    if (!note) { showToast('A reason / note is required', 'error'); return; }
+    if (!key) { showToast('Admin security key is required', 'error'); return; }
+    cashFlowAction('/api/cash-flow/adjustment', {
+      amount: amount, date: $('cash-adjust-date').value || null, note: note, securityKey: key
+    }, 'modal-cash-adjust', ['cash-adjust-amount', 'cash-adjust-note', 'cash-adjust-key']);
+  };
+
+  window.submitCashDeposit = function () {
+    const amount = $('cash-deposit-amount').value;
+    const date = $('cash-deposit-date').value;
+    const key = $('cash-deposit-key').value.trim();
+    if (!amount || Number(amount) <= 0) { showToast('Enter a positive amount', 'error'); return; }
+    if (!date) { showToast('A deposit date is required', 'error'); return; }
+    if (!key) { showToast('Master key is required', 'error'); return; }
+    cashFlowAction('/api/cash-flow/deposit', {
+      amount: amount, date: date, note: $('cash-deposit-note').value.trim(), masterKey: key
+    }, 'modal-cash-deposit', ['cash-deposit-amount', 'cash-deposit-note', 'cash-deposit-key']);
+  };
+
+  window.submitOpeningBalance = function () {
+    const amount = $('cash-opening-amount').value;
+    const key = $('cash-opening-key').value.trim();
+    if (amount === '' || Number(amount) < 0) { showToast('Enter a valid opening amount', 'error'); return; }
+    if (!key) { showToast('Admin security key is required', 'error'); return; }
+    cashFlowAction('/api/cash-flow/opening-balance', {
+      amount: amount, date: $('cash-opening-date').value || null, securityKey: key
+    }, 'modal-cash-opening', ['cash-opening-amount', 'cash-opening-key']);
   };
 
   // ================================================================
@@ -9749,6 +9878,9 @@
     h += '<tr style="border-top:2px solid var(--border,#ddd);"><td style="font-weight:700;padding:6px 0;">Net Sales</td><td style="text-align:right;font-weight:700;font-size:14px;">' + fmt(netVal) + '</td></tr>';
     var _netIncome = Number(netVal||0) - Number(rep.totalExpenses||0);
     h += '<tr><td style="font-weight:700;padding:6px 0;color:#042C53;">Net Income (after expenses)</td><td style="text-align:right;font-weight:700;font-size:14px;color:' + (_netIncome>=0?'#10B981':'#EF4444') + ';">' + fmt(_netIncome) + '</td></tr>';
+    if (rep.cashOnHand != null) {
+      h += '<tr style="border-top:1px dashed var(--border,#ddd);"><td style="font-weight:700;padding:6px 0;color:#7C3AED;">Cash on Hand (at close)</td><td style="text-align:right;font-weight:700;font-size:14px;color:#7C3AED;">' + fmt(rep.cashOnHand) + '</td></tr>';
+    }
     h += '</table>';
 
     // ─── SOURCE BREAKDOWN ───

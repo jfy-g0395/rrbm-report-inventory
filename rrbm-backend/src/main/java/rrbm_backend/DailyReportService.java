@@ -20,6 +20,7 @@ public class DailyReportService {
     private final OrderRepository        orderRepository;
     private final UserRepository         userRepository;
     private final ExpenseRepository      expenseRepository;
+    private final CashLedgerService      cashLedgerService;
     private final BCryptPasswordEncoder  passwordEncoder = new BCryptPasswordEncoder();
 
     public DailyReportService(DailyReportRepository reportRepo,
@@ -28,7 +29,8 @@ public class DailyReportService {
                                EntityManager em,
                                OrderRepository orderRepository,
                                UserRepository userRepository,
-                               ExpenseRepository expenseRepository) {
+                               ExpenseRepository expenseRepository,
+                               CashLedgerService cashLedgerService) {
         this.reportRepo         = reportRepo;
         this.activityLogService = activityLogService;
         this.transactionService = transactionService;
@@ -36,6 +38,7 @@ public class DailyReportService {
         this.orderRepository    = orderRepository;
         this.userRepository     = userRepository;
         this.expenseRepository  = expenseRepository;
+        this.cashLedgerService  = cashLedgerService;
     }
 
     public Optional<DailyReport> getReportByDate(LocalDate date) {
@@ -227,6 +230,12 @@ public class DailyReportService {
         report.setTotalExpenses(totalExpenses != null ? totalExpenses : BigDecimal.ZERO);
         report.setExpensesCount((int) expensesCount);
 
+        // ── Cash on hand snapshot (V80) ───────────────────────────────
+        // Freeze the running cash-on-hand balance at close time. This is a
+        // point-in-time snapshot — it does NOT reset daily sales and is not
+        // affected by later days; cash on hand itself persists in cash_ledger.
+        report.setCashOnHand(cashLedgerService.getCashOnHand());
+
         report.setClosedBy(userId);
         report.setClosedAt(OffsetDateTime.now());
         report.setCreatedAt(OffsetDateTime.now()); // N-2: was never set; created_at always NULL
@@ -363,6 +372,12 @@ public class DailyReportService {
         long expensesCount = expenseRepository.countNonVoidedForDate(date);
         report.setTotalExpenses(totalExpenses != null ? totalExpenses : BigDecimal.ZERO);
         report.setExpensesCount((int) expensesCount);
+
+        // ── Cash on hand snapshot (V80) ───────────────────────────────
+        // Freeze the running cash-on-hand balance at close time. This is a
+        // point-in-time snapshot — it does NOT reset daily sales and is not
+        // affected by later days; cash on hand itself persists in cash_ledger.
+        report.setCashOnHand(cashLedgerService.getCashOnHand());
 
         report.setClosedBy(userId);
         report.setClosedAt(OffsetDateTime.now());

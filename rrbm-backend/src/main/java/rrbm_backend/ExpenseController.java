@@ -41,6 +41,7 @@ public class ExpenseController {
     private final JwtUtil                      jwtUtil;
     private final SettingsRepository           settingsRepository;
     private final ExpenseCategoryRepository    categoryRepository;
+    private final CashLedgerService            cashLedgerService;
     private final BCryptPasswordEncoder        passwordEncoder = new BCryptPasswordEncoder();
 
     public ExpenseController(ExpenseRepository expenseRepository,
@@ -48,13 +49,15 @@ public class ExpenseController {
                               ActivityLogService activityLogService,
                               JwtUtil jwtUtil,
                               SettingsRepository settingsRepository,
-                              ExpenseCategoryRepository categoryRepository) {
+                              ExpenseCategoryRepository categoryRepository,
+                              CashLedgerService cashLedgerService) {
         this.expenseRepository  = expenseRepository;
         this.userRepository     = userRepository;
         this.activityLogService = activityLogService;
         this.jwtUtil            = jwtUtil;
         this.settingsRepository = settingsRepository;
         this.categoryRepository = categoryRepository;
+        this.cashLedgerService  = cashLedgerService;
     }
 
     private Long userIdFromHeader(String authHeader) {
@@ -180,6 +183,9 @@ public class ExpenseController {
                         + " with " + saved.getItems().size() + " item(s)",
                 "EXPENSE", String.valueOf(saved.getId()));
 
+        // Cash on hand: a cash-paid expense deducts from the drawer (net amount only).
+        cashLedgerService.reconcileExpenseCash(saved, adminId, adminName);
+
         return ResponseEntity.ok(toMap(saved));
     }
 
@@ -292,6 +298,10 @@ public class ExpenseController {
                 "Edited expense #" + saved.getId() + " — total now ₱" + saved.getTotalAmount()
                         + " on " + saved.getDate() + " with " + saved.getItems().size() + " item(s)",
                 "EXPENSE", String.valueOf(saved.getId()));
+
+        // Cash on hand: reconcile to the new amount/payment-method (writes only the delta;
+        // correctly handles amount edits and CASH↔non-CASH switches).
+        cashLedgerService.reconcileExpenseCash(saved, adminId, adminName);
 
         return ResponseEntity.ok(toMap(saved));
     }
@@ -825,6 +835,9 @@ public class ExpenseController {
                 "EXPENSE_VOIDED",
                 "Voided expense #" + saved.getId() + ". Reason: " + voidReason,
                 "EXPENSE", String.valueOf(saved.getId()));
+
+        // Cash on hand: voiding a cash expense restores the cash to the drawer.
+        cashLedgerService.reconcileExpenseCash(saved, adminId, caller.getFullName());
 
         return ResponseEntity.ok(toMap(saved));
     }

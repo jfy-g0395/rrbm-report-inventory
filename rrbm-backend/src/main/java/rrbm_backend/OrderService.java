@@ -42,6 +42,7 @@ public class OrderService {
     private final CommissionService  commissionService;
     private final DailyReportRepository dailyReportRepository;
     private final ProductRepository  productRepository;
+    private final CashLedgerService  cashLedgerService;
 
     public OrderService(OrderRepository orderRepository,
                         OrderIdGenerator orderIdGenerator,
@@ -52,7 +53,8 @@ public class OrderService {
                         TransactionService transactionService,
                         CommissionService commissionService,
                         DailyReportRepository dailyReportRepository,
-                        ProductRepository productRepository) {
+                        ProductRepository productRepository,
+                        CashLedgerService cashLedgerService) {
         this.orderRepository    = orderRepository;
         this.orderIdGenerator   = orderIdGenerator;
         this.userRepository     = userRepository;
@@ -63,6 +65,7 @@ public class OrderService {
         this.commissionService  = commissionService;
         this.dailyReportRepository = dailyReportRepository;
         this.productRepository  = productRepository;
+        this.cashLedgerService  = cashLedgerService;
     }
 
     /**
@@ -120,6 +123,14 @@ public class OrderService {
         // If this throws the order is also rolled back; ledger stays clean.
         transactionService.recordSale(savedOrder, createdByUserId);
 
+        // Cash on hand: an order paid in cash physically adds money to the drawer.
+        // COD orders are "COD" (not CASH) and start PENDING — their cash is recorded
+        // at collection time, not here.
+        if ("CASH".equalsIgnoreCase(savedOrder.getPaymentMode())) {
+            cashLedgerService.recordOrderCashSale(savedOrder, createdByUserId,
+                    creator.getFullName(), LocalDate.now());
+        }
+
         // Deduct stock — if this throws, the whole transaction rolls back.
         inventoryService.deductStockForOrder(savedOrder, createdByUserId);
 
@@ -173,6 +184,9 @@ public class OrderService {
         // Use the date-parameterised overload so the SALE transaction lands on targetDate
         // in the ledger — not on today. Existing recordSale(Order, Long) is untouched.
         transactionService.recordSale(savedOrder, createdByUserId, targetDate);
+        // NOTE: deliberately NOT touching the cash-on-hand ledger here. This path is the
+        // bulk/backdated import pipeline; cash on hand is a live drawer figure seeded from
+        // an opening balance, so historical imports must not move it (would double-count).
         inventoryService.deductStockForOrder(savedOrder, createdByUserId);
 
         return savedOrder;
@@ -318,6 +332,12 @@ public class OrderService {
                 transactionService.recordVoid(savedOrder, effectiveVoid, cancelledByUserId, reason);
             }
         }
+
+        // Cash on hand: cancelling a cash order removes the cash it brought in.
+        // No-op for non-cash orders (no CASH_SALE entry exists) and for deferred-
+        // uncollected orders that were never collected in cash.
+        cashLedgerService.reverseOrderCashSale(savedOrder.getId(), cancelledByUserId,
+                cancelledBy.getFullName(), "CANCELLED: " + reason);
 
         // Restore stock back to inventory (also logs the CANCELLED_RETURN movement)
         inventoryService.restoreStockForCancelledOrder(savedOrder, cancelledByUserId);
@@ -674,6 +694,10 @@ public class OrderService {
             }
             transactionService.recordReturnRefund(orderId, refundAmt,
                     request.getReason(), userId, actor.getFullName());
+            // Cash on hand: a cash refund hands money back out of the drawer.
+            // No-op for non-cash orders; capped at the order's remaining cash inflow.
+            cashLedgerService.reverseOrderCashPartial(orderId, refundAmt, userId,
+                    actor.getFullName(), "refund on return");
             refundIssued = true;
         }
 
@@ -927,6 +951,11 @@ public class OrderService {
         transactionService.recordItemVoid(orderId, voidedNow,
                 request.getReason(), userId, actor.getFullName());
 
+        // Cash on hand: voiding item(s) on a cash order removes that cash.
+        // No-op for non-cash orders; capped at the order's remaining cash inflow.
+        cashLedgerService.reverseOrderCashPartial(orderId, voidedNow, userId,
+                actor.getFullName(), "item void");
+
         // ── Activity log (ledger method also logs — this entry adds tier context)
         StringBuilder logDesc = new StringBuilder();
         logDesc.append("Void (").append(tier).append(") on order ").append(orderId)
@@ -1011,6 +1040,9 @@ public class OrderService {
                         "Collected payment for order " + orderId + " — ₱" + order.getTotal()
                                 + " (original date: " + originalDate + ")",
                         "ORDER", orderId);
+
+                // Cash on hand: batch COD collections are taken in cash. Idempotent.
+                cashLedgerService.recordOrderCashSale(order, userId, callerName, LocalDate.now());
 
                 collected++;
             } catch (Exception e) {

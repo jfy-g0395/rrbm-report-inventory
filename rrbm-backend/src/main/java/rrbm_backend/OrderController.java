@@ -41,6 +41,7 @@ public class OrderController {
     private final ProductRepository productRepository;
     private final AgentRepository agentRepository;
     private final CommissionService commissionService;
+    private final CashLedgerService cashLedgerService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public OrderController(OrderService orderService,
@@ -53,7 +54,8 @@ public class OrderController {
                            MasterKeyService masterKeyService,
                            ProductRepository productRepository,
                            AgentRepository agentRepository,
-                           CommissionService commissionService) {
+                           CommissionService commissionService,
+                           CashLedgerService cashLedgerService) {
         this.orderService          = orderService;
         this.jwtUtil               = jwtUtil;
         this.userRepository        = userRepository;
@@ -65,6 +67,7 @@ public class OrderController {
         this.productRepository     = productRepository;
         this.agentRepository       = agentRepository;
         this.commissionService     = commissionService;
+        this.cashLedgerService     = cashLedgerService;
     }
 
     /** Strip "Bearer " prefix and extract the user ID from the JWT. */
@@ -619,6 +622,15 @@ public class OrderController {
                     "Collected payment for order " + id + " — ₱" + order.getTotal()
                             + " (original date: " + originalDate + ")",
                     "ORDER", id);
+
+            // Cash on hand: COD/deferred orders are paid at collection. Default to CASH
+            // (Cash-on-Delivery); skip only if the caller explicitly collected non-cash.
+            // Idempotent — a re-collect won't double count.
+            String collectMode = body.getOrDefault("paymentMode", "CASH");
+            collectMode = (collectMode == null || collectMode.trim().isEmpty()) ? "CASH" : collectMode.trim();
+            if ("CASH".equalsIgnoreCase(collectMode)) {
+                cashLedgerService.recordOrderCashSale(order, userId, caller.getFullName(), LocalDate.now());
+            }
 
             return ResponseEntity.ok(convertToResponse(order));
 
