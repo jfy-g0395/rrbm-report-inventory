@@ -414,6 +414,39 @@ public class ProductController {
         return ResponseEntity.ok(product);
     }
 
+    // DELETE /api/products/{id} — soft-delete (deactivate) a product (master key required).
+    // Soft-delete preserves every historical reference (orders, movements, reports).
+    @Transactional
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteProduct(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        Long userId = (authHeader != null && authHeader.startsWith("Bearer "))
+                ? jwtUtil.extractUserId(authHeader.substring(7)) : null;
+        String masterKey = body != null ? (String) body.get("masterKey") : null;
+        if (masterKey == null || masterKey.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Master key is required"));
+        }
+        if (!masterKeyService.validateMasterKey(masterKey)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Invalid master key"));
+        }
+        java.util.Optional<Product> opt = productRepository.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+        Product product = opt.get();
+        if (Boolean.FALSE.equals(product.getActive())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Product is already inactive"));
+        }
+        String encoderName = body != null && body.get("encodedByName") != null
+                ? body.get("encodedByName").toString() : "Admin";
+        product.setActive(false);
+        productRepository.save(product);
+        String codeLabel = product.getProductCode() != null ? " [" + product.getProductCode() + "]" : "";
+        activityLogService.log(userId, encoderName, "DEACTIVATE_PRODUCT",
+            "Deactivated (deleted): " + product.getName() + codeLabel, "PRODUCT", String.valueOf(id));
+        return ResponseEntity.ok(Map.of("message", "Product deactivated"));
+    }
+
     /**
      * Persist a list of component rows for a set product.
      * Each element in rawList is expected to be a Map with keys:
@@ -496,6 +529,12 @@ public class ProductController {
         log.setNotes(request.getNotes());
         if (request.getPoNumber() != null && !request.getPoNumber().isBlank()) {
             log.setPoNumber(request.getPoNumber().trim());
+        }
+        if (request.getTruckPlate() != null && !request.getTruckPlate().isBlank()) {
+            log.setTruckPlate(request.getTruckPlate().trim());
+        }
+        if (request.getDriverName() != null && !request.getDriverName().isBlank()) {
+            log.setDriverName(request.getDriverName().trim());
         }
         // @PrePersist handles createdAt and reportDate
 

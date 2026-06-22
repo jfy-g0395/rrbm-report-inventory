@@ -183,6 +183,119 @@ public class ExpenseController {
         return ResponseEntity.ok(toMap(saved));
     }
 
+    // ── PUT /api/expenses/{id} — edit an encoded expense (fix wrong inputs) ──
+    @PutMapping("/{id}")
+    @Transactional
+    public ResponseEntity<?> updateExpense(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody Map<String, Object> body) {
+
+        Long adminId = userIdFromHeader(authHeader);
+        if (adminId == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        }
+
+        Expense expense = expenseRepository.findById(id).orElse(null);
+        if (expense == null) {
+            return ResponseEntity.status(404).body(Map.of("error", "Expense not found"));
+        }
+        if (expense.isVoided()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "A voided expense cannot be edited"));
+        }
+
+        User admin = userRepository.findById(adminId).orElse(null);
+        String adminName = admin != null ? admin.getFullName() : "Unknown";
+
+        // Date (optional) — only changed when supplied and parseable
+        if (body.containsKey("date") && body.get("date") != null) {
+            try { expense.setDate(LocalDate.parse(body.get("date").toString())); } catch (Exception ignored) {}
+        }
+
+        // paymentMethod — required
+        Object rawPm = body.get("paymentMethod");
+        if (rawPm == null || rawPm.toString().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "paymentMethod is required"));
+        }
+        expense.setPaymentMethod(rawPm.toString().trim());
+
+        // notes — optional; trim; cap at 500 chars
+        String notes = null;
+        if (body.containsKey("notes") && body.get("notes") != null) {
+            String raw = body.get("notes").toString().trim();
+            if (!raw.isEmpty()) notes = raw.length() > 500 ? raw.substring(0, 500) : raw;
+        }
+        expense.setNotes(notes);
+
+        // referenceNumber — optional
+        String referenceNumber = null;
+        if (body.containsKey("referenceNumber") && body.get("referenceNumber") != null) {
+            String raw = body.get("referenceNumber").toString().trim();
+            if (!raw.isEmpty()) referenceNumber = raw;
+        }
+        expense.setReferenceNumber(referenceNumber);
+
+        // Parse items
+        Object rawItems = body.get("items");
+        if (!(rawItems instanceof List)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "items must be a list"));
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> itemList = (List<Map<String, Object>>) rawItems;
+        if (itemList.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "At least one item is required"));
+        }
+        for (Map<String, Object> itemMap : itemList) {
+            String desc = itemMap.getOrDefault("itemDescription", "").toString().trim();
+            if (desc.isEmpty()) continue;
+            if (itemMap.get("categoryId") == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "categoryId is required for each item"));
+            }
+        }
+
+        // Replace items (orphanRemoval=true deletes the old rows within this transaction)
+        List<ExpenseItem> newItems = new ArrayList<>();
+        for (Map<String, Object> itemMap : itemList) {
+            String desc = itemMap.getOrDefault("itemDescription", "").toString().trim();
+            if (desc.isEmpty()) continue;
+
+            BigDecimal amount = BigDecimal.ZERO;
+            try { amount = new BigDecimal(itemMap.getOrDefault("amount", "0").toString()); } catch (Exception ignored) {}
+
+            Long categoryId = null;
+            Object catId = itemMap.get("categoryId");
+            if (catId instanceof Number n) {
+                categoryId = n.longValue();
+            } else if (catId != null) {
+                try { categoryId = Long.parseLong(catId.toString()); } catch (Exception ignored) {}
+            }
+
+            ExpenseItem item = new ExpenseItem();
+            item.setItemDescription(desc);
+            item.setAmount(amount);
+            item.setCategoryId(categoryId);
+            item.setExpense(expense);
+            newItems.add(item);
+        }
+        if (newItems.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No valid items provided"));
+        }
+        expense.getItems().clear();
+        expense.getItems().addAll(newItems);
+
+        expense.recalculateTotal();
+        Expense saved = expenseRepository.save(expense);
+
+        activityLogService.log(
+                adminId, adminName,
+                "EXPENSE_EDITED",
+                "Edited expense #" + saved.getId() + " — total now ₱" + saved.getTotalAmount()
+                        + " on " + saved.getDate() + " with " + saved.getItems().size() + " item(s)",
+                "EXPENSE", String.valueOf(saved.getId()));
+
+        return ResponseEntity.ok(toMap(saved));
+    }
+
     // ── GET /api/expenses?date=YYYY-MM-DD ──────────────────────────────────
     @GetMapping
     @Transactional(readOnly = true)

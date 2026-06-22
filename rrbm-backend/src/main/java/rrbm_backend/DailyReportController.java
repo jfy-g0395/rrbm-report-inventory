@@ -22,6 +22,7 @@ public class DailyReportController {
     private final UserRepository              userRepository;
     private final InventoryMovementRepository movementRepo;
     private final ProductRepository           productRepository;
+    private final ManualRejectedItemRepository manualRejectedRepo;
 
     public DailyReportController(DailyReportService dailyReportService,
                                   ActivityLogService activityLogService,
@@ -31,7 +32,8 @@ public class DailyReportController {
                                   JwtUtil jwtUtil,
                                   UserRepository userRepository,
                                   InventoryMovementRepository movementRepo,
-                                  ProductRepository productRepository) {
+                                  ProductRepository productRepository,
+                                  ManualRejectedItemRepository manualRejectedRepo) {
         this.dailyReportService  = dailyReportService;
         this.activityLogService  = activityLogService;
         this.deliveryLogRepo     = deliveryLogRepo;
@@ -41,6 +43,7 @@ public class DailyReportController {
         this.userRepository      = userRepository;
         this.movementRepo        = movementRepo;
         this.productRepository   = productRepository;
+        this.manualRejectedRepo  = manualRejectedRepo;
     }
 
     // --- Close daily sales ---
@@ -220,6 +223,21 @@ public class DailyReportController {
             items.add(row);
         }
 
+        // ── Source 3: Manually-entered rejected items ─────────────────────────
+        // Record-only entries (do not affect stock). Carry an "id" so the UI can
+        // expose edit/delete for these rows only.
+        for (ManualRejectedItem mr : manualRejectedRepo.findByReportDateBetweenOrderByReportDateDesc(startDate, endDate)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id",          mr.getId());
+            row.put("date",        mr.getReportDate() != null ? mr.getReportDate().toString() : "");
+            row.put("source",      "MANUAL");
+            row.put("reference",   mr.getCreatedBy());
+            row.put("productName", mr.getProductName());
+            row.put("rejectedQty", mr.getRejectedQty());
+            row.put("reason",      mr.getReason());
+            items.add(row);
+        }
+
         // Sort merged list by date descending
         items.sort((a, b) -> ((String) b.get("date")).compareTo((String) a.get("date")));
 
@@ -229,5 +247,104 @@ public class DailyReportController {
                 "start", startDate.toString(),
                 "end",   endDate.toString()
         ));
+    }
+
+    // ── Manual rejected items: create / update / delete ───────────────────────
+    // Restricted to accounting + super-admin (page access alone is not enough).
+
+    /** Returns the caller User from the Bearer token, or null. */
+    private User callerFromHeader(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) return null;
+        Long uid = jwtUtil.extractUserId(authHeader.substring(7));
+        return uid != null ? userRepository.findById(uid).orElse(null) : null;
+    }
+
+    /** True only for SUPER_ADMIN or ACCOUNTING. */
+    private boolean canManageManualRejected(User u) {
+        return u != null && ("SUPER_ADMIN".equals(u.getRole()) || "ACCOUNTING".equals(u.getRole()));
+    }
+
+    @PostMapping("/rejected-items/manual")
+    @Transactional
+    public ResponseEntity<?> createManualRejected(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User caller = callerFromHeader(authHeader);
+        if (!canManageManualRejected(caller)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Only accounting and super-admin can add rejected items"));
+        }
+        String productName = body.get("productName") != null ? body.get("productName").toString().trim() : "";
+        if (productName.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Product name is required"));
+        }
+        int qty = body.get("rejectedQty") != null ? ((Number) body.get("rejectedQty")).intValue() : 0;
+        if (qty <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Rejected quantity must be greater than 0"));
+        }
+        ManualRejectedItem mr = new ManualRejectedItem();
+        mr.setReportDate(parseDateOrToday(body.get("date")));
+        mr.setProductId(body.get("productId") != null ? ((Number) body.get("productId")).longValue() : null);
+        mr.setProductName(productName);
+        mr.setRejectedQty(qty);
+        mr.setReason(body.get("reason") != null ? body.get("reason").toString().trim() : null);
+        mr.setCreatedBy(caller.getFullName());
+        ManualRejectedItem saved = manualRejectedRepo.save(mr);
+        activityLogService.log(caller.getId(), caller.getFullName(), "ADD_MANUAL_REJECTED",
+            "Added manual rejected item: " + qty + " × " + productName, "REJECTED_ITEM", String.valueOf(saved.getId()));
+        return ResponseEntity.ok(Map.of("message", "Rejected item added", "id", saved.getId()));
+    }
+
+    @PutMapping("/rejected-items/manual/{id}")
+    @Transactional
+    public ResponseEntity<?> updateManualRejected(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User caller = callerFromHeader(authHeader);
+        if (!canManageManualRejected(caller)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Only accounting and super-admin can edit rejected items"));
+        }
+        ManualRejectedItem mr = manualRejectedRepo.findById(id).orElse(null);
+        if (mr == null) return ResponseEntity.notFound().build();
+        if (body.containsKey("productName")) {
+            String pn = body.get("productName") != null ? body.get("productName").toString().trim() : "";
+            if (pn.isBlank()) return ResponseEntity.badRequest().body(Map.of("message", "Product name is required"));
+            mr.setProductName(pn);
+        }
+        if (body.containsKey("rejectedQty")) {
+            int qty = body.get("rejectedQty") != null ? ((Number) body.get("rejectedQty")).intValue() : 0;
+            if (qty <= 0) return ResponseEntity.badRequest().body(Map.of("message", "Rejected quantity must be greater than 0"));
+            mr.setRejectedQty(qty);
+        }
+        if (body.containsKey("date"))      mr.setReportDate(parseDateOrToday(body.get("date")));
+        if (body.containsKey("productId")) mr.setProductId(body.get("productId") != null ? ((Number) body.get("productId")).longValue() : null);
+        if (body.containsKey("reason"))    mr.setReason(body.get("reason") != null ? body.get("reason").toString().trim() : null);
+        manualRejectedRepo.save(mr);
+        activityLogService.log(caller.getId(), caller.getFullName(), "EDIT_MANUAL_REJECTED",
+            "Edited manual rejected item #" + id, "REJECTED_ITEM", String.valueOf(id));
+        return ResponseEntity.ok(Map.of("message", "Rejected item updated"));
+    }
+
+    @DeleteMapping("/rejected-items/manual/{id}")
+    @Transactional
+    public ResponseEntity<?> deleteManualRejected(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        User caller = callerFromHeader(authHeader);
+        if (!canManageManualRejected(caller)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Only accounting and super-admin can delete rejected items"));
+        }
+        ManualRejectedItem mr = manualRejectedRepo.findById(id).orElse(null);
+        if (mr == null) return ResponseEntity.notFound().build();
+        manualRejectedRepo.delete(mr);
+        activityLogService.log(caller.getId(), caller.getFullName(), "DELETE_MANUAL_REJECTED",
+            "Deleted manual rejected item #" + id + " (" + mr.getProductName() + ")", "REJECTED_ITEM", String.valueOf(id));
+        return ResponseEntity.ok(Map.of("message", "Rejected item deleted"));
+    }
+
+    private LocalDate parseDateOrToday(Object raw) {
+        if (raw == null || raw.toString().isBlank()) return LocalDate.now();
+        try { return LocalDate.parse(raw.toString().trim()); }
+        catch (Exception e) { return LocalDate.now(); }
     }
 }

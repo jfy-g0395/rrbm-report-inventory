@@ -26,6 +26,8 @@ public class DeliveryLog {
     @Column(name = "total_quantity") private int totalQuantity;
     @Column(name = "notes") private String notes;
     @Column(name = "po_number") private String poNumber;
+    @Column(name = "truck_plate") private String truckPlate;
+    @Column(name = "driver_name") private String driverName;
     @Column(name = "report_date") private LocalDate reportDate;
     @Column(name = "created_at") private OffsetDateTime createdAt;
     @Column(name = "status", nullable = false) private String status = "RECEIVED";
@@ -61,6 +63,10 @@ public class DeliveryLog {
     public void setNotes(String notes) { this.notes = notes; }
     public String getPoNumber() { return poNumber; }
     public void setPoNumber(String poNumber) { this.poNumber = poNumber; }
+    public String getTruckPlate() { return truckPlate; }
+    public void setTruckPlate(String truckPlate) { this.truckPlate = truckPlate; }
+    public String getDriverName() { return driverName; }
+    public void setDriverName(String driverName) { this.driverName = driverName; }
     public LocalDate getReportDate() { return reportDate; }
     public void setReportDate(LocalDate reportDate) { this.reportDate = reportDate; }
     public OffsetDateTime getCreatedAt() { return createdAt; }

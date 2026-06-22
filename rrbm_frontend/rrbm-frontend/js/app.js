@@ -1868,7 +1868,11 @@
       }
 
       const editCell = canEdit
-        ? '<td><button class="btn btn-sm" style="background:#D4860A;color:#fff;padding:4px 8px;border:none;border-radius:5px;cursor:pointer;" onclick="openEditProductModal(' + p.id + ')" title="Edit Product"><i class="ti ti-edit"></i></button></td>'
+        ? '<td style="white-space:nowrap;"><button class="btn btn-sm" style="background:#D4860A;color:#fff;padding:4px 8px;border:none;border-radius:5px;cursor:pointer;" onclick="openEditProductModal(' + p.id + ')" title="Edit Product"><i class="ti ti-edit"></i></button>'
+          + (p.active !== false
+              ? ' <button class="btn btn-sm" style="background:#EF4444;color:#fff;padding:4px 8px;border:none;border-radius:5px;cursor:pointer;" onclick="askDeleteProduct(' + p.id + ')" title="Delete (deactivate) Item"><i class="ti ti-trash"></i></button>'
+              : '')
+          + '</td>'
         : '';
 
       return '<tr class="' + rowClass + '">'
@@ -1911,6 +1915,41 @@
     } catch (err) {
       showToast('Connection error', 'error');
       applyInventoryFilters();
+    }
+  };
+
+  // ================================================================
+  // DELETE (DEACTIVATE) PRODUCT — master-key gated
+  // ================================================================
+  var _deleteProductId = null;
+  window.askDeleteProduct = function (id) {
+    _deleteProductId = id;
+    var p = (appState.inventoryAllProducts || []).find(function (x) { return String(x.id) === String(id); });
+    var nameEl = $('delprod-name');
+    if (nameEl) nameEl.textContent = p ? (p.name || ('Item #' + id)) : ('Item #' + id);
+    if ($('delprod-key')) $('delprod-key').value = '';
+    $('modal-delete-product').classList.add('open');
+  };
+
+  window.confirmDeleteProduct = async function () {
+    var key = (($('delprod-key') || {}).value || '').trim();
+    if (!key) { showToast('Master key is required', 'error'); return; }
+    if (!_deleteProductId) return;
+    try {
+      var res = await fetch(API_BASE + '/api/products/' + _deleteProductId, {
+        method: 'DELETE', headers: authHeaders(),
+        body: JSON.stringify({ masterKey: key, encodedByName: currentUserName() })
+      });
+      var d = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast('Error: ' + (d.message || 'Failed to delete'), 'error'); return; }
+      var p = (appState.inventoryAllProducts || []).find(function (x) { return String(x.id) === String(_deleteProductId); });
+      if (p) p.active = false;
+      closeModal('modal-delete-product');
+      _deleteProductId = null;
+      showToast('Item deleted (deactivated)', 'success');
+      applyInventoryFilters();
+    } catch (err) {
+      showToast('Connection error', 'error');
     }
   };
 
@@ -2261,6 +2300,8 @@
     if ($('delivery-receipt'))  $('delivery-receipt').value = '';
     if ($('delivery-receiver')) $('delivery-receiver').value = '';
     if ($('delivery-verifier')) $('delivery-verifier').value = '';
+    if ($('delivery-truck-plate')) $('delivery-truck-plate').value = '';
+    if ($('delivery-driver'))   $('delivery-driver').value = '';
     if ($('delivery-notes'))    $('delivery-notes').value = '';
 
     const c = $('delivery-items-container');
@@ -2468,6 +2509,8 @@
       encodedByName: (($('delivery-encoded-by') || {}).value || '').trim() || currentUserName(),
       notes:         (($('delivery-notes') || {}).value || '').trim() || null,
       poNumber:      poNumber,
+      truckPlate:    (($('delivery-truck-plate') || {}).value || '').trim() || null,
+      driverName:    (($('delivery-driver') || {}).value || '').trim() || null,
       items:         items
     };
 
@@ -2582,6 +2625,8 @@
     setText('dd-date',     formatDate(r.reportDate || r.createdAt));
     setText('dd-supplier', r.supplierName);
     setText('dd-po',       r.poNumber || '—');
+    setText('dd-truck',    r.truckPlate || '—');
+    setText('dd-driver',   r.driverName || '—');
     setText('dd-receiver', r.receivedBy);
     setText('dd-verifier', r.verifiedBy);
     setText('dd-encoder',  r.encodedByName);
@@ -3693,12 +3738,14 @@
         }).join(', ');
         const amt = Number(e.totalAmount || 0);
         grandTotal += amt;
+        const lateBadge = e.lateImported ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span> ' : '';
+        const editBtn = e.voided ? '' : '<button class="btn btn-secondary btn-sm" onclick="editExpense(' + e.id + ')" title="Edit expense" style="padding:2px 8px;"><i class="ti ti-edit"></i></button>';
         return `<tr>
           <td>${e.date || '—'}</td>
           <td>${e.adminName || '—'}</td>
           <td style="font-size:12px;color:var(--text-muted);">${itemsList || '—'}</td>
           <td style="text-align:right;font-weight:600;">₱${amt.toFixed(2)}</td>
-          <td style="font-size:11px;">${e.lateImported ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span>' : ''}</td>
+          <td style="font-size:11px;white-space:nowrap;">${lateBadge}${editBtn}</td>
         </tr>`;
       }).join('');
       if (totalEl) totalEl.textContent = 'Total: ₱' + grandTotal.toFixed(2);
@@ -3917,33 +3964,21 @@
 
     if (items.length === 0) { showToast('Add at least one expense item', 'error'); return; }
 
+    var editingId = window._editingExpenseId || null;
     try {
-      var res = await fetch(API_BASE + '/api/expenses', {
-        method: 'POST',
+      var res = await fetch(API_BASE + '/api/expenses' + (editingId ? '/' + editingId : ''), {
+        method: editingId ? 'PUT' : 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ date: date, paymentMethod: paymentMethod, notes: notes, referenceNumber: referenceNum, items: items })
       });
       var data = await res.json();
       if (res.ok) {
-        showToast('Expense added successfully', 'success');
-        // Reset form
-        var container = $('exp-items-container');
-        if (container) {
-          var rows = container.querySelectorAll('.exp-item-row');
-          rows.forEach(function (r, i) {
-            if (i === 0) {
-              (r.querySelector('.exp-item-desc')   || {}).value = '';
-              (r.querySelector('.exp-item-amount') || {}).value = '';
-            } else { r.remove(); }
-          });
-        }
-        if ($('exp-payment-method')) $('exp-payment-method').value = '';
-        if ($('exp-primary-cat'))    { $('exp-primary-cat').value = ''; }
-        if ($('exp-sub-cat'))        { $('exp-sub-cat').innerHTML = '<option value="">Select sub-category…</option>'; }
-        if ($('exp-notes'))          $('exp-notes').value = '';
-        if ($('exp-reference'))      $('exp-reference').value = '';
-        updateExpenseTotal();
+        showToast(editingId ? 'Expense updated successfully' : 'Expense added successfully', 'success');
+        cancelEditExpense();   // clears edit state + resets the form
         loadTodaysExpenses();
+        // Refresh the history view if it is currently showing results
+        var rangeTbody = $('exp-range-tbody');
+        if (rangeTbody && !rangeTbody.querySelector('[colspan]') && rangeTbody.children.length) loadExpenseRange();
         renderDashboard();
       } else {
         showToast('Error: ' + (data.error || 'Save failed'), 'error');
@@ -3951,6 +3986,95 @@
     } catch (err) {
       showToast('Connection error', 'error');
     }
+  };
+
+  // Resolve the primary category CODE that owns a given sub-category id.
+  function _findPrimaryCodeBySubId(subId) {
+    if (!_expCatData || subId == null) return '';
+    var match = '';
+    (_expCatData.primaries || []).forEach(function (p) {
+      (p.subcategories || []).forEach(function (s) {
+        if (String(s.id) === String(subId)) match = p.code;
+      });
+    });
+    return match;
+  }
+
+  // Open an already-encoded expense in the entry form for editing (fix wrong inputs).
+  window.editExpense = async function (id) {
+    var pool = (window._expTodayData || []).concat(window._expRangeData || []);
+    var e = pool.find(function (x) { return String(x.id) === String(id); });
+    if (!e) { showToast('Could not load that expense', 'error'); return; }
+    if (e.voided) { showToast('A voided expense cannot be edited', 'error'); return; }
+
+    var cats = await loadExpenseCategories();
+    if (cats) populateExpensePrimarySelect(cats);
+
+    if ($('exp-date'))           $('exp-date').value           = e.date || '';
+    if ($('exp-payment-method')) $('exp-payment-method').value = e.paymentMethod || '';
+    if ($('exp-reference'))      $('exp-reference').value      = e.referenceNumber || '';
+    if ($('exp-notes'))          $('exp-notes').value          = e.notes || '';
+
+    // Category: derive the primary from the first item's sub-category, then set the sub.
+    var firstCatId = (e.items && e.items.length) ? e.items[0].categoryId : null;
+    var primSel = $('exp-primary-cat');
+    if (primSel) {
+      primSel.value = _findPrimaryCodeBySubId(firstCatId);
+      window.onExpensePrimaryChange(primSel);
+      if ($('exp-sub-cat') && firstCatId != null) $('exp-sub-cat').value = String(firstCatId);
+    }
+
+    // Rebuild item rows from the expense's items.
+    var container = $('exp-items-container');
+    if (container) {
+      container.innerHTML = '';
+      (e.items || []).forEach(function (it) {
+        window.addExpenseRow();
+        var rows = container.querySelectorAll('.exp-item-row');
+        var row  = rows[rows.length - 1];
+        if (row) {
+          (row.querySelector('.exp-item-desc')   || {}).value = it.itemDescription || '';
+          (row.querySelector('.exp-item-amount') || {}).value = (it.amount != null ? it.amount : '');
+        }
+      });
+      if (!container.querySelectorAll('.exp-item-row').length) window.addExpenseRow();
+    }
+    updateExpenseTotal();
+
+    window._editingExpenseId = e.id;
+    var submitBtn = $('exp-submit-btn');
+    if (submitBtn) submitBtn.innerHTML = '<i class="ti ti-device-floppy"></i> Update Expense';
+    var cancelBtn = $('exp-cancel-edit-btn');
+    if (cancelBtn) cancelBtn.style.display = '';
+    if ($('exp-date')) $('exp-date').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast('Editing expense #' + e.id, 'success');
+  };
+
+  // Exit edit mode and reset the entry form to a blank "add" state.
+  window.cancelEditExpense = function () {
+    window._editingExpenseId = null;
+    var submitBtn = $('exp-submit-btn');
+    if (submitBtn) submitBtn.innerHTML = '<i class="ti ti-device-floppy"></i> Add Expense';
+    var cancelBtn = $('exp-cancel-edit-btn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+
+    var container = $('exp-items-container');
+    if (container) {
+      var rows = container.querySelectorAll('.exp-item-row');
+      rows.forEach(function (r, i) {
+        if (i === 0) {
+          (r.querySelector('.exp-item-desc')   || {}).value = '';
+          (r.querySelector('.exp-item-amount') || {}).value = '';
+        } else { r.remove(); }
+      });
+      if (!container.querySelectorAll('.exp-item-row').length) window.addExpenseRow();
+    }
+    if ($('exp-payment-method')) $('exp-payment-method').value = '';
+    if ($('exp-primary-cat'))    $('exp-primary-cat').value = '';
+    if ($('exp-sub-cat'))        $('exp-sub-cat').innerHTML = '<option value="">Select sub-category…</option>';
+    if ($('exp-notes'))          $('exp-notes').value = '';
+    if ($('exp-reference'))      $('exp-reference').value = '';
+    updateExpenseTotal();
   };
 
   async function loadTodaysExpenses() {
@@ -3964,6 +4088,7 @@
       const res   = await fetch(API_BASE + '/api/expenses?date=' + today, { headers: authHeaders() });
       if (!res.ok) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Error</td></tr>'; return; }
       const data  = await res.json();
+      window._expTodayData = data; // cached for inline edit lookup
       const fmt   = function (n) { return '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
       if (!data || data.length === 0) {
@@ -3979,12 +4104,14 @@
         const itemsSummary = (e.items || []).map(function (i) {
           return escapeHtml(i.itemDescription) + ' — ' + fmt(i.amount);
         }).join('<br>');
+        const lateBadge = e.lateImported ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span> ' : '';
+        const editBtn = e.voided ? '' : '<button class="btn btn-secondary btn-sm" onclick="editExpense(' + e.id + ')" title="Edit expense" style="padding:2px 8px;"><i class="ti ti-edit"></i></button>';
         return '<tr>'
           + '<td style="font-size:12px;">' + time + '</td>'
           + '<td>' + escapeHtml(e.adminName) + '</td>'
           + '<td style="font-size:12px;color:var(--text-muted);">' + itemsSummary + '</td>'
           + '<td style="text-align:right;font-weight:600;">' + fmt(e.totalAmount) + '</td>'
-          + '<td style="font-size:11px;">' + (e.lateImported ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span>' : '') + '</td>'
+          + '<td style="font-size:11px;white-space:nowrap;">' + lateBadge + editBtn + '</td>'
           + '</tr>';
       }).join('');
 
@@ -5002,6 +5129,11 @@
       ecomWrap.style.display = (v === 'ECOMMERCE') ? '' : 'none';
       if (v !== 'ECOMMERCE' && $('ecommercePlatform')) $('ecommercePlatform').value = '';
     }
+    var ecomIdWrap = $('ecommerceOrderIdGroup');
+    if (ecomIdWrap) {
+      ecomIdWrap.style.display = (v === 'ECOMMERCE') ? '' : 'none';
+      if (v !== 'ECOMMERCE' && $('ecommerceOrderId')) $('ecommerceOrderId').value = '';
+    }
     if (resellerLbl) resellerLbl.textContent = v === 'DISTRIBUTOR' ? 'Distributor Name' : 'Reseller Name';
     // Load agent dropdown and show/hide per-item O.P. fields
     if (v === 'AGENT') loadAgentOptions();
@@ -5404,7 +5536,7 @@
     const address      = ($('field-address')    || {}).value || '';
     const discount     = parseFloat(($('orderDiscount')    || {}).value) || 0;
     const deliveryFee  = parseFloat(($('orderDeliveryFee') || {}).value) || 0;
-    const notes        = ($('orderNotes') || {}).value || '';
+    let notes          = ($('orderNotes') || {}).value || '';
 
     if (!customerName) { showToast('Please enter customer name', 'error'); return; }
     if (!source)       { showToast('Please select order source', 'error'); return; }
@@ -5415,6 +5547,10 @@
     if (source === 'ECOMMERCE') {
       ecommercePlatform = ($('ecommercePlatform') || {}).value;
       if (!ecommercePlatform) { showToast('Please select an e-commerce platform', 'error'); return; }
+      // Record the shop's order ID into notes as "Order No: <id>" so the existing
+      // parser (displayEcommerceNumber) surfaces it on order history + receipts.
+      var _ecomId = (($('ecommerceOrderId') || {}).value || '').trim();
+      if (_ecomId) notes = 'Order No: ' + _ecomId + (notes ? ' | ' + notes : '');
     }
 
     let contactName = null;
@@ -5512,7 +5648,7 @@
     const address      = ($('field-address')    || {}).value || '';
     const discount     = parseFloat(($('orderDiscount')    || {}).value) || 0;
     const deliveryFee  = parseFloat(($('orderDeliveryFee') || {}).value) || 0;
-    const notes        = ($('orderNotes') || {}).value || '';
+    let notes          = ($('orderNotes') || {}).value || '';
 
     if (!customerName) { showToast('Please enter customer name', 'error'); return; }
     if (!source)       { showToast('Please select order source', 'error'); return; }
@@ -5523,6 +5659,10 @@
     if (source === 'ECOMMERCE') {
       ecommercePlatform = ($('ecommercePlatform') || {}).value;
       if (!ecommercePlatform) { showToast('Please select an e-commerce platform', 'error'); return; }
+      // Record the shop's order ID into notes as "Order No: <id>" so the existing
+      // parser (displayEcommerceNumber) surfaces it on order history + receipts.
+      var _ecomId = (($('ecommerceOrderId') || {}).value || '').trim();
+      if (_ecomId) notes = 'Order No: ' + _ecomId + (notes ? ' | ' + notes : '');
     }
 
     let contactName = null;
@@ -5620,6 +5760,8 @@
     if ($('field-fb-wrap'))          $('field-fb-wrap').style.display = 'none';
     if ($('ecommercePlatformGroup')) $('ecommercePlatformGroup').style.display = 'none';
     if ($('ecommercePlatform'))      $('ecommercePlatform').value = '';
+    if ($('ecommerceOrderIdGroup'))  $('ecommerceOrderIdGroup').style.display = 'none';
+    if ($('ecommerceOrderId'))       $('ecommerceOrderId').value = '';
     const c = $('orderItemsContainer'); if (c) { c.innerHTML = ''; appState.itemRowCounter = 0; addItemRow(); }
     // Clear replacement mode if active
     appState.replacementMode = null;
@@ -7297,7 +7439,16 @@
   // ================================================================
   // REJECTED ITEMS PAGE
   // ================================================================
+  // Manual rejected items can be added/edited/deleted only by accounting + super-admin.
+  function canManageRejected() {
+    var r = currentUserRole();
+    return r === 'SUPER_ADMIN' || r === 'ACCOUNTING';
+  }
+
   function initRejectedItemsView() {
+    // Show the Add button only for accounting + super-admin.
+    var addBtn = $('btn-add-rejected');
+    if (addBtn) addBtn.style.display = canManageRejected() ? '' : 'none';
     // Pre-fill date range to current month if empty
     var startEl = $('rejected-start');
     var endEl   = $('rejected-end');
@@ -7318,7 +7469,7 @@
     var tb    = $('rejected-items-tbody');
     var tf    = $('rejected-items-tfoot');
     var pdfBtn = $('btn-rejected-pdf');
-    if (tb) tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    if (tb) tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
     if (tf) tf.innerHTML = '';
     if (pdfBtn) pdfBtn.style.display = 'none';
 
@@ -7335,7 +7486,7 @@
       })
       .catch(function() {
         var tb2 = $('rejected-items-tbody');
-        if (tb2) tb2.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#EF4444;padding:24px;">Failed to load rejected items</td></tr>';
+        if (tb2) tb2.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#EF4444;padding:24px;">Failed to load rejected items</td></tr>';
       });
   };
 
@@ -7347,12 +7498,14 @@
 
     var items = data.items || [];
 
+    var canManage = canManageRejected();
     var sourceBadge = function(src) {
       var map = {
         'DELIVERY': '<span class="badge badge-ok">Delivery</span>',
         'VOID':     '<span class="badge badge-crit">Void</span>',
         'CANCEL':   '<span class="badge badge-low">Cancel</span>',
         'RETURN':   '<span class="badge badge-low">Return</span>',
+        'MANUAL':   '<span class="badge" style="background:#6366F1;color:#fff;">Manual</span>',
       };
       return map[src] || '<span class="badge">' + escapeHtml(src) + '</span>';
     };
@@ -7365,7 +7518,7 @@
     };
 
     if (!items.length) {
-      tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">No rejected items found for this period.</td></tr>';
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">No rejected items found for this period.</td></tr>';
       if (tf) tf.innerHTML = '';
       if (pdfBtn) pdfBtn.style.display = 'none';
       return;
@@ -7377,6 +7530,16 @@
       var chevron = isDelivery
         ? '<button onclick="toggleRiDetail(' + i + ')" id="ri-btn-' + i + '" style="background:none;border:none;cursor:pointer;padding:0 4px;color:var(--text-muted);" title="Show delivery detail"><i class="ti ti-chevron-down" id="ri-icon-' + i + '"></i></button>'
         : '';
+      // Edit/Delete only for manual entries (rows carrying an id) and only for accounting/super-admin.
+      var actionsCell;
+      if (r.source === 'MANUAL' && r.id != null && canManage) {
+        actionsCell = '<td style="text-align:center;white-space:nowrap;">' +
+          '<button class="icon-btn" onclick="editManualRejected(' + r.id + ')" title="Edit"><i class="ti ti-edit" style="color:#D4860A;"></i></button>' +
+          '<button class="icon-btn" onclick="deleteManualRejected(' + r.id + ')" title="Delete"><i class="ti ti-trash" style="color:#EF4444;"></i></button>' +
+          '</td>';
+      } else {
+        actionsCell = '<td style="text-align:center;color:var(--border);">—</td>';
+      }
       rows += '<tr>' +
         '<td style="font-size:12px;white-space:nowrap;">' + escapeHtml(r.date || '—') + chevron + '</td>' +
         '<td>' + sourceBadge(r.source) + '</td>' +
@@ -7384,10 +7547,11 @@
         '<td style="font-size:13px;font-weight:600;">' + escapeHtml(r.productName || '—') + '</td>' +
         '<td style="text-align:right;font-weight:700;color:#EF4444;">' + (r.rejectedQty || 0) + '</td>' +
         '<td style="font-size:12px;color:var(--text-secondary);">' + truncReason(r.reason) + '</td>' +
+        actionsCell +
         '</tr>';
       if (isDelivery) {
         rows += '<tr id="ri-detail-' + i + '" style="display:none;background:var(--bg-secondary);">' +
-          '<td colspan="6" style="padding:8px 16px;">' +
+          '<td colspan="7" style="padding:8px 16px;">' +
           '<span style="font-size:11px;color:var(--text-muted);margin-right:20px;"><strong>Supplier:</strong> ' + escapeHtml(r.supplierName || '—') + '</span>' +
           '<span style="font-size:11px;color:var(--text-muted);margin-right:20px;"><strong>PO #:</strong> ' + escapeHtml(r.poNumber || '—') + '</span>' +
           '<span style="font-size:11px;color:var(--text-muted);"><strong>Received By:</strong> ' + escapeHtml(r.receivedBy || '—') + '</span>' +
@@ -7411,6 +7575,98 @@
       row.style.display = 'none';
       if (icon) icon.style.transform = '';
     }
+  };
+
+  // ── Manual rejected items: add / edit / delete (accounting + super-admin) ──
+  var _editingManualRejectedId = null;
+
+  function _populateManualRejectedProductList() {
+    var dl = $('mr-product-list');
+    if (!dl) return;
+    var prods = (appState.inventoryAllProducts && appState.inventoryAllProducts.length)
+              ? appState.inventoryAllProducts
+              : (appState.cachedProducts || []);
+    window._mrNameToId = {};
+    dl.innerHTML = '';
+    prods.forEach(function(p) {
+      if (!p || !p.name) return;
+      if (p.active === false) return;
+      window._mrNameToId[p.name.toLowerCase()] = p.id;
+      var opt = document.createElement('option');
+      opt.value = p.name;
+      dl.appendChild(opt);
+    });
+  }
+
+  window.openManualRejectedModal = function() {
+    if (!canManageRejected()) { showToast('Not permitted', 'error'); return; }
+    _editingManualRejectedId = null;
+    _populateManualRejectedProductList();
+    var today = new Date();
+    if ($('mr-date'))    $('mr-date').value = today.getFullYear() + '-' + pad(today.getMonth() + 1, 2) + '-' + pad(today.getDate(), 2);
+    if ($('mr-qty'))     $('mr-qty').value = '1';
+    if ($('mr-product')) $('mr-product').value = '';
+    if ($('mr-reason'))  $('mr-reason').value = '';
+    if ($('mr-modal-title')) $('mr-modal-title').textContent = 'Add Rejected Item';
+    if ($('mr-submit-btn'))  $('mr-submit-btn').textContent = 'Add Rejected Item';
+    $('modal-manual-rejected').classList.add('open');
+  };
+
+  window.editManualRejected = function(id) {
+    if (!canManageRejected()) { showToast('Not permitted', 'error'); return; }
+    var r = (window._rejectedData || []).find(function(x){ return x.source === 'MANUAL' && String(x.id) === String(id); });
+    if (!r) { showToast('Item not found — reload the list', 'error'); return; }
+    _editingManualRejectedId = id;
+    _populateManualRejectedProductList();
+    if ($('mr-date'))    $('mr-date').value = r.date || '';
+    if ($('mr-qty'))     $('mr-qty').value = r.rejectedQty || 1;
+    if ($('mr-product')) $('mr-product').value = r.productName || '';
+    if ($('mr-reason'))  $('mr-reason').value = r.reason || '';
+    if ($('mr-modal-title')) $('mr-modal-title').textContent = 'Edit Rejected Item';
+    if ($('mr-submit-btn'))  $('mr-submit-btn').textContent = 'Update Rejected Item';
+    $('modal-manual-rejected').classList.add('open');
+  };
+
+  window.submitManualRejected = function() {
+    var date = (($('mr-date') || {}).value || '').trim();
+    var qty  = parseInt(($('mr-qty') || {}).value || 0, 10) || 0;
+    var name = (($('mr-product') || {}).value || '').trim();
+    var reason = (($('mr-reason') || {}).value || '').trim();
+    if (!name) { showToast('Product is required', 'error'); return; }
+    if (qty <= 0) { showToast('Rejected quantity must be greater than 0', 'error'); return; }
+    var productId = (window._mrNameToId || {})[name.toLowerCase()] || null;
+    var body = { date: date, rejectedQty: qty, productName: name, productId: productId, reason: reason || null };
+    var editing = _editingManualRejectedId != null;
+    var url = API_BASE + '/api/reports/rejected-items/manual' + (editing ? '/' + _editingManualRejectedId : '');
+    fetch(url, {
+      method: editing ? 'PUT' : 'POST',
+      headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+      body: JSON.stringify(body)
+    })
+    .then(function(res){ return res.json().then(function(d){ return {ok: res.ok, data: d}; }); })
+    .then(function(r){
+      if (!r.ok) { showToast(r.data.message || 'Failed to save', 'error'); return; }
+      closeModal('modal-manual-rejected');
+      _editingManualRejectedId = null;
+      showToast(editing ? 'Rejected item updated' : 'Rejected item added', 'success');
+      loadRejectedItems();
+    })
+    .catch(function(err){ showToast('Error: ' + (err.message || err), 'error'); });
+  };
+
+  window.deleteManualRejected = function(id) {
+    if (!canManageRejected()) { showToast('Not permitted', 'error'); return; }
+    if (!confirm('Delete this manually-recorded rejected item?')) return;
+    fetch(API_BASE + '/api/reports/rejected-items/manual/' + id, {
+      method: 'DELETE', headers: authHeaders()
+    })
+    .then(function(res){ return res.json().then(function(d){ return {ok: res.ok, data: d}; }); })
+    .then(function(r){
+      if (!r.ok) { showToast(r.data.message || 'Failed to delete', 'error'); return; }
+      showToast('Rejected item deleted', 'success');
+      loadRejectedItems();
+    })
+    .catch(function(err){ showToast('Error: ' + (err.message || err), 'error'); });
   };
 
   window.downloadRejectedPDF = function () {
@@ -8417,17 +8673,21 @@
         if (descList) descList.innerHTML = '';
 
         products.filter(function(p){ return p.active !== false; }).forEach(function(p){
-          if (!p.itemCode) return; // skip products without an item code
           var name = p.name || '';
-          // productId stored alongside so lookupPoItemCode can match supplier mappings
-          _poItemCodeMap[p.itemCode.toUpperCase()] = { name: name, unitCost: p.unitCost || 0, productId: p.id };
-          _poDescMap[name.toLowerCase()] = p.itemCode.toUpperCase();
-
-          if (codeList) {
-            var opt = document.createElement('option');
-            opt.value = p.itemCode.toUpperCase();
-            opt.label = p.itemCode.toUpperCase() + ' — ' + name;
-            codeList.appendChild(opt);
+          if (!name) return;
+          var code = p.itemCode ? p.itemCode.toUpperCase() : null;
+          // Desc map is keyed by product NAME → full info, so items WITHOUT an item
+          // code are still selectable by name (the backend links lines by productId).
+          _poDescMap[name.toLowerCase()] = { productId: p.id, itemCode: code, name: name, unitCost: p.unitCost || 0 };
+          if (code) {
+            // productId stored alongside so lookupPoItemCode can match supplier mappings
+            _poItemCodeMap[code] = { name: name, unitCost: p.unitCost || 0, productId: p.id };
+            if (codeList) {
+              var opt = document.createElement('option');
+              opt.value = code;
+              opt.label = code + ' — ' + name;
+              codeList.appendChild(opt);
+            }
           }
           if (descList) {
             var opt2 = document.createElement('option');
@@ -8549,6 +8809,7 @@
     input.style.outline = ''; // reset
     var row   = input.closest('tr');
     if (!row) return;
+    if (info.productId) row.setAttribute('data-product-id', info.productId);
     var descEl  = row.querySelector('.po-item-desc');
     var priceEl = row.querySelector('.po-item-price');
     var hintEl  = row.querySelector('.po-supplier-hint');
@@ -8572,8 +8833,8 @@
   window.lookupPoItemDesc = function(input) {
     var name = (input.value || '').trim();
     if (!name) return;
-    var code = _poDescMap[name.toLowerCase()];
-    if (!code) {
+    var info = _poDescMap[name.toLowerCase()];
+    if (!info) {
       // Typed a name that doesn't match any inventory product
       input.style.outline = '2px solid #EF4444';
       showToast('Product "' + name + '" was not found in inventory. Please select from the list.', 'error');
@@ -8582,13 +8843,32 @@
     input.style.outline = '';
     var row = input.closest('tr');
     if (!row) return;
+    // Record the resolved product on the row so submit can link the line even
+    // when the product has no item code.
+    if (info.productId) row.setAttribute('data-product-id', info.productId);
     var codeEl = row.querySelector('.po-item-code');
-    if (codeEl) {
-      codeEl.value = code;
+    if (info.itemCode && codeEl) {
+      codeEl.value = info.itemCode;
       codeEl.style.outline = '';
       // Delegate to lookupPoItemCode — sets description, price, and supplier hint in one place
       lookupPoItemCode(codeEl);
+      return;
     }
+    // Product has no item code — fill description + price directly, leave code blank.
+    if (codeEl) { codeEl.value = ''; codeEl.style.outline = ''; }
+    var descEl  = row.querySelector('.po-item-desc');
+    var priceEl = row.querySelector('.po-item-price');
+    var hintEl  = row.querySelector('.po-supplier-hint');
+    if (descEl) { descEl.value = info.name; descEl.style.outline = ''; }
+    var sm = info.productId ? _poSupplierMappings[info.productId] : null;
+    if (sm && sm.supplierItemCode) {
+      if (hintEl) { hintEl.textContent = 'Supplier code: ' + sm.supplierItemCode; hintEl.style.display = ''; }
+      if (priceEl) priceEl.value = sm.unitCost != null ? sm.unitCost : (info.unitCost || 0);
+    } else {
+      if (hintEl) { hintEl.textContent = ''; hintEl.style.display = 'none'; }
+      if (priceEl) priceEl.value = info.unitCost || 0;
+    }
+    calculatePoTotal();
   };
 
   window.calculatePoTotal = function() {
@@ -8623,22 +8903,26 @@
       var desc   = ((descEl || {}).value || '').trim();
       // Skip blank rows
       if (!code && !desc) return;
-      // Item code is required and must exist in inventory
-      if (!code) {
+      // Resolve the product: by item code if present, else by name, else the
+      // productId stamped on the row. Item code is OPTIONAL (backend links by productId).
+      var info = null, productId = null, resolvedCode = null, resolvedName = null;
+      if (code && _poItemCodeMap[code]) {
+        info = _poItemCodeMap[code]; productId = info.productId; resolvedCode = code; resolvedName = info.name;
+      } else if (desc && _poDescMap[desc.toLowerCase()]) {
+        info = _poDescMap[desc.toLowerCase()]; productId = info.productId; resolvedCode = info.itemCode || null; resolvedName = info.name;
+      } else if (tr.getAttribute('data-product-id')) {
+        productId = parseInt(tr.getAttribute('data-product-id'), 10) || null; resolvedCode = code || null;
+      }
+      if (!productId) {
+        if (descEl) descEl.style.outline = '2px solid #EF4444';
         if (codeEl) codeEl.style.outline = '2px solid #EF4444';
-        showToast('Item code is required for every line. Select a product from inventory.', 'error');
+        showToast('Line "' + (desc || code) + '" is not a valid inventory product. Select from the list.', 'error');
         hasError = true; return;
       }
-      if (!_poItemCodeMap[code]) {
-        if (codeEl) codeEl.style.outline = '2px solid #EF4444';
-        showToast('Item code "' + code + '" is not in the inventory. Remove or correct it.', 'error');
-        hasError = true; return;
-      }
-      var info = _poItemCodeMap[code];
       items.push({
-        itemCode:        code,
-        productId:       info.productId || null,
-        itemDescription: desc || info.name,
+        itemCode:        resolvedCode,
+        productId:       productId,
+        itemDescription: desc || resolvedName || '',
         quantityOrdered: parseInt((tr.querySelector('.po-item-qty')   || {}).value || 1, 10),
         unitPrice:       parseFloat((tr.querySelector('.po-item-price') || {}).value || 0)
       });

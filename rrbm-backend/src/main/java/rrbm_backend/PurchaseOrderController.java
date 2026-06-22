@@ -87,7 +87,14 @@ public class PurchaseOrderController {
             @RequestBody Map<String, Object> body,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         Long userId = userIdFromHeader(authHeader);
-        String poNumber = poService.generatePoNumber(LocalDate.now());
+        // PO number is entered manually by the user (no longer auto-generated).
+        String poNumber = body.get("poNumber") != null ? body.get("poNumber").toString().trim() : "";
+        if (poNumber.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "PO number is required"));
+        }
+        if (poRepository.findByPoNumber(poNumber).isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "PO number " + poNumber + " already exists"));
+        }
         String vendorName = body.getOrDefault("vendorName", "").toString().trim();
         if (vendorName.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Vendor name is required"));

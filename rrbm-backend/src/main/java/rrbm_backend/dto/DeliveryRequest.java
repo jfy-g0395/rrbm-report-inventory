@@ -18,6 +18,8 @@ public class DeliveryRequest {
     private String encodedByName;   // Logged-in admin who encoded the receipt
     private String notes;           // Optional remarks (e.g., damaged items)
     private String poNumber;        // Optional — links this DR to a specific Purchase Order
+    private String truckPlate;      // Optional — delivering truck's plate number
+    private String driverName;      // Optional — delivery driver's name
     private List<DeliveryItem> items;
 
     @Data
