@@ -2616,9 +2616,13 @@
     }
   };
 
+  var _deliveryEditId = null;
+  var _deliveryEditKey = null;
+
   window.openDeliveryDetail = function (id) {
     var r = _deliveryRecords.find(function(x){ return x.id === id; });
     if (!r) { showToast('Record not found', 'error'); return; }
+    _deliveryEditId = id;
 
     var setText = function(elId, val){ var el = $(elId); if (el) el.textContent = val || '—'; };
     setText('dd-receipt',  r.receiptNumber);
@@ -2672,6 +2676,69 @@
     }
 
     $('modal-delivery-detail').classList.add('open');
+  };
+
+  // ── Edit a delivery report (admin-security-key gated) ─────────────────────
+  window.askDeliveryEditKey = function () {
+    if (!_deliveryEditId) { showToast('Open a delivery report first', 'error'); return; }
+    if ($('delivery-edit-key')) $('delivery-edit-key').value = '';
+    $('modal-delivery-edit-key').classList.add('open');
+  };
+
+  window.confirmDeliveryEditKey = async function () {
+    var key = (($('delivery-edit-key') || {}).value || '').trim();
+    if (!key) { showToast('Admin security key is required', 'error'); return; }
+    try {
+      var vRes = await fetch(API_BASE + '/api/auth/verify-security-key', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ securityKey: key })
+      });
+      if (!vRes.ok) {
+        var vData = await vRes.json().catch(function () { return {}; });
+        showToast(vData.message || 'Incorrect security key', 'error'); return;
+      }
+      _deliveryEditKey = key;
+      closeModal('modal-delivery-edit-key');
+      var r = _deliveryRecords.find(function (x) { return x.id === _deliveryEditId; }) || {};
+      if ($('de-truck'))    $('de-truck').value    = r.truckPlate || '';
+      if ($('de-driver'))   $('de-driver').value   = r.driverName || '';
+      if ($('de-received')) $('de-received').value  = r.receivedBy || '';
+      if ($('de-verified')) $('de-verified').value  = r.verifiedBy || '';
+      if ($('de-notes'))    $('de-notes').value     = r.notes || '';
+      $('modal-delivery-edit').classList.add('open');
+    } catch (err) {
+      showToast('Connection error', 'error');
+    }
+  };
+
+  window.submitDeliveryEdit = async function () {
+    if (!_deliveryEditId || !_deliveryEditKey) { showToast('Re-open and unlock the report first', 'error'); return; }
+    var body = {
+      securityKey: _deliveryEditKey,
+      truckPlate:  (($('de-truck')    || {}).value || '').trim(),
+      driverName:  (($('de-driver')   || {}).value || '').trim(),
+      receivedBy:  (($('de-received') || {}).value || '').trim(),
+      verifiedBy:  (($('de-verified') || {}).value || '').trim(),
+      notes:       (($('de-notes')    || {}).value || '').trim()
+    };
+    try {
+      var res = await fetch(API_BASE + '/api/delivery-reports/' + _deliveryEditId, {
+        method: 'PATCH', headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify(body)
+      });
+      var d = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast(d.message || 'Failed to save', 'error'); return; }
+      // Update in-memory record so detail + list reflect the change
+      var idx = _deliveryRecords.findIndex(function (x) { return x.id === _deliveryEditId; });
+      if (idx >= 0) _deliveryRecords[idx] = d;
+      _deliveryEditKey = null;
+      closeModal('modal-delivery-edit');
+      showToast('Delivery report updated', 'success');
+      // Refresh the detail view from the updated in-memory record, then the list.
+      openDeliveryDetail(_deliveryEditId);
+      if (typeof renderDeliveryReports === 'function') renderDeliveryReports(true);
+    } catch (err) {
+      showToast('Connection error', 'error');
+    }
   };
 
   window.viewNotes = function (notes) {

@@ -3198,6 +3198,79 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-delivery-detail')">Close</button>
+        <button class="btn btn-primary" onclick="askDeliveryEditKey()">
+          <i class="ti ti-edit" style="margin-right:4px;"></i>Edit
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DELIVERY EDIT — admin security key gate -->
+  <div class="modal-overlay" id="modal-delivery-edit-key">
+    <div class="modal-box" style="max-width:420px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;">
+          <i class="ti ti-lock" style="margin-right:6px;color:#D4860A;"></i>Admin Security Key
+        </div>
+        <button class="icon-btn" onclick="closeModal('modal-delivery-edit-key')"><i class="ti ti-x"></i></button>
+      </div>
+      <div style="padding:16px 18px;">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">
+          Enter your admin security key to edit this delivery report.
+        </p>
+        <input type="password" class="form-control" id="delivery-edit-key"
+               placeholder="Admin security key" autocomplete="off" style="width:100%;">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-delivery-edit-key')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmDeliveryEditKey()">
+          <i class="ti ti-lock-open" style="margin-right:4px;"></i>Unlock
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: DELIVERY EDIT — safe metadata fields -->
+  <div class="modal-overlay" id="modal-delivery-edit">
+    <div class="modal-box" style="max-width:480px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;">
+          <i class="ti ti-edit" style="margin-right:6px;color:#D4860A;"></i>Edit Delivery Report
+        </div>
+        <button class="icon-btn" onclick="closeModal('modal-delivery-edit')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="row mb-2">
+          <div class="col-md-6">
+            <label class="form-label">Truck Plate #</label>
+            <input type="text" class="form-control" id="de-truck" maxlength="40" autocomplete="off" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Driver</label>
+            <input type="text" class="form-control" id="de-driver" maxlength="120" autocomplete="off" />
+          </div>
+        </div>
+        <div class="row mb-2">
+          <div class="col-md-6">
+            <label class="form-label">Received By</label>
+            <input type="text" class="form-control" id="de-received" autocomplete="off" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Verified By</label>
+            <input type="text" class="form-control" id="de-verified" autocomplete="off" />
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Notes</label>
+          <input type="text" class="form-control" id="de-notes" autocomplete="off" />
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin:4px 0 0;">
+          Supplier, receipt #, and line items can't be edited here.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-delivery-edit')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitDeliveryEdit()">Save Changes</button>
       </div>
     </div>
   </div>

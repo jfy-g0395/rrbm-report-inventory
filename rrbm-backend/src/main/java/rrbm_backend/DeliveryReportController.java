@@ -16,19 +16,30 @@ public class DeliveryReportController {
     private final PurchaseOrderRepository  purchaseOrderRepository;
     private final PoItemRepository         poItemRepository;
     private final PayableRepository        payableRepository;
+    private final JwtUtil                  jwtUtil;
+    private final UserRepository           userRepository;
+    private final ActivityLogService       activityLogService;
+    private final org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder passwordEncoder
+            = new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
 
     public DeliveryReportController(DeliveryLogRepository repo,
                                     ProductRepository productRepository,
                                     MasterKeyService masterKeyService,
                                     PurchaseOrderRepository purchaseOrderRepository,
                                     PoItemRepository poItemRepository,
-                                    PayableRepository payableRepository) {
+                                    PayableRepository payableRepository,
+                                    JwtUtil jwtUtil,
+                                    UserRepository userRepository,
+                                    ActivityLogService activityLogService) {
         this.repo                    = repo;
         this.productRepository       = productRepository;
         this.masterKeyService        = masterKeyService;
         this.purchaseOrderRepository = purchaseOrderRepository;
         this.poItemRepository        = poItemRepository;
         this.payableRepository       = payableRepository;
+        this.jwtUtil                 = jwtUtil;
+        this.userRepository          = userRepository;
+        this.activityLogService      = activityLogService;
     }
 
     @GetMapping
@@ -41,6 +52,63 @@ public class DeliveryReportController {
         return repo.findById(id)
                 .map(r -> ResponseEntity.ok((Object) r))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // ── Edit a delivery report's safe metadata (admin-security-key gated) ──────
+    // Only truck plate, driver, received-by, verified-by, and notes are editable.
+    // Supplier, receipt number, PO link, line items, status and stock are NOT touched.
+    @PatchMapping("/{id}")
+    @Transactional
+    public ResponseEntity<?> editDeliveryReport(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        // ── 1. Resolve caller ──────────────────────────────────────────────
+        Long userId = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try { userId = jwtUtil.extractUserId(authHeader.substring(7)); } catch (Exception ignored) {}
+        }
+        if (userId == null) return ResponseEntity.status(401).body(Map.of("message", "Unauthorized"));
+        User caller = userRepository.findById(userId).orElse(null);
+        if (caller == null) return ResponseEntity.status(401).body(Map.of("message", "Unauthorized"));
+
+        // ── 2. Validate admin security key (same BCrypt check as AuthController) ──
+        String providedKey = body.get("securityKey") != null ? body.get("securityKey").toString().trim() : "";
+        if (caller.getAdminSecurityKey() == null) {
+            return ResponseEntity.status(403).body(Map.of(
+                "message", "No admin security key has been set for your account. Ask your Super Admin to assign one."));
+        }
+        if (providedKey.isEmpty() || !passwordEncoder.matches(providedKey, caller.getAdminSecurityKey())) {
+            return ResponseEntity.status(403).body(Map.of("message", "Incorrect admin security key"));
+        }
+
+        // ── 3. Load record ─────────────────────────────────────────────────
+        DeliveryLog log = repo.findById(id).orElse(null);
+        if (log == null) return ResponseEntity.notFound().build();
+
+        // ── 4. Update only the safe metadata fields that were provided ──────
+        if (body.containsKey("truckPlate"))  log.setTruckPlate(blankToNull(body.get("truckPlate")));
+        if (body.containsKey("driverName"))  log.setDriverName(blankToNull(body.get("driverName")));
+        if (body.containsKey("verifiedBy"))  log.setVerifiedBy(blankToNull(body.get("verifiedBy")));
+        if (body.containsKey("notes"))       log.setNotes(blankToNull(body.get("notes")));
+        // received_by is NOT NULL in the schema — keep the existing value if blank is sent
+        if (body.containsKey("receivedBy")) {
+            String rb = blankToNull(body.get("receivedBy"));
+            if (rb != null) log.setReceivedBy(rb);
+        }
+
+        repo.save(log);
+        activityLogService.log(userId, caller.getFullName(), "EDIT_DELIVERY_REPORT",
+            "Edited delivery report " + log.getReceiptNumber() + " (truck/driver/metadata)",
+            "DELIVERY_LOG", String.valueOf(id));
+        return ResponseEntity.ok(log);
+    }
+
+    private String blankToNull(Object val) {
+        if (val == null) return null;
+        String s = val.toString().trim();
+        return s.isEmpty() ? null : s;
     }
 
     @PatchMapping("/{id}/cancel")
