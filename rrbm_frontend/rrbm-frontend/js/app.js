@@ -185,9 +185,9 @@
 
   const ROLE_DEFAULT_PAGES = {
     'STANDARD_USER':  ['orders','rejected-items','receive-stocks','inventory','delivery-reports'],
-    'ACCOUNTING':     ['dashboard','orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import'],
-    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import'],
-    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import'],
+    'ACCOUNTING':     ['dashboard','orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
     'SUPER_ADMIN':    null
   };
 

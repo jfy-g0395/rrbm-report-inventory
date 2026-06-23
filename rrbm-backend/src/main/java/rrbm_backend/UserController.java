@@ -25,7 +25,7 @@ public class UserController {
         List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "STANDARD_USER");
 
     private static final String ALL_PAGES =
-        "[\"dashboard\",\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-reports\",\"activity-log\",\"employees\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]";
+        "[\"dashboard\",\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-reports\",\"activity-log\",\"employees\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\",\"cash-flow\"]";
 
     private static final Map<String, String> ROLE_DEFAULT_PAGES;
     static {
