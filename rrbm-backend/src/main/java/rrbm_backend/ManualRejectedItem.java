@@ -17,6 +17,7 @@ public class ManualRejectedItem {
 
     @Column(name = "report_date", nullable = false) private LocalDate reportDate;
     @Column(name = "product_id") private Long productId;
+    @Column(name = "product_code") private String productCode;
     @Column(name = "product_name", nullable = false) private String productName;
     @Column(name = "rejected_qty", nullable = false) private int rejectedQty;
     @Column(name = "reason") private String reason;
@@ -34,6 +35,8 @@ public class ManualRejectedItem {
     public void setReportDate(LocalDate reportDate) { this.reportDate = reportDate; }
     public Long getProductId() { return productId; }
     public void setProductId(Long productId) { this.productId = productId; }
+    public String getProductCode() { return productCode; }
+    public void setProductCode(String productCode) { this.productCode = productCode; }
     public String getProductName() { return productName; }
     public void setProductName(String productName) { this.productName = productName; }
     public int getRejectedQty() { return rejectedQty; }

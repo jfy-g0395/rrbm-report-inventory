@@ -65,7 +65,8 @@ public class AuthService {
             user.getFullName(),
             user.getRole(),
             user.getAllowedPages(),      // null for SUPER_ADMIN = no restrictions
-            user.isMustChangePassword() // true → force password-change dialog on login
+            user.isMustChangePassword(),// true → force password-change dialog on login
+            user.getProfileImage()       // base64 data-URL for the sidebar avatar, null if none
         );
         
         return new LoginResponse(token, userInfo);

@@ -1727,9 +1727,20 @@
         showToast('Error: ' + (d.message || 'Failed to save changes'), 'error');
         return;
       }
+      // Merge edited fields into the in-memory product and update just its row,
+      // so the list keeps its scroll position instead of refetching/jumping.
+      var prod = (appState.inventoryAllProducts || []).find(function (x) { return String(x.id) === String(id); });
+      if (prod) {
+        prod.name = name;
+        prod.productCode = body.productCode; prod.category = body.category; prod.subCategory = body.subCategory;
+        prod.itemCode = body.itemCode; prod.description = body.description;
+        prod.unitPrice = body.unitPrice; prod.unitCost = body.unitCost;
+        prod.stockWh1 = body.stockWh1; prod.stockWh2 = body.stockWh2; prod.stockWh3 = body.stockWh3;
+        prod.active = body.active; prod.isSet = body.isSet;
+      }
       closeModal('modal-editprod-form');
       showToast('Product updated successfully', 'success');
-      await renderInventory();
+      if (prod) { updateInventoryRowInPlace(id); } else { await renderInventory(); }
       await loadProducts();
     } catch (err) {
       showToast('Connection error. Is the backend running?', 'error');
@@ -1805,12 +1816,25 @@
     const filterStatus = ($('inv-status-filter') ? $('inv-status-filter').value : '').trim();
     if (filterStatus) products = products.filter(function (p) { return stockStatusOf(p) === filterStatus; });
 
+    // Stable ordering: group by category, then alphabetical by product name.
+    products.sort(function (a, b) {
+      return (a.category || '').localeCompare(b.category || '')
+          || (a.name || '').localeCompare(b.name || '');
+    });
+
     if (products.length === 0) {
       tb.innerHTML = '<tr><td colspan="' + (canEdit ? '12' : '11') + '" style="text-align:center;color:var(--text-muted);padding:20px;">No products found</td></tr>';
       return;
     }
 
-    tb.innerHTML = products.map(function (p) {
+    tb.innerHTML = products.map(buildInventoryRowHTML).join('');
+  }
+
+  // Build one inventory table row. Standalone (computes its own canEdit) so a
+  // single row can be re-rendered in place after an edit/stock update without
+  // rebuilding — and scrolling — the whole table.
+  function buildInventoryRowHTML(p) {
+      const canEdit = canEditInventory();
       const wh1 = p.stockWh1 || 0, wh2 = p.stockWh2 || 0, wh3 = p.stockWh3 || 0;
       const total = wh1 + wh2 + wh3;
       const tag = (p.sellingTag || 'SELLING').toUpperCase();
@@ -1876,7 +1900,7 @@
           + '</td>'
         : '';
 
-      return '<tr class="' + rowClass + '">'
+      return '<tr data-id="' + p.id + '" class="' + rowClass + '">'
         + '<td>' + codeCell + '</td>'
         + '<td>' + itemCodeCell + '</td>'
         + '<td><span style="' + nameStyle + '">' + p.name + '</span>' + setBadge + componentBadge + subCatLabel + inactiveLabel + setEffectiveNote + '</td>'
@@ -1890,7 +1914,23 @@
         + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">—</span>' : badge) + '</td>'
         + editCell
         + '</tr>';
-    }).join('');
+  }
+
+  // Re-render just one inventory row from the in-memory product, keeping scroll
+  // position, and briefly highlight it. Falls back to a full render if the row
+  // isn't currently shown (e.g. filtered out).
+  function updateInventoryRowInPlace(id) {
+    const tb = $('inv-tbody'); if (!tb) return;
+    const p = (appState.inventoryAllProducts || []).find(function (x) { return String(x.id) === String(id); });
+    const row = tb.querySelector('tr[data-id="' + id + '"]');
+    if (!p || !row) { applyInventoryFilters(); return; }
+    row.outerHTML = buildInventoryRowHTML(p);
+    const fresh = tb.querySelector('tr[data-id="' + id + '"]');
+    if (fresh) {
+      fresh.style.transition = 'background-color 1.2s ease';
+      fresh.style.backgroundColor = 'rgba(212,134,10,0.30)';
+      setTimeout(function () { fresh.style.backgroundColor = ''; }, 1200);
+    }
   }
 
   window.updateProductTag = async function (selectEl) {
@@ -1907,15 +1947,15 @@
         const p = appState.inventoryAllProducts.find(function (x) { return String(x.id) === String(id); });
         if (p) p.sellingTag = tag;
         showToast('Tag updated to ' + tag, 'success');
-        applyInventoryFilters();
+        updateInventoryRowInPlace(id);
       } else {
         const d = await res.json();
         showToast('Error: ' + (d.message || 'Failed to update tag'), 'error');
-        applyInventoryFilters();
+        updateInventoryRowInPlace(id);
       }
     } catch (err) {
       showToast('Connection error', 'error');
-      applyInventoryFilters();
+      updateInventoryRowInPlace(id);
     }
   };
 
@@ -1943,12 +1983,13 @@
       });
       var d = await res.json().catch(function () { return {}; });
       if (!res.ok) { showToast('Error: ' + (d.message || 'Failed to delete'), 'error'); return; }
-      var p = (appState.inventoryAllProducts || []).find(function (x) { return String(x.id) === String(_deleteProductId); });
+      var _deletedId = _deleteProductId;
+      var p = (appState.inventoryAllProducts || []).find(function (x) { return String(x.id) === String(_deletedId); });
       if (p) p.active = false;
       closeModal('modal-delete-product');
       _deleteProductId = null;
       showToast('Item deleted (deactivated)', 'success');
-      applyInventoryFilters();
+      updateInventoryRowInPlace(_deletedId);
     } catch (err) {
       showToast('Connection error', 'error');
     }
@@ -6638,7 +6679,8 @@
       localStorage.setItem('rrbm_user', JSON.stringify(user));
 
       const av = $('sidebar-avatar'), un = $('sidebar-name'), ur = $('sidebar-role');
-      if (av && user.fullName) av.textContent = user.fullName.split(' ').map(function (n) { return n[0]; }).join('').slice(0, 2).toUpperCase();
+      if (av && user.profileImage) { av.innerHTML = '<img src="' + user.profileImage + '" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;" />'; }
+      else if (av && user.fullName) { av.innerHTML = ''; av.textContent = user.fullName.split(' ').map(function (n) { return n[0]; }).join('').slice(0, 2).toUpperCase(); }
       if (un) un.textContent = user.fullName;
       if (ur && user.role) ur.textContent = user.role.replace(/_/g, ' ');
 
@@ -7665,7 +7707,7 @@
     var tb    = $('rejected-items-tbody');
     var tf    = $('rejected-items-tfoot');
     var pdfBtn = $('btn-rejected-pdf');
-    if (tb) tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    if (tb) tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
     if (tf) tf.innerHTML = '';
     if (pdfBtn) pdfBtn.style.display = 'none';
 
@@ -7682,7 +7724,7 @@
       })
       .catch(function() {
         var tb2 = $('rejected-items-tbody');
-        if (tb2) tb2.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#EF4444;padding:24px;">Failed to load rejected items</td></tr>';
+        if (tb2) tb2.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#EF4444;padding:24px;">Failed to load rejected items</td></tr>';
       });
   };
 
@@ -7714,7 +7756,7 @@
     };
 
     if (!items.length) {
-      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">No rejected items found for this period.</td></tr>';
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">No rejected items found for this period.</td></tr>';
       if (tf) tf.innerHTML = '';
       if (pdfBtn) pdfBtn.style.display = 'none';
       return;
@@ -7740,6 +7782,7 @@
         '<td style="font-size:12px;white-space:nowrap;">' + escapeHtml(r.date || '—') + chevron + '</td>' +
         '<td>' + sourceBadge(r.source) + '</td>' +
         '<td><span style="font-family:monospace;font-size:11px;background:var(--bg-secondary);padding:1px 5px;border-radius:3px;">' + escapeHtml(r.reference || '—') + '</span></td>' +
+        '<td><span style="font-family:monospace;font-size:11px;color:var(--text-muted);">' + escapeHtml(r.productCode || '—') + '</span></td>' +
         '<td style="font-size:13px;font-weight:600;">' + escapeHtml(r.productName || '—') + '</td>' +
         '<td style="text-align:right;font-weight:700;color:#EF4444;">' + (r.rejectedQty || 0) + '</td>' +
         '<td style="font-size:12px;color:var(--text-secondary);">' + truncReason(r.reason) + '</td>' +
@@ -7747,7 +7790,7 @@
         '</tr>';
       if (isDelivery) {
         rows += '<tr id="ri-detail-' + i + '" style="display:none;background:var(--bg-secondary);">' +
-          '<td colspan="7" style="padding:8px 16px;">' +
+          '<td colspan="8" style="padding:8px 16px;">' +
           '<span style="font-size:11px;color:var(--text-muted);margin-right:20px;"><strong>Supplier:</strong> ' + escapeHtml(r.supplierName || '—') + '</span>' +
           '<span style="font-size:11px;color:var(--text-muted);margin-right:20px;"><strong>PO #:</strong> ' + escapeHtml(r.poNumber || '—') + '</span>' +
           '<span style="font-size:11px;color:var(--text-muted);"><strong>Received By:</strong> ' + escapeHtml(r.receivedBy || '—') + '</span>' +
@@ -7776,33 +7819,67 @@
   // ── Manual rejected items: add / edit / delete (accounting + super-admin) ──
   var _editingManualRejectedId = null;
 
-  function _populateManualRejectedProductList() {
-    var dl = $('mr-product-list');
-    if (!dl) return;
-    var prods = (appState.inventoryAllProducts && appState.inventoryAllProducts.length)
-              ? appState.inventoryAllProducts
-              : (appState.cachedProducts || []);
-    window._mrNameToId = {};
-    dl.innerHTML = '';
-    prods.forEach(function(p) {
-      if (!p || !p.name) return;
-      if (p.active === false) return;
-      window._mrNameToId[p.name.toLowerCase()] = p.id;
-      var opt = document.createElement('option');
-      opt.value = p.name;
-      dl.appendChild(opt);
+  // Smart-search product picker for the manual rejected-item modal. Only inventory
+  // products are selectable; on pick we capture productId (code + name come from
+  // inventory on the server). Wires listeners once per page load.
+  function setupManualRejectedAutocomplete() {
+    var input = $('mr-product'), dd = $('mr-product-dropdown');
+    if (!input || !dd || input._mrWired) return;
+    input._mrWired = true;
+    var render = function() {
+      var t = (input.value || '').toLowerCase().trim();
+      var prods = (appState.inventoryAllProducts && appState.inventoryAllProducts.length)
+                ? appState.inventoryAllProducts : (appState.cachedProducts || []);
+      prods = prods.filter(function(p){ return p && p.name && p.active !== false && !p.isComponent; });
+      if (t) prods = prods.filter(function(p){
+        return p.name.toLowerCase().includes(t) || (p.productCode || '').toLowerCase().includes(t);
+      });
+      prods = prods.slice(0, 50);
+      if (!prods.length) { dd.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>'; dd.classList.add('show'); return; }
+      dd.innerHTML = prods.map(function(p){
+        var code = p.productCode ? '<span style="font-family:monospace;color:#888;">' + escapeHtml(p.productCode) + '</span> · ' : '';
+        return '<div class="product-dropdown-item" data-id="' + p.id + '" data-code="' + escapeHtml(p.productCode || '') + '" data-name="' + escapeHtml(p.name) + '"><div class="product-name">' + escapeHtml(p.name) + '</div><div style="font-size:10px;color:#888;">' + code + 'inventory item</div></div>';
+      }).join('');
+      dd.classList.add('show');
+      dd.querySelectorAll('.product-dropdown-item[data-id]').forEach(function(item){
+        item.addEventListener('click', function(){
+          input.value = this.getAttribute('data-name');
+          if ($('mr-product-id')) $('mr-product-id').value = this.getAttribute('data-id');
+          var code = this.getAttribute('data-code');
+          var sel = $('mr-product-selected');
+          if (sel) sel.innerHTML = '✓ ' + (code ? '<strong>' + escapeHtml(code) + '</strong> · ' : '') + escapeHtml(this.getAttribute('data-name'));
+          dd.classList.remove('show');
+        });
+      });
+    };
+    input.addEventListener('focus', render);
+    input.addEventListener('input', function(){
+      if ($('mr-product-id')) $('mr-product-id').value = ''; // editing text invalidates a prior pick
+      var sel = $('mr-product-selected');
+      if (sel) sel.innerHTML = '<span style="color:#D97706;">⚠ Select a product from the list</span>';
+      render();
     });
+    document.addEventListener('click', function(e){ if (!input.contains(e.target) && !dd.contains(e.target)) dd.classList.remove('show'); });
+  }
+
+  function _setManualRejectedProduct(name, code) {
+    if ($('mr-product')) $('mr-product').value = name || '';
+    if ($('mr-product-id')) $('mr-product-id').value = '';
+    var sel = $('mr-product-selected');
+    if (sel) sel.innerHTML = name
+      ? '✓ ' + (code ? '<strong>' + escapeHtml(code) + '</strong> · ' : '') + escapeHtml(name)
+      : 'Pick a product from inventory — its code and name are filled automatically.';
   }
 
   window.openManualRejectedModal = function() {
     if (!canManageRejected()) { showToast('Not permitted', 'error'); return; }
     _editingManualRejectedId = null;
-    _populateManualRejectedProductList();
+    setupManualRejectedAutocomplete();
     var today = new Date();
     if ($('mr-date'))    $('mr-date').value = today.getFullYear() + '-' + pad(today.getMonth() + 1, 2) + '-' + pad(today.getDate(), 2);
     if ($('mr-qty'))     $('mr-qty').value = '1';
-    if ($('mr-product')) $('mr-product').value = '';
     if ($('mr-reason'))  $('mr-reason').value = '';
+    _setManualRejectedProduct('', '');
     if ($('mr-modal-title')) $('mr-modal-title').textContent = 'Add Rejected Item';
     if ($('mr-submit-btn'))  $('mr-submit-btn').textContent = 'Add Rejected Item';
     $('modal-manual-rejected').classList.add('open');
@@ -7813,11 +7890,18 @@
     var r = (window._rejectedData || []).find(function(x){ return x.source === 'MANUAL' && String(x.id) === String(id); });
     if (!r) { showToast('Item not found — reload the list', 'error'); return; }
     _editingManualRejectedId = id;
-    _populateManualRejectedProductList();
+    setupManualRejectedAutocomplete();
     if ($('mr-date'))    $('mr-date').value = r.date || '';
     if ($('mr-qty'))     $('mr-qty').value = r.rejectedQty || 1;
-    if ($('mr-product')) $('mr-product').value = r.productName || '';
     if ($('mr-reason'))  $('mr-reason').value = r.reason || '';
+    _setManualRejectedProduct(r.productName || '', r.productCode || '');
+    // Resolve the stored product's id so the row can be re-saved.
+    var prods = (appState.inventoryAllProducts && appState.inventoryAllProducts.length) ? appState.inventoryAllProducts : (appState.cachedProducts || []);
+    var match = prods.find(function(p){
+      return (r.productCode && p.productCode && p.productCode.toLowerCase() === String(r.productCode).toLowerCase())
+          || (p.name && r.productName && p.name.toLowerCase() === String(r.productName).toLowerCase());
+    });
+    if (match && $('mr-product-id')) $('mr-product-id').value = match.id;
     if ($('mr-modal-title')) $('mr-modal-title').textContent = 'Edit Rejected Item';
     if ($('mr-submit-btn'))  $('mr-submit-btn').textContent = 'Update Rejected Item';
     $('modal-manual-rejected').classList.add('open');
@@ -7826,12 +7910,11 @@
   window.submitManualRejected = function() {
     var date = (($('mr-date') || {}).value || '').trim();
     var qty  = parseInt(($('mr-qty') || {}).value || 0, 10) || 0;
-    var name = (($('mr-product') || {}).value || '').trim();
+    var productId = parseInt(($('mr-product-id') || {}).value || '', 10) || null;
     var reason = (($('mr-reason') || {}).value || '').trim();
-    if (!name) { showToast('Product is required', 'error'); return; }
+    if (!productId) { showToast('Select a product from inventory', 'error'); return; }
     if (qty <= 0) { showToast('Rejected quantity must be greater than 0', 'error'); return; }
-    var productId = (window._mrNameToId || {})[name.toLowerCase()] || null;
-    var body = { date: date, rejectedQty: qty, productName: name, productId: productId, reason: reason || null };
+    var body = { date: date, rejectedQty: qty, productId: productId, reason: reason || null };
     var editing = _editingManualRejectedId != null;
     var url = API_BASE + '/api/reports/rejected-items/manual' + (editing ? '/' + _editingManualRejectedId : '');
     fetch(url, {
@@ -7879,7 +7962,7 @@
       var isDelivery = r.source === 'DELIVERY';
       var detailRow = isDelivery
         ? '<tr style="background:#FFF9E6;">' +
-            '<td colspan="6" style="font-size:10px;color:#666;padding:3px 10px 6px;">' +
+            '<td colspan="7" style="font-size:10px;color:#666;padding:3px 10px 6px;">' +
             'Supplier: ' + escapeHtml(r.supplierName || '—') +
             ' &nbsp;|&nbsp; PO #: ' + escapeHtml(r.poNumber || '—') +
             ' &nbsp;|&nbsp; Received By: ' + escapeHtml(r.receivedBy || '—') +
@@ -7889,6 +7972,7 @@
         '<td>' + escapeHtml(r.date || '—') + '</td>' +
         '<td>' + escapeHtml(sourceLabel(r.source)) + '</td>' +
         '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(r.reference || '—') + '</td>' +
+        '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(r.productCode || '—') + '</td>' +
         '<td>' + escapeHtml(r.productName || '—') + '</td>' +
         '<td style="text-align:right;font-weight:700;color:#CC2222;">' + (r.rejectedQty || 0) + '</td>' +
         '<td style="font-size:11px;color:#555;">' + escapeHtml(r.reason || '—') + '</td>' +
@@ -7917,7 +8001,7 @@
       + '</div>'
       + '<table>'
       + '<thead><tr>'
-      + '<th>Date</th><th>Source</th><th>Reference</th><th>Product</th>'
+      + '<th>Date</th><th>Source</th><th>Reference</th><th>Product Code</th><th>Product</th>'
       + '<th style="text-align:right;">Rejected Qty</th><th>Reason</th>'
       + '</tr></thead>'
       + '<tbody>' + rows + '</tbody>'
@@ -11503,7 +11587,8 @@
       if (!token || !user) return;   // not logged in — leave login screen visible
 
       var av = $('sidebar-avatar'), un = $('sidebar-name'), ur = $('sidebar-role');
-      if (av && user.fullName) av.textContent = user.fullName.split(' ').map(function (n) { return n[0]; }).join('').slice(0, 2).toUpperCase();
+      if (av && user.profileImage) { av.innerHTML = '<img src="' + user.profileImage + '" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;" />'; }
+      else if (av && user.fullName) { av.innerHTML = ''; av.textContent = user.fullName.split(' ').map(function (n) { return n[0]; }).join('').slice(0, 2).toUpperCase(); }
       if (un) un.textContent = user.fullName;
       if (ur && user.role) ur.textContent = user.role.replace(/_/g, ' ');
 

@@ -208,13 +208,31 @@ public class DailyReportController {
 
         List<Map<String, Object>> items = new ArrayList<>();
 
-        // ── Source 1: Delivery rejections (unchanged query) ──────────────────
-        for (DeliveryLogItem item : deliveryLogItemRepo.findRejectedByDateRange(startDate, endDate)) {
+        // Pull all three sources, then resolve product names + codes in one batch.
+        List<DeliveryLogItem> deliveryItems = deliveryLogItemRepo.findRejectedByDateRange(startDate, endDate);
+        List<InventoryMovement> movements = movementRepo.findRejectedMovementsByDateRange(
+                startDate.atStartOfDay(),
+                endDate.plusDays(1).atStartOfDay());
+        List<ManualRejectedItem> manualItems =
+                manualRejectedRepo.findByReportDateBetweenOrderByReportDateDesc(startDate, endDate);
+
+        Set<Long> productIds = new HashSet<>();
+        for (DeliveryLogItem i : deliveryItems)  if (i.getProductId()  != null) productIds.add(i.getProductId());
+        for (InventoryMovement m : movements)    if (m.getProductId()  != null) productIds.add(m.getProductId());
+        for (ManualRejectedItem mr : manualItems) if (mr.getProductId() != null) productIds.add(mr.getProductId());
+        Map<Long, Product> productById = new HashMap<>();
+        if (!productIds.isEmpty())
+            productRepository.findAllById(productIds).forEach(p -> productById.put(p.getId(), p));
+
+        // ── Source 1: Delivery rejections ────────────────────────────────────
+        for (DeliveryLogItem item : deliveryItems) {
             DeliveryLog log = item.getDeliveryLog();
+            Product prod = item.getProductId() != null ? productById.get(item.getProductId()) : null;
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("date",         log.getReportDate() != null ? log.getReportDate().toString() : "");
             row.put("source",       "DELIVERY");
             row.put("reference",    log.getReceiptNumber());
+            row.put("productCode",  prod != null ? prod.getProductCode() : null);
             row.put("productName",  item.getProductName());
             row.put("rejectedQty",  item.getRejectedQty());
             row.put("reason",       null);
@@ -225,17 +243,8 @@ public class DailyReportController {
         }
 
         // ── Source 2: Void / cancel / return rejections ───────────────────────
-        List<InventoryMovement> movements = movementRepo.findRejectedMovementsByDateRange(
-                startDate.atStartOfDay(),
-                endDate.plusDays(1).atStartOfDay());
-
-        Set<Long> productIds = new HashSet<>();
-        for (InventoryMovement m : movements) productIds.add(m.getProductId());
-        Map<Long, String> productNames = new HashMap<>();
-        if (!productIds.isEmpty())
-            productRepository.findAllById(productIds).forEach(p -> productNames.put(p.getId(), p.getName()));
-
         for (InventoryMovement m : movements) {
+            Product prod = m.getProductId() != null ? productById.get(m.getProductId()) : null;
             String source = "CANCEL_REJECTED".equals(m.getMovementType()) ? "CANCEL"
                           : "RETURN_REJECTED".equals(m.getMovementType()) ? "RETURN"
                           : "VOID";
@@ -243,7 +252,8 @@ public class DailyReportController {
             row.put("date",        m.getCreatedAt().toLocalDate().toString());
             row.put("source",      source);
             row.put("reference",   m.getReferenceId());
-            row.put("productName", productNames.getOrDefault(m.getProductId(), "Unknown"));
+            row.put("productCode", prod != null ? prod.getProductCode() : null);
+            row.put("productName", prod != null ? prod.getName() : "Unknown");
             row.put("rejectedQty", m.getQuantity());
             row.put("reason",      m.getReason());
             items.add(row);
@@ -252,12 +262,13 @@ public class DailyReportController {
         // ── Source 3: Manually-entered rejected items ─────────────────────────
         // Record-only entries (do not affect stock). Carry an "id" so the UI can
         // expose edit/delete for these rows only.
-        for (ManualRejectedItem mr : manualRejectedRepo.findByReportDateBetweenOrderByReportDateDesc(startDate, endDate)) {
+        for (ManualRejectedItem mr : manualItems) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id",          mr.getId());
             row.put("date",        mr.getReportDate() != null ? mr.getReportDate().toString() : "");
             row.put("source",      "MANUAL");
             row.put("reference",   mr.getCreatedBy());
+            row.put("productCode", mr.getProductCode());
             row.put("productName", mr.getProductName());
             row.put("rejectedQty", mr.getRejectedQty());
             row.put("reason",      mr.getReason());
@@ -299,9 +310,15 @@ public class DailyReportController {
         if (!canManageManualRejected(caller)) {
             return ResponseEntity.status(403).body(Map.of("message", "Only accounting and super-admin can add rejected items"));
         }
-        String productName = body.get("productName") != null ? body.get("productName").toString().trim() : "";
-        if (productName.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Product name is required"));
+        // Product must be picked from inventory — name + code are taken from the
+        // product record (authoritative), never from free-typed text.
+        Long productId = body.get("productId") != null ? ((Number) body.get("productId")).longValue() : null;
+        if (productId == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Select a product from inventory"));
+        }
+        Product product = productRepository.findById(productId).orElse(null);
+        if (product == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Selected product was not found in inventory"));
         }
         int qty = body.get("rejectedQty") != null ? ((Number) body.get("rejectedQty")).intValue() : 0;
         if (qty <= 0) {
@@ -309,14 +326,15 @@ public class DailyReportController {
         }
         ManualRejectedItem mr = new ManualRejectedItem();
         mr.setReportDate(parseDateOrToday(body.get("date")));
-        mr.setProductId(body.get("productId") != null ? ((Number) body.get("productId")).longValue() : null);
-        mr.setProductName(productName);
+        mr.setProductId(productId);
+        mr.setProductCode(product.getProductCode());
+        mr.setProductName(product.getName());
         mr.setRejectedQty(qty);
         mr.setReason(body.get("reason") != null ? body.get("reason").toString().trim() : null);
         mr.setCreatedBy(caller.getFullName());
         ManualRejectedItem saved = manualRejectedRepo.save(mr);
         activityLogService.log(caller.getId(), caller.getFullName(), "ADD_MANUAL_REJECTED",
-            "Added manual rejected item: " + qty + " × " + productName, "REJECTED_ITEM", String.valueOf(saved.getId()));
+            "Added manual rejected item: " + qty + " × " + product.getName(), "REJECTED_ITEM", String.valueOf(saved.getId()));
         return ResponseEntity.ok(Map.of("message", "Rejected item added", "id", saved.getId()));
     }
 
@@ -332,10 +350,19 @@ public class DailyReportController {
         }
         ManualRejectedItem mr = manualRejectedRepo.findById(id).orElse(null);
         if (mr == null) return ResponseEntity.notFound().build();
-        if (body.containsKey("productName")) {
-            String pn = body.get("productName") != null ? body.get("productName").toString().trim() : "";
-            if (pn.isBlank()) return ResponseEntity.badRequest().body(Map.of("message", "Product name is required"));
-            mr.setProductName(pn);
+        // If a product is provided, re-derive name + code from inventory (authoritative).
+        if (body.containsKey("productId")) {
+            Long productId = body.get("productId") != null ? ((Number) body.get("productId")).longValue() : null;
+            if (productId == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Select a product from inventory"));
+            }
+            Product product = productRepository.findById(productId).orElse(null);
+            if (product == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Selected product was not found in inventory"));
+            }
+            mr.setProductId(productId);
+            mr.setProductCode(product.getProductCode());
+            mr.setProductName(product.getName());
         }
         if (body.containsKey("rejectedQty")) {
             int qty = body.get("rejectedQty") != null ? ((Number) body.get("rejectedQty")).intValue() : 0;
@@ -343,7 +370,6 @@ public class DailyReportController {
             mr.setRejectedQty(qty);
         }
         if (body.containsKey("date"))      mr.setReportDate(parseDateOrToday(body.get("date")));
-        if (body.containsKey("productId")) mr.setProductId(body.get("productId") != null ? ((Number) body.get("productId")).longValue() : null);
         if (body.containsKey("reason"))    mr.setReason(body.get("reason") != null ? body.get("reason").toString().trim() : null);
         manualRejectedRepo.save(mr);
         activityLogService.log(caller.getId(), caller.getFullName(), "EDIT_MANUAL_REJECTED",

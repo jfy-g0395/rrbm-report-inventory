@@ -20,7 +20,11 @@
   <link rel="stylesheet" href="css/styles.css" />
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="assets/rrbm-logo.png" />
+  <link rel="icon" type="image/x-icon" href="assets/favicon/favicon.ico" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="96x96" href="assets/favicon/favicon-96x96.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png" />
+  <link rel="manifest" href="assets/favicon/site.webmanifest" />
 </head>
 <body data-theme="light">
 
@@ -1551,6 +1555,7 @@
                     <th>Date</th>
                     <th>Source</th>
                     <th>Reference</th>
+                    <th>Product Code</th>
                     <th>Product</th>
                     <th style="text-align:right;">Rejected Qty</th>
                     <th>Reason</th>
@@ -4311,9 +4316,12 @@
         </div>
         <div class="mb-2">
           <label class="form-label">Product <span style="color:#EF4444;">*</span></label>
-          <input type="text" class="form-control" id="mr-product" list="mr-product-list"
-                 placeholder="Select or type a product name" autocomplete="off" />
-          <datalist id="mr-product-list"></datalist>
+          <div class="product-autocomplete-wrapper">
+            <input type="text" class="form-control" id="mr-product" placeholder="Search inventory by name or code…" autocomplete="off" />
+            <input type="hidden" id="mr-product-id" />
+            <div class="product-dropdown" id="mr-product-dropdown"></div>
+          </div>
+          <div id="mr-product-selected" style="font-size:11px;color:var(--text-muted);margin-top:4px;">Pick a product from inventory — its code and name are filled automatically.</div>
         </div>
         <div class="mb-2">
           <label class="form-label">Reason</label>

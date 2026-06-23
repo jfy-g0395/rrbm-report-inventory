@@ -18,5 +18,6 @@ public class LoginResponse {
         private String  role;
         private String  allowedPages;        // JSON array string, null = unrestricted (Super Admin)
         private boolean mustChangePassword;  // true → force password change on first login
+        private String  profileImage;        // base64 data-URL, null if no photo uploaded
     }
 }
