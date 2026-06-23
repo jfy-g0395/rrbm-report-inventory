@@ -23,6 +23,7 @@ public class DailyReportController {
     private final InventoryMovementRepository movementRepo;
     private final ProductRepository           productRepository;
     private final ManualRejectedItemRepository manualRejectedRepo;
+    private final CashLedgerRepository         cashLedgerRepo;
 
     public DailyReportController(DailyReportService dailyReportService,
                                   ActivityLogService activityLogService,
@@ -33,7 +34,8 @@ public class DailyReportController {
                                   UserRepository userRepository,
                                   InventoryMovementRepository movementRepo,
                                   ProductRepository productRepository,
-                                  ManualRejectedItemRepository manualRejectedRepo) {
+                                  ManualRejectedItemRepository manualRejectedRepo,
+                                  CashLedgerRepository cashLedgerRepo) {
         this.dailyReportService  = dailyReportService;
         this.activityLogService  = activityLogService;
         this.deliveryLogRepo     = deliveryLogRepo;
@@ -44,6 +46,30 @@ public class DailyReportController {
         this.movementRepo        = movementRepo;
         this.productRepository   = productRepository;
         this.manualRejectedRepo  = manualRejectedRepo;
+        this.cashLedgerRepo      = cashLedgerRepo;
+    }
+
+    // ── GET /api/reports/cash-flow/{date} ─────────────────────────────────────
+    // The day's cash-on-hand ledger entries, for inclusion in the daily report.
+    // Read-only; lives under /api/reports so daily-report viewers can access it.
+    @GetMapping("/cash-flow/{date}")
+    @Transactional(readOnly = true)
+    public ResponseEntity<?> getCashFlowForDate(@PathVariable String date) {
+        LocalDate d;
+        try { d = LocalDate.parse(date); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("message", "Invalid date")); }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (CashLedgerEntry e : cashLedgerRepo.findByEntryDateOrderByIdAsc(d)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id",        e.getId());
+            m.put("entryType", e.getEntryType());
+            m.put("amount",    e.getAmount());
+            m.put("note",      e.getNote());
+            m.put("createdBy", e.getCreatedByName());
+            m.put("createdAt", e.getCreatedAt() != null ? e.getCreatedAt().toString() : null);
+            rows.add(m);
+        }
+        return ResponseEntity.ok(rows);
     }
 
     // --- Close daily sales ---

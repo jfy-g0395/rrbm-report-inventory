@@ -9833,7 +9833,7 @@
   var _drepCurrentDate = null;  // track the date for the detail modal download button
 
   /** Build the HTML content used for both the detail modal and the PDF */
-  function _buildDailyReportHTML(rep, orders, activityLogs, opts) {
+  function _buildDailyReportHTML(rep, orders, activityLogs, opts, cashEntries) {
     var fmt = function(v) { return '₱' + Number(v||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     var netVal   = rep.netSales != null ? rep.netSales : rep.totalRevenue;
     var grossVal = rep.grossSales != null ? rep.grossSales : rep.totalRevenue;
@@ -9932,6 +9932,30 @@
       h += '</tbody></table>';
     }
 
+    // ─── CASH FLOW (this day's ledger movements) ───
+    if (cashEntries && cashEntries.length > 0) {
+      var _cfLabels = {
+        OPENING_BALANCE: 'Opening Balance', ADD_CASH: 'Add Cash', CASH_SALE: 'Cash Sale',
+        CASH_EXPENSE: 'Cash Expense', DEPOSIT: 'Deposit', ADJUSTMENT: 'Adjustment'
+      };
+      var _cfNet = 0;
+      h += sectHead('Cash Flow (' + cashEntries.length + ')');
+      h += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;">';
+      h += '<thead><tr style="background:#f0f0f0;"><th style="padding:5px;text-align:left;">Time</th><th style="text-align:left;">Type</th><th style="text-align:left;">Note</th><th>By</th><th style="text-align:right;">Amount</th></tr></thead><tbody>';
+      cashEntries.forEach(function(c) {
+        var amt = Number(c.amount || 0);
+        _cfNet += amt;
+        var t = c.createdAt ? formatTime(c.createdAt) : '';
+        h += '<tr><td style="padding:3px 5px;border-bottom:1px solid #f0f0f0;white-space:nowrap;">' + t + '</td>';
+        h += '<td style="padding:3px 5px;border-bottom:1px solid #f0f0f0;font-weight:600;">' + escapeHtml(_cfLabels[c.entryType] || c.entryType || '') + '</td>';
+        h += '<td style="padding:3px 5px;border-bottom:1px solid #f0f0f0;color:#666;">' + escapeHtml((c.note || '').substring(0,60)) + '</td>';
+        h += '<td style="padding:3px 5px;border-bottom:1px solid #f0f0f0;">' + escapeHtml(c.createdBy || '') + '</td>';
+        h += '<td style="padding:3px 5px;border-bottom:1px solid #f0f0f0;text-align:right;font-weight:600;color:' + (amt < 0 ? '#EF4444' : '#10B981') + ';">' + (amt < 0 ? '-' : '+') + fmt(Math.abs(amt)) + '</td></tr>';
+      });
+      h += '<tr style="border-top:2px solid #7C3AED;"><td colspan="4" style="padding:6px 5px;font-weight:700;">Net cash movement (this day)</td><td style="text-align:right;font-weight:700;color:' + (_cfNet < 0 ? '#EF4444' : '#10B981') + ';">' + (_cfNet < 0 ? '-' : '+') + fmt(Math.abs(_cfNet)) + '</td></tr>';
+      h += '</tbody></table>';
+    }
+
     // ─── ACTIVITY LOG ───
     if (activityLogs && activityLogs.length > 0) {
       h += sectHead('Activity Log (' + activityLogs.length + ')');
@@ -9972,9 +9996,10 @@
     var results = await Promise.all([
       fetch(API_BASE + '/api/reports/daily/' + date, {headers: hdrs}).then(function(r){return r.json();}),
       fetch(ordersUrl, {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];}),
-      fetch(API_BASE + '/api/reports/activity-log/' + date, {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];})
+      fetch(API_BASE + '/api/reports/activity-log/' + date, {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];}),
+      fetch(API_BASE + '/api/reports/cash-flow/' + date, {headers: hdrs}).then(function(r){return r.ok ? r.json() : [];}).catch(function(){return [];})
     ]);
-    return { rep: results[0], orders: results[1], logs: results[2] };
+    return { rep: results[0], orders: results[1], logs: results[2], cash: results[3] };
   }
 
   window.openDailyReportDetail = function(date) {
@@ -9992,7 +10017,7 @@
           bodyEl.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:20px;">No data found for this date.</p>';
           return;
         }
-        bodyEl.innerHTML = _buildDailyReportHTML(d.rep, d.orders, d.logs);
+        bodyEl.innerHTML = _buildDailyReportHTML(d.rep, d.orders, d.logs, null, d.cash);
       })
       .catch(function() {
         if (bodyEl) bodyEl.innerHTML = '<p style="color:#EF4444;text-align:center;padding:20px;">Error loading report detail.</p>';
@@ -10007,7 +10032,7 @@
     _fetchDailyReportData(date)
       .then(function(d) {
         if (!d.rep || d.rep.message) { showToast('No report data for ' + date, 'error'); return; }
-        var content = _buildDailyReportHTML(d.rep, d.orders, d.logs, {pdf:true});
+        var content = _buildDailyReportHTML(d.rep, d.orders, d.logs, {pdf:true}, d.cash);
         var dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'});
         var genTs = new Date().toLocaleString('en-PH',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
         var logoUrl = window.location.origin + (window.location.pathname.replace(/[^/]*$/, '')) + 'assets/logo-two.png';
