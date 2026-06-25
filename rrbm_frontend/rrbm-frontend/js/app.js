@@ -339,6 +339,7 @@
     }
     localStorage.removeItem('rrbm_token');
     localStorage.removeItem('rrbm_user');
+    document.documentElement.classList.remove('has-session');
     appState.orderFormReady = false;
     appState.deliveryFormReady = false;
     // Hide role-restricted UI
