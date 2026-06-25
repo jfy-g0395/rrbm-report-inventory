@@ -397,6 +397,15 @@ public class OrderController {
                     }
                     existingOrder.setPaymentMode(chosenMode);
                     orderRepository.save(existingOrder);
+
+                    // COD resolved to CASH → the cash physically comes in at this moment.
+                    // Record it to the cash ledger so the Cash Flow page reflects it.
+                    // Idempotent by order reference, so a later mark-collected won't double-count.
+                    // (caller is loaded and null-checked above in this same block.)
+                    if ("CASH".equals(chosenMode)) {
+                        cashLedgerService.recordOrderCashSale(existingOrder, userId,
+                                caller.getFullName(), LocalDate.now());
+                    }
                 }
             }
 
