@@ -868,18 +868,27 @@ public class CommissionController {
         sb.append("<div style=\"margin-top:4px;\"><span style=\"font-size:10px;font-weight:600;padding:1px 8px;border-radius:10px;background:#FAD16A;color:#2C1A0E;\">")
           .append(shEsc(period.getStatus())).append("</span></div></div></div>");
 
+        // Customer name per order — looked up live (CommissionEntry stores only orderId).
+        // Batched into a single query; adjustment lines with no order resolve to blank.
+        java.util.Map<String, String> customerByOrder = new java.util.HashMap<>();
+        for (CommissionEntry e : entries)
+            if (e.getOrderId() != null) customerByOrder.put(e.getOrderId(), "");
+        for (Order o : orderRepository.findAllById(customerByOrder.keySet()))
+            customerByOrder.put(o.getId(), o.getCustomerName() != null ? o.getCustomerName() : "");
+
         sb.append("<h3>Commission Entries</h3>");
         if (entries.isEmpty()) {
             sb.append("<p style=\"font-size:11px;color:#999;\">No entries for this agent in this period.</p>");
         } else {
             sb.append("<table><thead><tr>");
-            for (String col : new String[]{"Order ID", "Date", "Product", "Qty",
+            for (String col : new String[]{"Order ID", "Customer", "Date", "Product", "Qty",
                                            "Base Price", "Rate", "O.P. Amount", "Status"})
                 sb.append("<th>").append(col).append("</th>");
             sb.append("</tr></thead><tbody>");
             for (CommissionEntry e : entries) {
                 sb.append("<tr>");
                 stmtTd(sb, e.getOrderId());
+                stmtTd(sb, e.getOrderId() != null ? customerByOrder.getOrDefault(e.getOrderId(), "") : "");
                 stmtTd(sb, e.getOrderDate() != null ? e.getOrderDate().toString() : "");
                 stmtTd(sb, e.getProductName());
                 stmtTd(sb, String.valueOf(e.getQuantity()));

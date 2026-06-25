@@ -11953,7 +11953,8 @@
         }).join('');
         return '<div style="margin-bottom:12px;border:1px solid var(--border);border-radius:6px;overflow:hidden;">' +
           '<div style="padding:8px 12px;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;justify-content:space-between;">' +
-            '<span><i class="ti ti-receipt" style="margin-right:4px;"></i>#' + escapeHtml(o.orderId || '') + '</span>' +
+            '<span><i class="ti ti-receipt" style="margin-right:4px;"></i>#' + escapeHtml(o.orderId || '') +
+              (o.customer ? ' <span style="color:var(--text-muted);font-weight:400;">— ' + escapeHtml(o.customer) + '</span>' : '') + '</span>' +
             '<span style="color:var(--text-muted);font-weight:400;">' + (o.date || '') + '</span>' +
           '</div>' +
           '<div style="overflow-x:auto;"><table class="table" style="margin:0;">' +
