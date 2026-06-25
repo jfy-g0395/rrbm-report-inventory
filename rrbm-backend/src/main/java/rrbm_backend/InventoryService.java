@@ -95,6 +95,24 @@ public class InventoryService {
 
             } else {
                 // ── REGULAR PRODUCT ─────────────────────────────────────────────
+                // Backstop: a product that is a component of a set is NOT independently
+                // sellable. The order form hides these, but non-UI paths (batch import,
+                // raw API) can still submit a component code — reject it here so it never
+                // deducts. @Transactional means the whole order rolls back.
+                if (productSetComponentRepository.existsByComponentProductId(product.getId())) {
+                    String setCodes = productSetComponentRepository
+                            .findByComponentProductId(product.getId()).stream()
+                            .map(c -> productRepository.findById(c.getSetProductId())
+                                    .map(Product::getProductCode).orElse(null))
+                            .filter(java.util.Objects::nonNull)
+                            .distinct()
+                            .collect(Collectors.joining(", "));
+                    throw new RuntimeException(
+                        "\"" + product.getName() + "\" (" + product.getProductCode()
+                        + ") is a component and cannot be sold on its own — order the set instead"
+                        + (setCodes.isBlank() ? "" : " (set code: " + setCodes + ")") + ".");
+                }
+
                 String warehouse = item.getWarehouse();
                 if (warehouse == null || warehouse.isBlank()) {
                     warehouse = findBestWarehouse(product, qty);

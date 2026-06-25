@@ -16,6 +16,15 @@ public interface ProductSetComponentRepository extends JpaRepository<ProductSetC
     @Query("SELECT DISTINCT c.componentProductId FROM ProductSetComponent c")
     List<Long> findAllComponentProductIds();
 
+    /** True when the given product is a component of at least one set.
+     *  Backstop for "components are not independently sellable" — enforced
+     *  server-side so non-UI paths (batch import, raw API) are covered too. */
+    boolean existsByComponentProductId(Long componentProductId);
+
+    /** All set rows that contain the given product as a component.
+     *  Used to name the correct set code in rejection messages. */
+    List<ProductSetComponent> findByComponentProductId(Long componentProductId);
+
     /** Remove all component rows for a set product (used before re-inserting on edit).
      *  @Modifying forces an immediate SQL DELETE before any pending INSERTs flush,
      *  preventing duplicate-key violations on the unique constraint. */

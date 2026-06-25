@@ -518,7 +518,25 @@ public class ImportController {
                 itemErrors.add("Product Code is required");
             } else {
                 Optional<Product> found = productRepository.findByProductCode(itemCode);
-                if (found.isPresent()) { productId = found.get().getId(); productName = found.get().getName(); }
+                if (found.isPresent()) {
+                    productId = found.get().getId();
+                    productName = found.get().getName();
+                    // Reject component codes: a component is not independently sellable —
+                    // the user must enter the SET code instead. Surfaces in the preview's
+                    // needsFix list so it is caught BEFORE commit (mirrors order-form rule).
+                    if (productSetComponentRepository.existsByComponentProductId(productId)) {
+                        String setCodes = productSetComponentRepository
+                                .findByComponentProductId(productId).stream()
+                                .map(c -> productRepository.findById(c.getSetProductId())
+                                        .map(Product::getProductCode).orElse(null))
+                                .filter(Objects::nonNull)
+                                .distinct()
+                                .collect(Collectors.joining(", "));
+                        itemErrors.add("'" + itemCode + "' is a component of a set and cannot be "
+                                + "ordered directly — use the set code"
+                                + (setCodes.isBlank() ? "" : " (" + setCodes + ")"));
+                    }
+                }
             }
 
             int qty = 0;
@@ -1715,7 +1733,25 @@ public class ImportController {
                 itemErrors.add("Product Code is required");
             } else {
                 Optional<Product> found = productRepository.findByProductCode(itemCode);
-                if (found.isPresent()) { productId = found.get().getId(); productName = found.get().getName(); }
+                if (found.isPresent()) {
+                    productId = found.get().getId();
+                    productName = found.get().getName();
+                    // Reject component codes: a component is not independently sellable —
+                    // the user must enter the SET code instead. Surfaces in the preview's
+                    // needsFix list so it is caught BEFORE commit (mirrors order-form rule).
+                    if (productSetComponentRepository.existsByComponentProductId(productId)) {
+                        String setCodes = productSetComponentRepository
+                                .findByComponentProductId(productId).stream()
+                                .map(c -> productRepository.findById(c.getSetProductId())
+                                        .map(Product::getProductCode).orElse(null))
+                                .filter(Objects::nonNull)
+                                .distinct()
+                                .collect(Collectors.joining(", "));
+                        itemErrors.add("'" + itemCode + "' is a component of a set and cannot be "
+                                + "ordered directly — use the set code"
+                                + (setCodes.isBlank() ? "" : " (" + setCodes + ")"));
+                    }
+                }
             }
 
             int qty = 0;
