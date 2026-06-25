@@ -16,6 +16,11 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     @Query("SELECT DISTINCT e FROM Expense e LEFT JOIN FETCH e.items WHERE e.date = :date ORDER BY e.createdAt DESC")
     List<Expense> findByDateWithItems(@Param("date") LocalDate date);
 
+    /** Expenses for a set of ids with their line items eagerly loaded. Used to
+     *  build descriptive cash-ledger labels (category per item) outside a tx. */
+    @Query("SELECT DISTINCT e FROM Expense e LEFT JOIN FETCH e.items WHERE e.id IN :ids")
+    List<Expense> findByIdInWithItems(@Param("ids") java.util.Collection<Long> ids);
+
     /** All expenses in a date range (inclusive), newest first. */
     @Query("SELECT DISTINCT e FROM Expense e LEFT JOIN FETCH e.items WHERE e.date BETWEEN :start AND :end ORDER BY e.date DESC, e.createdAt DESC")
     List<Expense> findByDateRangeWithItems(@Param("start") LocalDate start, @Param("end") LocalDate end);

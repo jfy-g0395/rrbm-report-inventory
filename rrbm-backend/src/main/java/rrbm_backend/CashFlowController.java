@@ -27,16 +27,19 @@ public class CashFlowController {
     private final MasterKeyService   masterKeyService;
     private final JwtUtil            jwtUtil;
     private final UserRepository     userRepository;
+    private final CashEntryDescriber cashEntryDescriber;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public CashFlowController(CashLedgerService cashLedgerService,
                               MasterKeyService masterKeyService,
                               JwtUtil jwtUtil,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              CashEntryDescriber cashEntryDescriber) {
         this.cashLedgerService = cashLedgerService;
         this.masterKeyService  = masterKeyService;
         this.jwtUtil           = jwtUtil;
         this.userRepository    = userRepository;
+        this.cashEntryDescriber = cashEntryDescriber;
     }
 
     // ── Read: balance + history ───────────────────────────────────────────────
@@ -45,6 +48,7 @@ public class CashFlowController {
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(defaultValue = "0") int offset) {
         List<CashLedgerEntry> entries = cashLedgerService.history(limit, offset);
+        Map<Long, String> descriptions = cashEntryDescriber.describe(entries);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (CashLedgerEntry e : entries) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -55,6 +59,8 @@ public class CashFlowController {
             m.put("referenceType", e.getReferenceType());
             m.put("referenceId",   e.getReferenceId());
             m.put("note",          e.getNote());
+            // Live, category-aware label for expense outflows (null → frontend uses note).
+            m.put("description",   descriptions.get(e.getId()));
             m.put("createdBy",     e.getCreatedByName());
             m.put("createdAt",     e.getCreatedAt() != null ? e.getCreatedAt().toString() : null);
             rows.add(m);

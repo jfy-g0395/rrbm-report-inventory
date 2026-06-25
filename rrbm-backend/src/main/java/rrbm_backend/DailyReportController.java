@@ -24,6 +24,7 @@ public class DailyReportController {
     private final ProductRepository           productRepository;
     private final ManualRejectedItemRepository manualRejectedRepo;
     private final CashLedgerRepository         cashLedgerRepo;
+    private final CashEntryDescriber           cashEntryDescriber;
 
     public DailyReportController(DailyReportService dailyReportService,
                                   ActivityLogService activityLogService,
@@ -35,7 +36,8 @@ public class DailyReportController {
                                   InventoryMovementRepository movementRepo,
                                   ProductRepository productRepository,
                                   ManualRejectedItemRepository manualRejectedRepo,
-                                  CashLedgerRepository cashLedgerRepo) {
+                                  CashLedgerRepository cashLedgerRepo,
+                                  CashEntryDescriber cashEntryDescriber) {
         this.dailyReportService  = dailyReportService;
         this.activityLogService  = activityLogService;
         this.deliveryLogRepo     = deliveryLogRepo;
@@ -47,6 +49,7 @@ public class DailyReportController {
         this.productRepository   = productRepository;
         this.manualRejectedRepo  = manualRejectedRepo;
         this.cashLedgerRepo      = cashLedgerRepo;
+        this.cashEntryDescriber  = cashEntryDescriber;
     }
 
     // ── GET /api/reports/cash-flow/{date} ─────────────────────────────────────
@@ -58,15 +61,19 @@ public class DailyReportController {
         LocalDate d;
         try { d = LocalDate.parse(date); }
         catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("message", "Invalid date")); }
+        List<CashLedgerEntry> dayEntries = cashLedgerRepo.findByEntryDateOrderByIdAsc(d);
+        Map<Long, String> descriptions = cashEntryDescriber.describe(dayEntries);
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (CashLedgerEntry e : cashLedgerRepo.findByEntryDateOrderByIdAsc(d)) {
+        for (CashLedgerEntry e : dayEntries) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id",        e.getId());
-            m.put("entryType", e.getEntryType());
-            m.put("amount",    e.getAmount());
-            m.put("note",      e.getNote());
-            m.put("createdBy", e.getCreatedByName());
-            m.put("createdAt", e.getCreatedAt() != null ? e.getCreatedAt().toString() : null);
+            m.put("id",          e.getId());
+            m.put("entryType",   e.getEntryType());
+            m.put("amount",      e.getAmount());
+            m.put("note",        e.getNote());
+            // Live, category-aware label for expense outflows (null → frontend uses note).
+            m.put("description", descriptions.get(e.getId()));
+            m.put("createdBy",   e.getCreatedByName());
+            m.put("createdAt",   e.getCreatedAt() != null ? e.getCreatedAt().toString() : null);
             rows.add(m);
         }
         return ResponseEntity.ok(rows);
