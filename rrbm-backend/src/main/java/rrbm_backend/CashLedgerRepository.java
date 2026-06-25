@@ -18,6 +18,13 @@ public interface CashLedgerRepository extends JpaRepository<CashLedgerEntry, Lon
     @Query("SELECT COALESCE(SUM(c.amount), 0) FROM CashLedgerEntry c")
     BigDecimal getCashOnHand();
 
+    /** Cash on hand as of the END of a given business day = signed sum of every
+     *  ledger row dated on or before that day. Used for the daily-report close
+     *  snapshot so a backdated / late / out-of-order close records the balance
+     *  for THAT day, not the live "now" balance. */
+    @Query("SELECT COALESCE(SUM(c.amount), 0) FROM CashLedgerEntry c WHERE c.entryDate <= :date")
+    BigDecimal getCashOnHandAsOf(@Param("date") LocalDate date);
+
     /** History, newest first, paged. */
     List<CashLedgerEntry> findAllByOrderByCreatedAtDescIdDesc(Pageable pageable);
 

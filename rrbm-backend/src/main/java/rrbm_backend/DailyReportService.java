@@ -231,10 +231,11 @@ public class DailyReportService {
         report.setExpensesCount((int) expensesCount);
 
         // ── Cash on hand snapshot (V80) ───────────────────────────────
-        // Freeze the running cash-on-hand balance at close time. This is a
-        // point-in-time snapshot — it does NOT reset daily sales and is not
-        // affected by later days; cash on hand itself persists in cash_ledger.
-        report.setCashOnHand(cashLedgerService.getCashOnHand());
+        // Freeze the cash-on-hand balance AS OF this report's date (rows dated on
+        // or before `date`), not the live "now" balance. This keeps the snapshot
+        // correct for backdated / late / out-of-order / import closes, and makes
+        // it genuinely unaffected by later days. Cash on hand persists in cash_ledger.
+        report.setCashOnHand(cashLedgerService.getCashOnHandAsOf(date));
 
         report.setClosedBy(userId);
         report.setClosedAt(OffsetDateTime.now());
@@ -374,10 +375,11 @@ public class DailyReportService {
         report.setExpensesCount((int) expensesCount);
 
         // ── Cash on hand snapshot (V80) ───────────────────────────────
-        // Freeze the running cash-on-hand balance at close time. This is a
-        // point-in-time snapshot — it does NOT reset daily sales and is not
-        // affected by later days; cash on hand itself persists in cash_ledger.
-        report.setCashOnHand(cashLedgerService.getCashOnHand());
+        // Freeze the cash-on-hand balance AS OF this report's date (rows dated on
+        // or before `date`), not the live "now" balance. This keeps the snapshot
+        // correct for backdated / late / out-of-order / import closes, and makes
+        // it genuinely unaffected by later days. Cash on hand persists in cash_ledger.
+        report.setCashOnHand(cashLedgerService.getCashOnHandAsOf(date));
 
         report.setClosedBy(userId);
         report.setClosedAt(OffsetDateTime.now());

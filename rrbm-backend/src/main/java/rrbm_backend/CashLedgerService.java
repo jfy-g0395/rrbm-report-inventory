@@ -54,6 +54,16 @@ public class CashLedgerService {
         return v != null ? v : BigDecimal.ZERO;
     }
 
+    /** Cash on hand as of the end of the given business day (rows dated on or
+     *  before that day). The daily-report close uses this so the snapshot
+     *  reflects that specific day, not the live balance at the moment of close.
+     *  Falls back to the live balance if date is null. */
+    public BigDecimal getCashOnHandAsOf(LocalDate date) {
+        if (date == null) return getCashOnHand();
+        BigDecimal v = repo.getCashOnHandAsOf(date);
+        return v != null ? v : BigDecimal.ZERO;
+    }
+
     public boolean ledgerIsEmpty() {
         return repo.count() == 0;
     }

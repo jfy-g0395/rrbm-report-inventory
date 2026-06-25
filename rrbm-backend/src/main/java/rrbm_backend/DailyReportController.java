@@ -102,8 +102,11 @@ public class DailyReportController {
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found"));
         String userName = caller.getFullName();
 
+        // Accept forceClose as a JSON boolean (true/false) OR a string ("true"/"false").
+        // String.valueOf avoids a ClassCastException when the client sends a real JSON
+        // boolean false — the previous (String) cast on a Boolean threw a 500.
         boolean forceClose    = Boolean.TRUE.equals(body.get("forceClose")) ||
-                               "true".equalsIgnoreCase((String) body.getOrDefault("forceClose", "false"));
+                               "true".equalsIgnoreCase(String.valueOf(body.getOrDefault("forceClose", "false")));
         String adminKey       = (String) body.getOrDefault("adminSecurityKey", "");
         String superAdminKey  = (String) body.getOrDefault("superAdminSecurityKey", "");
 
