@@ -2679,6 +2679,19 @@
     setText('dd-encoder',  r.encodedByName);
     setText('dd-notes',    r.notes || '—');
 
+    // Change history (edits) — only shown when present
+    var clWrap = $('dd-changelog-wrap');
+    var clBox  = $('dd-changelog');
+    if (clWrap && clBox) {
+      if (r.changeLog && r.changeLog.trim()) {
+        clBox.textContent = r.changeLog;
+        clWrap.style.display = '';
+      } else {
+        clBox.textContent = '';
+        clWrap.style.display = 'none';
+      }
+    }
+
     var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     var items = r.items || [];
     var totalReceived = 0, totalRejected = 0;
@@ -2747,21 +2760,162 @@
       if ($('de-received')) $('de-received').value  = r.receivedBy || '';
       if ($('de-verified')) $('de-verified').value  = r.verifiedBy || '';
       if ($('de-notes'))    $('de-notes').value     = r.notes || '';
+      if ($('de-reason'))   $('de-reason').value    = '';
+
+      // Ensure the inventory product list is cached for the searchable picker,
+      // then populate one editable row per recorded delivery item.
+      if (!appState.cachedProducts || !appState.cachedProducts.length) {
+        await loadProducts();
+      }
+      populateDeliveryEditItems(r.items || []);
+
       $('modal-delivery-edit').classList.add('open');
     } catch (err) {
       showToast('Connection error', 'error');
     }
   };
 
+  // ── Editable delivery-items table (edit modal) ───────────────────────────
+  var _deEditCounter = 0;
+
+  function populateDeliveryEditItems(items) {
+    var container = $('de-items-container');
+    if (!container) return;
+    container.innerHTML = '';
+    _deEditCounter = 0;
+    if (!items.length) { addDeliveryEditRow(); return; }
+    items.forEach(function (it) {
+      addDeliveryEditRow({
+        productId:   it.productId,
+        productName: it.productName,
+        received:    it.receivedQty || it.quantity || 0,
+        warehouse:   it.warehouse || 'wh1',
+        unitCost:    it.unitCost != null ? it.unitCost : ''
+      });
+    });
+  }
+
+  window.addDeliveryEditRow = function (preset) {
+    var container = $('de-items-container');
+    if (!container) return;
+    _deEditCounter += 1;
+    var n = _deEditCounter;
+    preset = preset || {};
+    container.insertAdjacentHTML('beforeend',
+      '<div class="row align-items-end mb-2 de-line" id="de-row-' + n + '">'
+      + '<div class="col-md-4"><label class="form-label">Product <span class="text-danger">*</span></label>'
+      + '<div class="product-autocomplete-wrapper">'
+      + '<input type="text" class="form-control" id="de-prod-in-' + n + '" placeholder="Type to search products…" autocomplete="off" value="' + escapeHtml(preset.productName || '') + '">'
+      + '<input type="hidden" id="de-prod-id-' + n + '" value="' + (preset.productId != null ? preset.productId : '') + '">'
+      + '<div class="product-dropdown" id="de-prod-dd-' + n + '"></div>'
+      + '</div></div>'
+      + '<div class="col-md-2"><label class="form-label">Received Qty <span class="text-danger">*</span></label>'
+      + '<input type="number" class="form-control" id="de-qty-' + n + '" min="1" value="' + (preset.received != null ? preset.received : 1) + '" /></div>'
+      + '<div class="col-md-3"><label class="form-label">Warehouse</label>'
+      + '<select class="form-select" id="de-wh-' + n + '">'
+      + '<option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">Balagtas</option></select></div>'
+      + '<div class="col-md-2"><label class="form-label">Unit Cost (₱)</label>'
+      + '<input type="number" class="form-control" id="de-uc-' + n + '" min="0" step="0.01" placeholder="Invoice cost" value="' + (preset.unitCost != null ? preset.unitCost : '') + '" /></div>'
+      + '<div class="col-md-1 text-end"><label class="form-label">&nbsp;</label>'
+      + '<button type="button" class="btn btn-outline-danger btn-sm d-block" onclick="removeDeliveryEditRow(\'de-row-' + n + '\')"><i class="ti ti-trash"></i></button></div>'
+      + '</div>');
+    var whSel = $('de-wh-' + n);
+    if (whSel && preset.warehouse) whSel.value = preset.warehouse;
+    setupDeliveryEditAutocomplete(n);
+  };
+
+  window.removeDeliveryEditRow = function (rowId) {
+    var row = $(rowId); if (row) row.remove();
+  };
+
+  function setupDeliveryEditAutocomplete(n) {
+    var input    = $('de-prod-in-' + n);
+    var dropdown = $('de-prod-dd-' + n);
+    if (!input || !dropdown) return;
+
+    function show() {
+      // A manual edit invalidates the previously chosen product id until re-picked.
+      $('de-prod-id-' + n).value = '';
+      var t = input.value.toLowerCase().trim();
+      var list = (appState.cachedProducts || []);
+      var matches = t.length === 0 ? list : list.filter(function (p) {
+        return p.name.toLowerCase().includes(t)
+            || (p.productCode || '').toLowerCase().includes(t)
+            || (p.sku || '').toLowerCase().includes(t);
+      });
+      renderDeliveryEditDropdown(dropdown, matches, n);
+    }
+    input.addEventListener('input', show);
+    input.addEventListener('focus', show);
+    document.addEventListener('click', function (e) {
+      if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show');
+    });
+  }
+
+  function renderDeliveryEditDropdown(dropdown, products, rowNum) {
+    if (!products || !products.length) {
+      dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>';
+      dropdown.classList.add('show');
+      return;
+    }
+    var html = '';
+    products.slice(0, 50).forEach(function (p) {
+      var total = (p.stockWh1 || 0) + (p.stockWh2 || 0) + (p.stockWh3 || 0);
+      var codeTag = p.productCode
+        ? '<span class="product-code" style="margin-right:5px;font-size:10px;">' + escapeHtml(p.productCode) + '</span>' : '';
+      html += '<div class="product-dropdown-item" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '" data-row="' + rowNum + '">'
+        + '<div style="flex:1;"><div class="product-name">' + codeTag + escapeHtml(p.name) + '</div>'
+        + '<div style="font-size:10px;color:#888;">Total: ' + total.toLocaleString() + ' pcs</div></div></div>';
+    });
+    dropdown.innerHTML = html;
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var rn = this.getAttribute('data-row');
+        $('de-prod-in-' + rn).value = this.getAttribute('data-name');
+        $('de-prod-id-' + rn).value = this.getAttribute('data-id');
+        dropdown.classList.remove('show');
+      });
+    });
+  }
+
   window.submitDeliveryEdit = async function () {
     if (!_deliveryEditId || !_deliveryEditKey) { showToast('Re-open and unlock the report first', 'error'); return; }
+
+    var reason = (($('de-reason') || {}).value || '').trim();
+    if (!reason) { showToast('Please enter a reason before saving changes', 'error'); return; }
+
+    // Gather the edited line items
+    var items = [];
+    var rows = document.querySelectorAll('#de-items-container .de-line');
+    for (var i = 0; i < rows.length; i++) {
+      var id = rows[i].id.replace('de-row-', '');
+      var pid = (($('de-prod-id-' + id) || {}).value || '').trim();
+      var pname = (($('de-prod-in-' + id) || {}).value || '').trim();
+      var qty = parseInt((($('de-qty-' + id) || {}).value || '0'), 10);
+      var wh = (($('de-wh-' + id) || {}).value || 'wh1');
+      var uc = (($('de-uc-' + id) || {}).value || '').trim();
+      if (!pid) { showToast('Select a valid inventory product for "' + (pname || 'item ' + (i + 1)) + '"', 'error'); return; }
+      if (!qty || qty <= 0) { showToast('Received quantity must be greater than 0', 'error'); return; }
+      items.push({
+        productId: parseInt(pid, 10),
+        receivedQty: qty,
+        quantity: qty,
+        warehouse: wh,
+        unitCost: uc === '' ? null : parseFloat(uc)
+      });
+    }
+    if (!items.length) { showToast('A delivery must have at least one item', 'error'); return; }
+
     var body = {
       securityKey: _deliveryEditKey,
+      reason:      reason,
       truckPlate:  (($('de-truck')    || {}).value || '').trim(),
       driverName:  (($('de-driver')   || {}).value || '').trim(),
       receivedBy:  (($('de-received') || {}).value || '').trim(),
       verifiedBy:  (($('de-verified') || {}).value || '').trim(),
-      notes:       (($('de-notes')    || {}).value || '').trim()
+      notes:       (($('de-notes')    || {}).value || '').trim(),
+      items:       items
     };
     try {
       var res = await fetch(API_BASE + '/api/delivery-reports/' + _deliveryEditId, {

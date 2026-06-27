@@ -30,6 +30,7 @@ public class ProductController {
     private final ProductSetComponentRepository    productSetComponentRepository;
     private final SupplierProductMappingRepository supplierMappingRepository;
     private final SupplierRepository               supplierRepository;
+    private final DeliveryStockService             deliveryStockService;
 
     public ProductController(ProductRepository productRepository,
                              ActivityLogService activityLogService,
@@ -43,7 +44,8 @@ public class ProductController {
                              PurchaseOrderRepository purchaseOrderRepository,
                              ProductSetComponentRepository productSetComponentRepository,
                              SupplierProductMappingRepository supplierMappingRepository,
-                             SupplierRepository supplierRepository) {
+                             SupplierRepository supplierRepository,
+                             DeliveryStockService deliveryStockService) {
         this.productRepository             = productRepository;
         this.activityLogService            = activityLogService;
         this.masterKeyService              = masterKeyService;
@@ -57,6 +59,7 @@ public class ProductController {
         this.productSetComponentRepository = productSetComponentRepository;
         this.supplierMappingRepository     = supplierMappingRepository;
         this.supplierRepository            = supplierRepository;
+        this.deliveryStockService          = deliveryStockService;
     }
 
     // GET /api/products — active products for order form dropdown
@@ -539,7 +542,6 @@ public class ProductController {
         // @PrePersist handles createdAt and reportDate
 
         int totalQty = 0;
-        BigDecimal totalCost = BigDecimal.ZERO;
         for (DeliveryRequest.DeliveryItem item : request.getItems()) {
             if (item.getProductId() == null) continue;
             Product product = productRepository.findById(item.getProductId()).orElse(null);
@@ -549,19 +551,8 @@ public class ProductController {
             int received = (item.getReceived() != null && item.getReceived() > 0)
                     ? item.getReceived()
                     : (item.getQuantity() != null ? item.getQuantity() : 0);
-            if (received == 0) continue; // nothing actually received — skip stock update and log item
+            if (received == 0) continue; // nothing actually received — skip log item
             String wh = item.getWarehouse() != null ? item.getWarehouse().toLowerCase() : "wh1";
-            switch (wh) {
-                case "wh1": product.setStockWh1(product.getStockWh1() + received); break;
-                case "wh2": product.setStockWh2(product.getStockWh2() + received); break;
-                case "wh3": product.setStockWh3(product.getStockWh3() + received); break;
-            }
-            productRepository.save(product);
-            inventoryService.logMovement(
-                product.getId(), "RESTOCK", wh, received,
-                request.getReceiptNumber(),
-                "Delivery receipt " + request.getReceiptNumber() + " — " + log.getSupplierName(),
-                null);
 
             int qty = item.getQuantity() != null ? item.getQuantity() : received;
             int rejected = item.getRejected() != null ? item.getRejected() : 0;
@@ -569,7 +560,6 @@ public class ProductController {
             BigDecimal uc = (item.getUnitCost() != null && item.getUnitCost().compareTo(BigDecimal.ZERO) > 0)
                     ? item.getUnitCost()
                     : (product.getUnitCost() != null ? product.getUnitCost() : BigDecimal.ZERO);
-            totalCost = totalCost.add(uc.multiply(BigDecimal.valueOf(received)));
 
             DeliveryLogItem logItem = new DeliveryLogItem();
             logItem.setDeliveryLog(log);
@@ -588,99 +578,8 @@ public class ProductController {
         log.setTotalQuantity(totalQty);
         deliveryLogRepository.save(log);
 
-        // Auto-match DR items to open PO items by product itemCode
-        java.util.Set<Long> touchedPoIds = new java.util.HashSet<>();
-        // If a specific PO number was provided, load that PO and match only against its items
-        PurchaseOrder linkedPo = (log.getPoNumber() != null && !log.getPoNumber().isBlank())
-                ? purchaseOrderRepository.findByPoNumber(log.getPoNumber()).orElse(null)
-                : null;
-
-        for (DeliveryRequest.DeliveryItem drItem : request.getItems()) {
-            if (drItem.getProductId() == null) continue;
-            Product prod = productRepository.findById(drItem.getProductId()).orElse(null);
-            if (prod == null) continue;
-
-            PoItem poItem = null;
-            if (linkedPo != null) {
-                // Attempt 1: product itemCode vs PO item's legacy itemCode
-                if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getItemCode().equalsIgnoreCase(i.getItemCode()))
-                            .findFirst().orElse(null);
-                }
-                // Attempt 2: product itemCode vs PO item's supplierItemCode
-                if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getItemCode().equalsIgnoreCase(i.getSupplierItemCode()))
-                            .findFirst().orElse(null);
-                }
-                // Attempt 3: product name vs PO item description (case-insensitive)
-                if (poItem == null && prod.getName() != null) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getName().equalsIgnoreCase(i.getItemDescription()))
-                            .findFirst().orElse(null);
-                }
-            } else {
-                // Attempt 1: FIFO by legacy itemCode
-                if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    List<PoItem> open = poItemRepository.findByItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
-                // Attempt 2: FIFO by supplierItemCode
-                if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    List<PoItem> open = poItemRepository.findBySupplierItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
-                // Attempt 3: FIFO fallback by product name vs item description
-                if (poItem == null && prod.getName() != null) {
-                    List<PoItem> open = poItemRepository.findByItemDescriptionIgnoreCaseAndIsFulfilledFalseOrderByIdAsc(prod.getName());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
-            }
-            if (poItem == null) continue;
-
-            int received  = drItem.getReceived() != null && drItem.getReceived() > 0
-                    ? drItem.getReceived() : (drItem.getQuantity() != null ? drItem.getQuantity() : 0);
-            int newFulfilled = (poItem.getFulfilledQty() != null ? poItem.getFulfilledQty() : 0) + received;
-            poItem.setFulfilledQty(newFulfilled);
-            poItem.setDrNumber(log.getReceiptNumber());
-            if (newFulfilled >= (poItem.getQuantityOrdered() != null ? poItem.getQuantityOrdered() : 1)) {
-                poItem.setIsFulfilled(true);
-            }
-            poItemRepository.save(poItem);
-            touchedPoIds.add(poItem.getPurchaseOrder().getId());
-        }
-
-        // Auto-update PO status: INCOMPLETE → PARTIALLY_RECEIVED → COMPLETE
-        for (Long poId : touchedPoIds) {
-            purchaseOrderRepository.findByIdWithItems(poId).ifPresent(po -> {
-                boolean allFulfilled = po.getItems().stream()
-                        .allMatch(i -> Boolean.TRUE.equals(i.getIsFulfilled()));
-                boolean anyReceived  = po.getItems().stream()
-                        .anyMatch(i -> i.getFulfilledQty() != null && i.getFulfilledQty() > 0);
-                String cur = po.getStatus();
-                if (allFulfilled && !"COMPLETE".equals(cur)) {
-                    po.setStatus("COMPLETE");
-                    purchaseOrderRepository.save(po);
-                } else if (anyReceived && !allFulfilled && "INCOMPLETE".equals(cur)) {
-                    po.setStatus("PARTIALLY_RECEIVED");
-                    purchaseOrderRepository.save(po);
-                }
-            });
-        }
-
-        // Create PENDING payable for this delivery
-        Payable payable = new Payable();
-        payable.setDeliveryLogId(log.getId());
-        payable.setReceiptNumber(log.getReceiptNumber());
-        payable.setSupplierName(log.getSupplierName());
-        payable.setTotalAmount(totalCost);
-        payable.setStatus("PENDING");
-        payable.setCreatedBy(request.getEncodedByName());
-        payableRepository.save(payable);
+        // Apply stock add, PO auto-match/advance, and create the PENDING payable.
+        deliveryStockService.applyEffects(log, userId);
 
         // #3 fix: actor is the logged-in encoder, not the receiver
         String encodedBy = (request.getEncodedByName() != null && !request.getEncodedByName().isBlank())

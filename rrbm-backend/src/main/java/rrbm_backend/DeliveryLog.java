@@ -32,6 +32,10 @@ public class DeliveryLog {
     @Column(name = "created_at") private OffsetDateTime createdAt;
     @Column(name = "status", nullable = false) private String status = "RECEIVED";
 
+    // Append-only audit trail of edits (who/what/when/reason). Shown at the bottom
+    // of the delivery detail view. Kept separate from `notes` (delivery remarks).
+    @Column(name = "change_log", columnDefinition = "TEXT") private String changeLog;
+
     @OneToMany(mappedBy = "deliveryLog", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DeliveryLogItem> items = new ArrayList<>();
 
@@ -72,6 +76,8 @@ public class DeliveryLog {
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getChangeLog() { return changeLog; }
+    public void setChangeLog(String changeLog) { this.changeLog = changeLog; }
     public List<DeliveryLogItem> getItems() { return items; }
     public void setItems(List<DeliveryLogItem> items) { this.items = items; }
 }
