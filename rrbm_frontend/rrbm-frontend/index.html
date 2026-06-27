@@ -3374,6 +3374,13 @@
           <tbody id="dd-items-tbody"></tbody>
           <tfoot id="dd-items-tfoot"></tfoot>
         </table>
+        <!-- Change history (edits) -->
+        <div id="dd-changelog-wrap" style="display:none;margin-top:14px;">
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">
+            <i class="ti ti-history" style="margin-right:4px;"></i>Change history
+          </div>
+          <div id="dd-changelog" style="font-size:11.5px;color:var(--text-secondary);white-space:pre-wrap;background:var(--bg-secondary);border-radius:6px;padding:8px 10px;line-height:1.5;"></div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-delivery-detail')">Close</button>
@@ -3409,16 +3416,16 @@
     </div>
   </div>
 
-  <!-- MODAL: DELIVERY EDIT — safe metadata fields -->
+  <!-- MODAL: DELIVERY EDIT — metadata + line items + reason -->
   <div class="modal-overlay" id="modal-delivery-edit">
-    <div class="modal-box" style="max-width:480px;">
+    <div class="modal-box" style="max-width:760px;">
       <div class="modal-header">
         <div style="font-size:14px;font-weight:600;">
           <i class="ti ti-edit" style="margin-right:6px;color:#D4860A;"></i>Edit Delivery Report
         </div>
         <button class="icon-btn" onclick="closeModal('modal-delivery-edit')"><i class="ti ti-x"></i></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" style="overflow-y:auto;max-height:74vh;">
         <div class="row mb-2">
           <div class="col-md-6">
             <label class="form-label">Truck Plate #</label>
@@ -3443,8 +3450,28 @@
           <label class="form-label">Notes</label>
           <input type="text" class="form-control" id="de-notes" autocomplete="off" />
         </div>
+
+        <!-- Delivered line items (editable) -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px;">
+          <label class="form-label" style="margin:0;">Delivered Items</label>
+          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addDeliveryEditRow()">
+            <i class="ti ti-plus"></i> Add item
+          </button>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin:0 0 8px;">
+          Fix wrong quantities or swapped products. Only products in inventory can be selected.
+          Editing items re-syncs inventory stock, the linked PO, and the supplier payable.
+        </p>
+        <div id="de-items-container"></div>
+
+        <!-- Mandatory reason -->
+        <div class="mb-1" style="margin-top:14px;">
+          <label class="form-label">Reason for change <span class="text-danger">*</span></label>
+          <textarea class="form-control" id="de-reason" rows="2" autocomplete="off"
+                    placeholder="e.g. Wrong size encoded — Shirt S should be Shirt M"></textarea>
+        </div>
         <p style="font-size:11px;color:var(--text-muted);margin:4px 0 0;">
-          Supplier, receipt #, and line items can't be edited here.
+          A reason is required. Supplier &amp; receipt # can't be edited.
         </p>
       </div>
       <div class="modal-footer">
