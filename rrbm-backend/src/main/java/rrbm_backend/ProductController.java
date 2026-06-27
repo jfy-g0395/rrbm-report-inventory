@@ -492,6 +492,51 @@ public class ProductController {
         return ResponseEntity.ok(result);
     }
 
+    /**
+     * Find the first OPEN (unfulfilled) line within a specific PO that matches this product,
+     * trying legacy itemCode, supplier itemCode, then product name vs item description.
+     */
+    private PoItem matchOpenPoItem(PurchaseOrder po, Product prod) {
+        PoItem poItem = null;
+        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
+            poItem = po.getItems().stream()
+                    .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
+                            && prod.getItemCode().equalsIgnoreCase(i.getItemCode()))
+                    .findFirst().orElse(null);
+        }
+        if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
+            poItem = po.getItems().stream()
+                    .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
+                            && prod.getItemCode().equalsIgnoreCase(i.getSupplierItemCode()))
+                    .findFirst().orElse(null);
+        }
+        if (poItem == null && prod.getName() != null) {
+            poItem = po.getItems().stream()
+                    .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
+                            && prod.getName().equalsIgnoreCase(i.getItemDescription()))
+                    .findFirst().orElse(null);
+        }
+        return poItem;
+    }
+
+    /** FIFO fallback across ALL open POs for this product (oldest open line first). */
+    private PoItem fifoMatchOpenPoItem(Product prod) {
+        PoItem poItem = null;
+        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
+            List<PoItem> open = poItemRepository.findByItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
+            if (!open.isEmpty()) poItem = open.get(0);
+        }
+        if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
+            List<PoItem> open = poItemRepository.findBySupplierItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
+            if (!open.isEmpty()) poItem = open.get(0);
+        }
+        if (poItem == null && prod.getName() != null) {
+            List<PoItem> open = poItemRepository.findByItemDescriptionIgnoreCaseAndIsFulfilledFalseOrderByIdAsc(prod.getName());
+            if (!open.isEmpty()) poItem = open.get(0);
+        }
+        return poItem;
+    }
+
     // POST /api/products/delivery — process delivery receipt and update stock
     @Transactional
     @PostMapping("/delivery")
@@ -600,45 +645,30 @@ public class ProductController {
             Product prod = productRepository.findById(drItem.getProductId()).orElse(null);
             if (prod == null) continue;
 
+            // Resolve which PO line this DR row fulfils, most-specific first:
             PoItem poItem = null;
-            if (linkedPo != null) {
-                // Attempt 1: product itemCode vs PO item's legacy itemCode
-                if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getItemCode().equalsIgnoreCase(i.getItemCode()))
-                            .findFirst().orElse(null);
-                }
-                // Attempt 2: product itemCode vs PO item's supplierItemCode
-                if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getItemCode().equalsIgnoreCase(i.getSupplierItemCode()))
-                            .findFirst().orElse(null);
-                }
-                // Attempt 3: product name vs PO item description (case-insensitive)
-                if (poItem == null && prod.getName() != null) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getName().equalsIgnoreCase(i.getItemDescription()))
-                            .findFirst().orElse(null);
-                }
-            } else {
-                // Attempt 1: FIFO by legacy itemCode
-                if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    List<PoItem> open = poItemRepository.findByItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
-                // Attempt 2: FIFO by supplierItemCode
-                if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    List<PoItem> open = poItemRepository.findBySupplierItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
-                // Attempt 3: FIFO fallback by product name vs item description
-                if (poItem == null && prod.getName() != null) {
-                    List<PoItem> open = poItemRepository.findByItemDescriptionIgnoreCaseAndIsFulfilledFalseOrderByIdAsc(prod.getName());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
+
+            // 0a. Explicit per-line PO item (Option B per-line tagging) — exact, no guessing.
+            //     Lets ONE delivery receipt fulfil lines across MULTIPLE POs, including the
+            //     same product appearing on two different POs.
+            if (drItem.getPoItemId() != null) {
+                poItem = poItemRepository.findById(drItem.getPoItemId()).orElse(null);
+            }
+            // 0b. Per-line PO number — match within that one PO when the exact line is unknown.
+            if (poItem == null && drItem.getPoNumber() != null && !drItem.getPoNumber().isBlank()) {
+                PurchaseOrder linePo = purchaseOrderRepository.findByPoNumber(drItem.getPoNumber().trim()).orElse(null);
+                if (linePo != null) poItem = matchOpenPoItem(linePo, prod);
+            }
+            // 1. Request-level PO (top "linked PO" dropdown) — unchanged existing behaviour.
+            if (poItem == null && linkedPo != null) {
+                poItem = matchOpenPoItem(linkedPo, prod);
+            }
+            // 2. Global FIFO fallback — unchanged existing behaviour, only when no PO context
+            //    was given at all (no per-line tag and no linked PO).
+            if (poItem == null && linkedPo == null
+                    && drItem.getPoItemId() == null
+                    && (drItem.getPoNumber() == null || drItem.getPoNumber().isBlank())) {
+                poItem = fifoMatchOpenPoItem(prod);
             }
             if (poItem == null) continue;
 
