@@ -181,7 +181,7 @@
           <i class="ti ti-user-shield"></i><span>Agents</span>
         </button>
         <button class="nav-item" id="nav-import" data-view="import" onclick="navigateTo('import')">
-          <i class="ti ti-file-import"></i><span>Import</span>
+          <i class="ti ti-file-import"></i><span>Add Records</span>
         </button>
         <button class="nav-item" id="nav-emp" data-view="emp" onclick="navigateTo('emp')">
           <i class="ti ti-users"></i><span>Employee List</span>
@@ -2108,131 +2108,255 @@
              VIEW: IMPORT
              ==================================================== -->
         <section class="view" id="view-import">
-          <!-- Step 1 — Authorize -->
-          <div class="card" style="margin-bottom:16px;" id="import-step-authorize">
+          <!-- Intro + Admin Security Key -->
+          <div class="card" style="margin-bottom:16px;">
             <div class="card-header">
-              <div class="card-title"><i class="ti ti-file-import" style="margin-right:6px;"></i>Import Orders &amp; Expenses</div>
+              <div class="card-title"><i class="ti ti-clock-edit" style="margin-right:6px;"></i>Add Records — Backdated Entry</div>
             </div>
             <div class="card-body">
-              <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">Enter your Admin Security Key to begin the import process.</p>
-              <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+              <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6;">
+                Add backdated <strong>orders</strong> and <strong>expenses</strong> one at a time into the list below, then submit them together.
+                Each entry keeps its own <strong>date</strong> and a <strong>Recording-only</strong> toggle. Late records that land on an
+                already-closed day update that day's report automatically.
+              </p>
+              <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
                 <div>
-                  <label class="form-label">Admin Security Key</label>
-                  <input type="password" id="import-security-key" class="form-control" placeholder="Security key…" style="width:260px;">
+                  <label class="form-label">Admin Security Key <span class="text-danger">*</span></label>
+                  <input type="password" id="addrec-security-key" class="form-control" placeholder="Required to submit…" style="width:260px;">
                 </div>
-                <button class="btn btn-primary" onclick="authorizeImport()"><i class="ti ti-shield-check"></i> Authorize</button>
+                <div>
+                  <label class="form-label">Default date for new entries</label>
+                  <input type="date" id="addrec-default-date" class="form-control" style="width:180px;" onchange="onAddRecDefaultDateChange()">
+                </div>
               </div>
-              <div id="import-auth-error" style="color:#ef4444;font-size:12px;margin-top:8px;display:none;"></div>
             </div>
           </div>
 
-          <!-- Steps 2–5 (shown after authorization) -->
-          <div id="import-steps-authorized" style="display:none;">
-            <!-- Step 2 — Download Template -->
-            <div class="card" style="margin-bottom:16px;">
-              <div class="card-header">
-                <div class="card-title"><i class="ti ti-download" style="margin-right:6px;"></i>Step 2 — Download Template</div>
-              </div>
-              <div class="card-body">
-                <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Download the Excel template (.xlsx) for your upload type. Fill it in using Excel or Google Sheets, then upload below. Check the <strong>Reference</strong> sheet inside the template for valid column values.</p>
-                <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                  <button class="btn btn-secondary" onclick="downloadCombinedTemplate()"><i class="ti ti-file-download"></i> Download Combined Template</button>
-                </div>
+          <!-- Entry tabs -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <div style="display:flex;gap:6px;">
+                <button class="btn btn-sm btn-primary"   id="addrec-tabbtn-order"   onclick="switchAddRecTab('order')"><i class="ti ti-shopping-cart"></i> Order</button>
+                <button class="btn btn-sm btn-secondary" id="addrec-tabbtn-expense" onclick="switchAddRecTab('expense')"><i class="ti ti-receipt"></i> Expense</button>
               </div>
             </div>
-
-            <!-- Step 3 — Upload -->
-            <div class="card" style="margin-bottom:16px;">
-              <div class="card-header">
-                <div class="card-title"><i class="ti ti-upload" style="margin-right:6px;"></i>Step 3 — Upload &amp; Preview</div>
-              </div>
-              <div class="card-body">
-                <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+            <div class="card-body">
+              <!-- ORDER TAB — full New-Order parity (mirrors addOrder()) -->
+              <div id="addrec-tab-order">
+                <!-- Row 1: Date, Customer, Source + conditional name fields -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px;">
                   <div>
-                    <label class="form-label">Excel File (.xlsx)</label>
-                    <input type="file" id="import-file-input" accept=".xlsx" class="form-control" style="width:300px;">
+                    <label class="form-label">Date <span class="text-danger">*</span></label>
+                    <input type="date" id="addrec-ord-date" class="form-control">
                   </div>
-                  <button class="btn btn-primary" onclick="uploadImportCsv()"><i class="ti ti-eye"></i> Upload &amp; Preview</button>
-                </div>
-                <div id="import-upload-error" style="color:#ef4444;font-size:12px;margin-top:8px;display:none;"></div>
-              </div>
-            </div>
-
-            <!-- Step 4 — Preview + Step 5 — Commit (shown after upload) -->
-            <div id="import-preview-section" style="display:none;">
-              <div class="card" style="margin-bottom:16px;">
-                <div class="card-header">
-                  <div class="card-title"><i class="ti ti-table" style="margin-right:6px;"></i>Step 4 — Preview</div>
-                  <div style="display:flex;gap:8px;">
-                    <button class="btn btn-secondary" onclick="document.getElementById('import-preview-section').style.display='none';"><i class="ti ti-x"></i> Cancel</button>
-                    <button id="import-commit-btn" class="btn btn-primary" onclick="commitImport()" disabled><i class="ti ti-check"></i> Commit Import</button>
-                  </div>
-                </div>
-                <div class="card-body">
-                  <!-- COD Payment Status warning -->
-                  <div id="import-ps-warning" style="display:none;background:#FEF3C7;border:1px solid #F59E0B;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#92400E;line-height:1.5;"></div>
-
-                  <!-- Simplified preview summary -->
-                  <div style="margin-bottom:16px;">
-                    <div style="font-size:13px;font-weight:600;color:#10B981;margin-bottom:8px;"><i class="ti ti-circle-check"></i> Preview Summary</div>
-                    <div id="import-preview-summary" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;">
-                      <div style="padding:12px 16px;flex:1;min-width:120px;text-align:center;background:var(--bg-secondary);border-radius:var(--radius-sm);">
-                        <div style="font-size:24px;font-weight:700;color:#10B981;" id="import-preview-order-count">0</div>
-                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Orders</div>
-                      </div>
-                      <div style="padding:12px 16px;flex:1;min-width:120px;text-align:center;background:var(--bg-secondary);border-radius:var(--radius-sm);">
-                        <div style="font-size:24px;font-weight:700;color:#0EA5E9;" id="import-preview-expense-count">0</div>
-                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Expenses</div>
-                      </div>
-                      <div style="padding:12px 16px;flex:1;min-width:120px;text-align:center;background:var(--bg-secondary);border-radius:var(--radius-sm);">
-                        <div style="font-size:24px;font-weight:700;color:#F59E0B;" id="import-preview-fix-count">0</div>
-                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Need Fix</div>
-                      </div>
-                      <div style="padding:12px 16px;flex:1;min-width:120px;text-align:center;background:var(--bg-secondary);border-radius:var(--radius-sm);">
-                        <div style="font-size:24px;font-weight:700;color:#6B7280;" id="import-preview-dup-count">0</div>
-                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Duplicates</div>
-                      </div>
-                    </div>
-                    <div style="display:flex;gap:8px;">
-                      <button class="btn btn-primary" onclick="openReviewModal()"><i class="ti ti-eye"></i> Review All Items</button>
-                    </div>
-                  </div>
-                  <!-- Pre-commit Issues (stock, report-close) -->
-                  <div id="import-issues-section" style="display:none;margin-bottom:16px;">
-                    <div style="font-size:13px;font-weight:600;color:#DC2626;margin-bottom:8px;"><i class="ti ti-alert-octagon"></i> Pre-commit Issues (<span id="import-issues-count">0</span>)</div>
-                    <div class="table-scroll" style="max-height:200px;overflow-y:auto;">
-                      <table class="table" style="font-size:12px;">
-                        <thead><tr><th>Receipt</th><th>Product</th><th>Issue</th></tr></thead>
-                        <tbody id="import-issues-tbody"><tr><td colspan="3" style="color:#999;text-align:center;">No issues</td></tr></tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <!-- Needs Fix tab -->
-                  <div style="margin-bottom:16px;">
-                    <div style="font-size:13px;font-weight:600;color:#F59E0B;margin-bottom:8px;"><i class="ti ti-alert-triangle"></i> Needs Fix (<span id="import-fix-count">0</span>)</div>
-                    <div class="table-scroll" style="max-height:200px;overflow-y:auto;">
-                      <table class="table" style="font-size:12px;">
-                        <thead><tr><th>Receipt / Ref</th><th>Date / Row</th><th colspan="2">Issue</th></tr></thead>
-                        <tbody id="import-fix-tbody"><tr><td colspan="4" style="color:#999;text-align:center;">None</td></tr></tbody>
-                      </table>
-                    </div>
-                  </div>
-                  <!-- Duplicates tab -->
                   <div>
-                    <div style="font-size:13px;font-weight:600;color:#6B7280;margin-bottom:8px;"><i class="ti ti-copy-off"></i> Duplicates (<span id="import-dup-count">0</span>)</div>
-                    <div class="table-scroll" style="max-height:200px;overflow-y:auto;">
-                      <table class="table" style="font-size:12px;">
-                        <thead><tr><th>Receipt / Ref</th><th>Date / Row</th><th colspan="2">Conflict</th></tr></thead>
-                        <tbody id="import-dup-tbody"><tr><td colspan="4" style="color:#999;text-align:center;">None</td></tr></tbody>
-                      </table>
+                    <label class="form-label">Customer Name <span class="text-danger">*</span></label>
+                    <input type="text" id="addrec-ord-customer" class="form-control" placeholder="Enter customer name">
+                  </div>
+                  <div>
+                    <label class="form-label">Source <span class="text-danger">*</span></label>
+                    <select class="form-select" id="addrec-ord-source" onchange="onAddRecOrderSourceChange()">
+                      <option value="">Select source</option>
+                      <option value="WALK_IN">Walk-in</option>
+                      <option value="AGENT">Agent</option>
+                      <option value="RESELLER">Reseller</option>
+                      <option value="DISTRIBUTOR">Distributor</option>
+                      <option value="ECOMMERCE">E-Commerce</option>
+                      <option value="FACEBOOK_PAGE">Facebook Page</option>
+                    </select>
+                  </div>
+                  <!-- conditional: Agent autocomplete -->
+                  <div id="addrec-ord-agent-wrap" style="display:none;">
+                    <label class="form-label">Agent <span class="text-danger">*</span></label>
+                    <div class="product-autocomplete-wrapper">
+                      <input type="text" class="form-control" id="addrec-ord-agent-input" placeholder="Type to search agents…" autocomplete="off">
+                      <input type="hidden" id="addrec-ord-agent-id" value="">
+                      <div class="product-dropdown" id="addrec-ord-agent-dropdown"></div>
                     </div>
                   </div>
+                  <!-- conditional: Reseller / Distributor name -->
+                  <div id="addrec-ord-reseller-wrap" style="display:none;">
+                    <label class="form-label" id="addrec-ord-reseller-label">Reseller Name</label>
+                    <input type="text" class="form-control" id="addrec-ord-reseller" placeholder="Enter reseller/distributor name">
+                  </div>
+                  <!-- conditional: Facebook page -->
+                  <div id="addrec-ord-fb-wrap" style="display:none;">
+                    <label class="form-label">FB Page</label>
+                    <input type="text" class="form-control" id="addrec-ord-fb" placeholder="Enter FB page name">
+                  </div>
+                  <!-- conditional: E-commerce platform -->
+                  <div id="addrec-ord-ecom-wrap" style="display:none;">
+                    <label class="form-label">Platform <span class="text-danger">*</span></label>
+                    <select class="form-select" id="addrec-ord-ecom-platform">
+                      <option value="">Select</option>
+                      <option value="SHOPEE">Shopee</option>
+                      <option value="TIKTOK">TikTok Shop</option>
+                      <option value="LAZADA">Lazada</option>
+                    </select>
+                  </div>
+                  <!-- conditional: E-commerce shop order id (recorded into notes) -->
+                  <div id="addrec-ord-ecomid-wrap" style="display:none;">
+                    <label class="form-label">Shop Order ID</label>
+                    <input type="text" class="form-control" id="addrec-ord-ecom-orderid" maxlength="40" placeholder="e.g. 260525ANS47VTC" autocomplete="off">
+                  </div>
+                </div>
+
+                <!-- Row 2: Payment mode, Payment status, Order type -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px;">
+                  <div>
+                    <label class="form-label">Payment Mode <span class="text-danger">*</span></label>
+                    <select class="form-select" id="addrec-ord-payment">
+                      <option value="">Select payment</option>
+                      <option value="CASH">Cash</option>
+                      <option value="GCASH">GCash</option>
+                      <option value="PAYMAYA">PayMaya</option>
+                      <option value="BANK_TRANSFER">Bank Transfer</option>
+                      <option value="BANK_DEPOSIT">Bank Deposit</option>
+                      <option value="ONLINE">Online</option>
+                      <option value="COD">COD (Cash on Delivery)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label">Payment Status <span class="text-danger">*</span></label>
+                    <select class="form-select" id="addrec-ord-payment-status">
+                      <option value="PAID">Paid</option>
+                      <option value="UNPAID">Unpaid — record for collection</option>
+                      <option value="">COD / default (by payment mode)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label">Order Type</label>
+                    <select class="form-select" id="addrec-ord-order-type">
+                      <option value="STANDARD">Standard</option>
+                      <option value="PICK_UP">Pick Up</option>
+                      <option value="COD">COD</option>
+                      <option value="DELIVERY">Delivery</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Row 3: Address, Discount, Delivery fee, Notes -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px;">
+                  <div style="grid-column:1/-1;">
+                    <label class="form-label">Address / Location <span style="font-size:11px;color:var(--text-muted);">(optional)</span></label>
+                    <input type="text" class="form-control" id="addrec-ord-address" placeholder="Delivery address or pickup location">
+                  </div>
+                  <div>
+                    <label class="form-label">Discount (₱)</label>
+                    <input type="number" class="form-control" id="addrec-ord-discount" value="0" min="0" step="0.01">
+                  </div>
+                  <div>
+                    <label class="form-label">Delivery Fee (₱)</label>
+                    <input type="number" class="form-control" id="addrec-ord-delivery-fee" value="0" min="0" step="0.01">
+                  </div>
+                  <div style="grid-column:1/-1;">
+                    <label class="form-label">Notes</label>
+                    <input type="text" class="form-control" id="addrec-ord-notes" placeholder="Optional notes">
+                  </div>
+                </div>
+
+                <!-- Items -->
+                <div style="margin-bottom:8px;font-size:12px;font-weight:600;color:var(--text-secondary);">Order Items</div>
+                <div id="addrec-ord-items"></div>
+                <button class="btn btn-secondary btn-sm" onclick="addAddRecOrderItem()" style="margin-bottom:12px;"><i class="ti ti-plus"></i> Add Item</button>
+
+                <!-- Recording-only -->
+                <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin:12px 0;">
+                  <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12.5px;">
+                    <input type="checkbox" id="addrec-ord-recording-only" style="margin-top:2px;">
+                    <span><strong>Recording only</strong> — don't move stock or cash on hand.
+                      <span style="display:block;color:var(--text-muted);font-size:11.5px;margin-top:3px;line-height:1.5;">Check for old historical records (still counted in the day's sales/commissions, but inventory and the cash drawer stay untouched). Leave unchecked for recent gap-fill that should also deduct stock and adjust cash.</span>
+                    </span>
+                  </label>
+                </div>
+                <div style="text-align:right;">
+                  <button class="btn btn-primary" onclick="stageAddRecOrder()"><i class="ti ti-plus"></i> Add to list</button>
                 </div>
               </div>
 
-              <!-- Step 5 — Commit result shown via modal (see showImportResultModal in app.js) -->
+              <!-- EXPENSE TAB -->
+              <div id="addrec-tab-expense" style="display:none;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px;">
+                  <div>
+                    <label class="form-label">Date <span class="text-danger">*</span></label>
+                    <input type="date" id="addrec-exp-date" class="form-control">
+                  </div>
+                  <div>
+                    <label class="form-label">Payment Method <span class="text-danger">*</span></label>
+                    <select class="form-select" id="addrec-exp-payment-method">
+                      <option value="">Select method…</option>
+                      <option value="CASH">Cash</option>
+                      <option value="BANK_TRANSFER">Bank Transfer</option>
+                      <option value="GCASH">GCash</option>
+                      <option value="PAYMAYA">PayMaya</option>
+                      <option value="COD">COD</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label">Category <span class="text-danger">*</span></label>
+                    <select class="form-select" id="addrec-exp-primary" onchange="onAddRecPrimaryChange(this)">
+                      <option value="">Select category…</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label">Sub-category <span class="text-danger">*</span></label>
+                    <select class="form-select" id="addrec-exp-sub">
+                      <option value="">Select sub-category…</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label">Reference #</label>
+                    <input type="text" id="addrec-exp-reference" class="form-control" placeholder="Optional">
+                  </div>
+                </div>
+                <div style="margin-bottom:8px;font-size:12px;font-weight:600;color:var(--text-secondary);">Items</div>
+                <div id="addrec-exp-items">
+                  <div class="addrec-exp-item-row" style="display:grid;grid-template-columns:1fr 140px 36px;gap:8px;margin-bottom:8px;">
+                    <input type="text" class="form-control addrec-exp-item-desc" placeholder="Item description">
+                    <input type="number" class="form-control addrec-exp-item-amount" placeholder="Amount" min="0" step="0.01">
+                    <button class="btn btn-secondary btn-sm" onclick="removeAddRecExpenseRow(this)" title="Remove" style="padding:0 10px;">×</button>
+                  </div>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="addAddRecExpenseRow()" style="margin-bottom:12px;"><i class="ti ti-plus"></i> Add Item</button>
+                <div>
+                  <label class="form-label">Notes</label>
+                  <input type="text" id="addrec-exp-notes" class="form-control" placeholder="Optional">
+                </div>
+                <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin:12px 0;">
+                  <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12.5px;">
+                    <input type="checkbox" id="addrec-exp-recording-only" style="margin-top:2px;">
+                    <span><strong>Recording only</strong> — don't move cash on hand.
+                      <span style="display:block;color:var(--text-muted);font-size:11.5px;margin-top:3px;line-height:1.5;">Check for old historical records (still counted in the day's report, but the cash drawer stays untouched). Leave unchecked for recent gap-fill that should also adjust cash.</span>
+                    </span>
+                  </label>
+                </div>
+                <div style="text-align:right;">
+                  <button class="btn btn-primary" onclick="stageAddRecExpense()"><i class="ti ti-plus"></i> Add to list</button>
+                </div>
+              </div>
             </div>
+          </div>
+
+          <!-- Session list -->
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+              <div class="card-title"><i class="ti ti-list-details" style="margin-right:6px;"></i>Records to submit (<span id="addrec-count">0</span>)</div>
+              <button class="btn btn-primary" id="addrec-submit-btn" onclick="submitBackdated()" disabled><i class="ti ti-send"></i> Submit All</button>
+            </div>
+            <div class="table-scroll">
+              <table class="table" style="font-size:12.5px;">
+                <thead><tr><th>Date</th><th>Type</th><th>Summary</th><th>Flags</th><th style="text-align:center;">Remove</th></tr></thead>
+                <tbody id="addrec-list-tbody">
+                  <tr><td colspan="5" style="text-align:center;color:#999;padding:20px;">No records staged yet. Add an order or expense above.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Submit result -->
+          <div class="card" id="addrec-result-card" style="margin-bottom:16px;display:none;">
+            <div class="card-header"><div class="card-title"><i class="ti ti-clipboard-check" style="margin-right:6px;"></i>Submit Result</div></div>
+            <div class="card-body" id="addrec-result-body"></div>
           </div>
 
           <!-- Import History -->
@@ -2586,49 +2710,6 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeRegisterAgentModal()"><i class="ti ti-x"></i> Cancel</button>
         <button class="btn btn-primary" onclick="submitRegisterAgent()"><i class="ti ti-check"></i> Register</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       MODAL: IMPORT REVIEW
-       ============================================================ -->
-  <div class="modal-overlay" id="modal-import-review">
-     <div class="modal-box" style="max-width:960px;max-height:90vh;display:flex;flex-direction:column;">
-      <div class="modal-header">
-        <div style="font-size:14px;font-weight:600;"><i class="ti ti-file-import" style="margin-right:6px;"></i>Review Items</div>
-        <button class="icon-btn" onclick="closeModal('modal-import-review')"><i class="ti ti-x"></i></button>
-      </div>
-      <div class="modal-body" style="overflow-y:auto;flex:1;padding:0;">
-
-        <!-- Green gate indicator -->
-        <div id="review-green-bar" style="padding:10px 18px;background:#DCFCE7;border-bottom:1px solid #86EFAC;font-size:12px;color:#166534;display:flex;align-items:center;gap:8px;">
-          <i class="ti ti-alert-triangle"></i>
-          <span id="review-green-text">Review all items before committing</span>
-        </div>
-
-        <!-- Hint bar -->
-        <div id="review-hint-bar" style="display:flex;justify-content:space-between;align-items:center;padding:0 20px;font-size:11px;color:var(--text-muted);"></div>
-
-        <!-- Card container -->
-        <div id="review-card-container" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;padding:20px;">
-          <div style="text-align:center;color:var(--text-muted);padding:32px;">Loading items...</div>
-        </div>
-
-      </div>
-      <div class="modal-footer" style="flex-direction:column;align-items:stretch;gap:8px;">
-        <!-- Pagination -->
-        <div id="review-pagination" style="display:flex;align-items:center;justify-content:center;gap:12px;font-size:13px;">
-          <button class="btn btn-secondary btn-sm" onclick="reviewPagePrev()" id="review-page-prev" disabled><i class="ti ti-chevron-left"></i> Prev</button>
-          <span id="review-page-info" style="color:var(--text-muted);">Page 1 of 1</span>
-          <button class="btn btn-secondary btn-sm" onclick="reviewPageNext()" id="review-page-next" disabled>Next <i class="ti ti-chevron-right"></i></button>
-        </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button class="btn btn-secondary" onclick="closeModal('modal-import-review')">Cancel</button>
-          <button id="review-commit-btn" class="btn btn-primary" onclick="commitImport()" disabled>
-            <i class="ti ti-check"></i> Commit Import
-          </button>
-        </div>
       </div>
     </div>
   </div>

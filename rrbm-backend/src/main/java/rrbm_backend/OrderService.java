@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -43,6 +44,7 @@ public class OrderService {
     private final DailyReportRepository dailyReportRepository;
     private final ProductRepository  productRepository;
     private final CashLedgerService  cashLedgerService;
+    private final AgentRepository    agentRepository;
 
     public OrderService(OrderRepository orderRepository,
                         OrderIdGenerator orderIdGenerator,
@@ -54,7 +56,8 @@ public class OrderService {
                         CommissionService commissionService,
                         DailyReportRepository dailyReportRepository,
                         ProductRepository productRepository,
-                        CashLedgerService cashLedgerService) {
+                        CashLedgerService cashLedgerService,
+                        AgentRepository agentRepository) {
         this.orderRepository    = orderRepository;
         this.orderIdGenerator   = orderIdGenerator;
         this.userRepository     = userRepository;
@@ -66,6 +69,99 @@ public class OrderService {
         this.dailyReportRepository = dailyReportRepository;
         this.productRepository  = productRepository;
         this.cashLedgerService  = cashLedgerService;
+        this.agentRepository    = agentRepository;
+    }
+
+    /**
+     * Builds (but does not persist) an {@link Order} from a {@link CreateOrderRequest},
+     * including payload validation, agent linking, and per-item commission (opAmount) setup.
+     *
+     * Shared by the live {@code POST /api/orders} path and the backdated "Add Records" path
+     * (S2) so both produce identical orders — same source, agent, payment mode, multi-item and
+     * commission handling. This is the core accuracy fix: one builder, no re-implementation.
+     *
+     * On any validation failure this throws {@link RuntimeException} carrying a user-facing
+     * message; callers translate that to a 400 response (the live createOrder catch block and
+     * the per-row try/catch in the backdated commit both already do this).
+     *
+     * Does NOT save, generate the order ID, deduct stock, or touch the ledger/cash — that is
+     * the job of {@link #createOrder} / {@code createOrderAtDate}. Does NOT create commission
+     * entries (callers do that post-save via CommissionService); it only sets {@code opAmount}.
+     *
+     * @param userId the acting user (reserved for future audit use; build is user-independent)
+     */
+    public Order buildOrderFromRequest(CreateOrderRequest request, Long userId) {
+        // ── Payload validation (M-21): a direct API call bypasses frontend checks ──
+        String cname = request.getCustomerName();
+        if (cname == null || cname.trim().isEmpty())
+            throw new RuntimeException("Customer name is required");
+        if (request.getItems() == null || request.getItems().isEmpty())
+            throw new RuntimeException("Order must have at least one item");
+        for (CreateOrderRequest.OrderItemRequest it : request.getItems()) {
+            if (it.getQuantity() == null || it.getQuantity() <= 0)
+                throw new RuntimeException("Item quantity must be at least 1");
+            if (it.getUnitPrice() == null || it.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("Item unit price must be greater than 0 for: "
+                    + (it.getProductName() != null ? it.getProductName() : "unknown"));
+            if (it.getProductId() == null)
+                throw new RuntimeException("Item \"" + (it.getProductName() != null ? it.getProductName() : "unknown")
+                    + "\" must be selected from the product catalog");
+            if (!productRepository.existsById(it.getProductId()))
+                throw new RuntimeException("Product \"" + (it.getProductName() != null ? it.getProductName() : "ID " + it.getProductId())
+                    + "\" no longer exists in the catalog");
+        }
+
+        // ── Build Order entity from request ──
+        Order order = new Order();
+        order.setCustomerName(request.getCustomerName());
+        order.setSource(request.getSource());
+        order.setAgentName(request.getAgentName());
+        order.setFbPage(request.getFbPage());
+        order.setEcommercePlatform(request.getEcommercePlatform());
+        order.setPaymentMode(request.getPaymentMode() != null ? request.getPaymentMode() : "CASH");
+        order.setOrderType(request.getOrderType() != null ? request.getOrderType() : "STANDARD");
+        order.setAddress(request.getAddress());
+        order.setDiscount(request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO);
+        order.setDeliveryFee(request.getDeliveryFee() != null ? request.getDeliveryFee() : BigDecimal.ZERO);
+        order.setNotes(request.getNotes());
+
+        // ── A2: Agent linking — look up registered agent if agentId is supplied ──
+        final Agent linkedAgent;
+        if (request.getAgentId() != null) {
+            Agent found = agentRepository.findById(request.getAgentId()).orElse(null);
+            if (found == null || "INACTIVE".equals(found.getStatus()))
+                throw new RuntimeException("Agent not found");
+            order.setAgentId(found.getId());
+            order.setAgentName(found.getFullName());
+            linkedAgent = found;
+        } else {
+            linkedAgent = null;
+        }
+
+        // ── Build OrderItems (+ commission opAmount, U15 flat-amount model) ──
+        request.getItems().forEach(itemReq -> {
+            OrderItem item = new OrderItem();
+            item.setProductId(itemReq.getProductId());
+            item.setProductName(itemReq.getProductName());
+            item.setQuantity(itemReq.getQuantity());
+            item.setUnitPrice(itemReq.getUnitPrice());
+            item.setWarehouse(itemReq.getWarehouse());
+            if (linkedAgent != null
+                    && itemReq.getBasePrice() != null
+                    && itemReq.getOpPerUnit() != null) {
+                item.setBasePrice(itemReq.getBasePrice());
+                item.setOpPerUnit(itemReq.getOpPerUnit());
+                // Commission = opPerUnit × quantity
+                item.setOpAmount(
+                    itemReq.getOpPerUnit()
+                           .multiply(new BigDecimal(itemReq.getQuantity()))
+                           .setScale(2, RoundingMode.HALF_UP)
+                );
+            }
+            order.addItem(item);
+        });
+
+        return order;
     }
 
     /**
@@ -151,6 +247,21 @@ public class OrderService {
      */
     @Transactional
     public Order createOrderAtDate(Order order, Long createdByUserId, LocalDate targetDate) {
+        // Default: affect inventory stock (preserves existing import behavior for all callers).
+        return createOrderAtDate(order, createdByUserId, targetDate, true);
+    }
+
+    /**
+     * Overload of {@link #createOrderAtDate(Order, Long, LocalDate)} that lets the batch-import
+     * pipeline choose whether to deduct inventory stock.
+     *
+     * When {@code affectStock} is false ("Recording only" imports of old historical data), the
+     * order, its backdated SALE ledger entry, and downstream commission entries are still written
+     * — only {@link InventoryService#deductStockForOrder} is skipped, so the live warehouse counts
+     * (already the actual on-hand) are left untouched. Cash-on-hand is handled by the caller.
+     */
+    @Transactional
+    public Order createOrderAtDate(Order order, Long createdByUserId, LocalDate targetDate, boolean affectStock) {
         if (order.getSource() == null || !VALID_SOURCES.contains(order.getSource().toUpperCase())) {
             throw new RuntimeException("Invalid order source: '" + order.getSource()
                 + "'. Must be one of: " + VALID_SOURCES);
@@ -185,11 +296,92 @@ public class OrderService {
         // in the ledger — not on today. Existing recordSale(Order, Long) is untouched.
         transactionService.recordSale(savedOrder, createdByUserId, targetDate);
         // NOTE: deliberately NOT touching the cash-on-hand ledger here. This path is the
-        // bulk/backdated import pipeline; cash on hand is a live drawer figure seeded from
-        // an opening balance, so historical imports must not move it (would double-count).
-        inventoryService.deductStockForOrder(savedOrder, createdByUserId);
+        // bulk/backdated import pipeline; cash on hand is handled by the caller (ImportController)
+        // so it can honor the "Recording only" toggle. Recording-only imports also skip the
+        // inventory deduction below, leaving live warehouse counts (the actual on-hand) intact.
+        if (affectStock) {
+            inventoryService.deductStockForOrder(savedOrder, createdByUserId);
+        }
 
         return savedOrder;
+    }
+
+    /**
+     * Backdated order creation for the "Add Records" page (S2).
+     *
+     * Builds the order from the same {@link CreateOrderRequest} the live New Order screen uses
+     * (via {@link #buildOrderFromRequest}), backdates it to {@code date} (order-ID prefix,
+     * createdAt, SALE ledger entry — all via {@link #createOrderAtDate}), then applies the same
+     * payment-status routing as the CSV import commit and the live COD path — so source / agent /
+     * payment mode / multi-item / commission all behave identically to a normal order.
+     *
+     * Routing (mirrors {@code ImportController.commitImport}; the live COD path lives in
+     * {@code createOrderAtDate}, which already sets PENDING for {@code paymentMode == COD}):
+     * <ul>
+     *   <li><b>PAID</b> → status ACTIVE; commission created (if agent); cash-in when CASH &amp;&amp; !recordingOnly.</li>
+     *   <li><b>UNPAID/pending</b> → status PENDING_COLLECTION (+ pendingCollectionAt); SALE deferral-voided
+     *       (net not inflated until collected); no commission; no cash. Surfaces on the Collections page
+     *       and is settled later via {@code PATCH /api/orders/{id}/collect}.</li>
+     *   <li><b>blank/null</b> → status left as built (ACTIVE, or PENDING for COD); commission created;
+     *       cash-in when CASH &amp;&amp; !recordingOnly.</li>
+     * </ul>
+     *
+     * {@code recordingOnly} (V84) skips inventory deduction and cash-on-hand, but never suppresses
+     * the SALE ledger entry or commissions — historical records still count in sales and agent payouts.
+     *
+     * @param paymentStatus "PAID", "UNPAID", or blank/null (COD is expressed via {@code req.paymentMode})
+     */
+    @Transactional
+    public Order createBackdatedOrder(CreateOrderRequest req, String paymentStatus,
+                                      Long userId, LocalDate date, boolean recordingOnly) {
+        User creator = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found: " + userId));
+
+        Order built = buildOrderFromRequest(req, userId);
+        // Provenance: Add Records entries are back-records. Flag lateImported when the target
+        // date's daily report is already closed (S3 will recompute those reports).
+        built.setImported(true);
+        built.setLateImported(dailyReportRepository.findByReportDate(date).isPresent());
+        // affectStock = !recordingOnly: record-only back-records leave live warehouse counts intact.
+        Order saved = createOrderAtDate(built, userId, date, !recordingOnly);
+
+        String ps = paymentStatus == null ? "" : paymentStatus.trim().toUpperCase();
+
+        if ("UNPAID".equals(ps)) {
+            saved.setPaymentStatus("UNPAID");
+            saved.setStatus("PENDING_COLLECTION");
+            saved.setPendingCollectionAt(OffsetDateTime.now());
+            orderRepository.save(saved);
+            // Net not inflated until collected; commission deferred; no cash movement.
+            try { transactionService.recordDeferralVoid(saved, userId); } catch (Exception ignored) {}
+            return saved;
+        }
+
+        if ("PAID".equals(ps)) {
+            saved.setPaymentStatus("PAID");
+            saved.setStatus("ACTIVE");
+            orderRepository.save(saved);
+        }
+        // else blank/null → keep status as built (ACTIVE default, or PENDING for COD paymentMode).
+
+        // Commission entries — idempotent; no-op when the order has no agent / no opAmount.
+        try { commissionService.createEntriesForOrder(saved, userId); }
+        catch (Exception e) {
+            log.warn("Failed to create commission entries for backdated order {}: {}",
+                     saved.getId(), e.getMessage());
+        }
+
+        // Cash-on-hand: only for cash-paid orders, and only when not recording-only.
+        if (!recordingOnly && "CASH".equalsIgnoreCase(saved.getPaymentMode())) {
+            try {
+                cashLedgerService.recordOrderCashSale(saved, userId, creator.getFullName(), date);
+            } catch (Exception e) {
+                log.warn("Failed to record cash-on-hand for backdated order {}: {}",
+                         saved.getId(), e.getMessage());
+            }
+        }
+
+        return saved;
     }
 
     /**

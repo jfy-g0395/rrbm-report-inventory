@@ -66,6 +66,11 @@ public class Expense {
     @Column(name = "late_imported", nullable = false)
     private boolean lateImported = false;
 
+    // Recording-only flag (V84) — true when imported for the record only:
+    // cash-on-hand was intentionally NOT touched (no cash-ledger reconcile).
+    @Column(name = "recording_only", nullable = false)
+    private boolean recordingOnly = false;
+
     @Column(name = "payment_method", length = 30)
     private String paymentMethod;
 

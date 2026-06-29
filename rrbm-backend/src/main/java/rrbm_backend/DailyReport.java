@@ -56,6 +56,14 @@ public class DailyReport {
     // sales — persists until cash is physically deposited to the bank.
     @Column(name = "cash_on_hand") private BigDecimal cashOnHand;
 
+    // ── Amended marker (V85) ────────────────────────────────────────
+    // Set when a backdated "Add Records" entry causes this already-closed report to be
+    // recomputed from the ledger. Original closedBy/closedAt are preserved; these capture
+    // who refreshed it and when.
+    @Column(name = "amended", nullable = false) private boolean amended = false;
+    @Column(name = "amended_at") private OffsetDateTime amendedAt;
+    @Column(name = "amended_by") private Long amendedBy;
+
     // --- Getters & Setters ---
     public Long getId() { return id; }
     public LocalDate getReportDate() { return reportDate; }
@@ -118,4 +126,11 @@ public class DailyReport {
 
     public OffsetDateTime getCreatedAt()                   { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt)     { this.createdAt = createdAt; }
+
+    public boolean isAmended()                             { return amended; }
+    public void setAmended(boolean amended)                { this.amended = amended; }
+    public OffsetDateTime getAmendedAt()                   { return amendedAt; }
+    public void setAmendedAt(OffsetDateTime amendedAt)     { this.amendedAt = amendedAt; }
+    public Long getAmendedBy()                             { return amendedBy; }
+    public void setAmendedBy(Long amendedBy)               { this.amendedBy = amendedBy; }
 }

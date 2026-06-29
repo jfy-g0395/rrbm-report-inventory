@@ -95,10 +95,45 @@ public class ExpenseController {
                     "Backdating beyond " + backdatingDays + " days is not allowed"));
         }
 
+        // Build + validate the entity via the shared helper (also used by the backdated
+        // "Add Records" path). Validation failures throw IllegalArgumentException → 400 here.
+        Expense expense;
+        try {
+            expense = buildExpenseFromBody(body, adminId, adminName, date);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+
+        Expense saved = expenseRepository.save(expense);
+
+        // Activity log
+        activityLogService.log(
+                adminId, adminName,
+                "EXPENSE_RECORDED",
+                "Recorded expense of ₱" + saved.getTotalAmount() + " on " + saved.getDate()
+                        + " with " + saved.getItems().size() + " item(s)",
+                "EXPENSE", String.valueOf(saved.getId()));
+
+        // Cash on hand: a cash-paid expense deducts from the drawer (net amount only).
+        cashLedgerService.reconcileExpenseCash(saved, adminId, adminName);
+
+        return ResponseEntity.ok(toMap(saved));
+    }
+
+    /**
+     * Builds (but does not persist) an {@link Expense} from the request body shape used by both
+     * the live {@code POST /api/expenses} path and the backdated "Add Records" path (S2):
+     * {@code { paymentMethod, notes, referenceNumber, items:[{itemDescription, amount, categoryId}] }}.
+     *
+     * The caller supplies the resolved {@code date} (live path defaults to today and enforces the
+     * backdating window; the backdated path passes the per-entry date with no window restriction).
+     * Throws {@link IllegalArgumentException} with a user-facing message on any validation failure.
+     */
+    private Expense buildExpenseFromBody(Map<String, Object> body, Long adminId, String adminName, LocalDate date) {
         // paymentMethod — required
         Object rawPm = body.get("paymentMethod");
         if (rawPm == null || rawPm.toString().isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "paymentMethod is required"));
+            throw new IllegalArgumentException("paymentMethod is required");
         }
         String paymentMethod = rawPm.toString().trim();
 
@@ -119,12 +154,12 @@ public class ExpenseController {
         // Parse items
         Object rawItems = body.get("items");
         if (!(rawItems instanceof List)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "items must be a list"));
+            throw new IllegalArgumentException("items must be a list");
         }
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> itemList = (List<Map<String, Object>>) rawItems;
         if (itemList.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "At least one item is required"));
+            throw new IllegalArgumentException("At least one item is required");
         }
 
         // Validate categoryId on every non-blank item before touching the DB
@@ -132,7 +167,7 @@ public class ExpenseController {
             String desc = itemMap.getOrDefault("itemDescription", "").toString().trim();
             if (desc.isEmpty()) continue; // blank items are skipped below
             if (itemMap.get("categoryId") == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "categoryId is required for each item"));
+                throw new IllegalArgumentException("categoryId is required for each item");
             }
         }
 
@@ -169,24 +204,44 @@ public class ExpenseController {
         }
 
         if (expense.getItems().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "No valid items provided"));
+            throw new IllegalArgumentException("No valid items provided");
         }
 
         expense.recalculateTotal();
+        return expense;
+    }
+
+    /**
+     * Backdated expense creation for the "Add Records" page (S2). Reuses the live build logic
+     * ({@link #buildExpenseFromBody}) with the per-entry {@code date} — deliberately with NO
+     * backdating-window restriction, since this page is the backdated tool. Sets {@code recordingOnly}
+     * (V84) and reconciles cash-on-hand only when {@code !recordingOnly} (a recording-only historical
+     * record still counts in totalExpenses but leaves the cash drawer untouched).
+     *
+     * Throws {@link IllegalArgumentException} on invalid input; the backdated commit's per-row
+     * try/catch records that as a row error. Returns the saved entity.
+     */
+    @Transactional
+    public Expense createBackdatedExpense(Map<String, Object> body, Long adminId, String adminName,
+                                          LocalDate date, boolean recordingOnly) {
+        Expense expense = buildExpenseFromBody(body, adminId, adminName, date);
+        expense.setRecordingOnly(recordingOnly);
         Expense saved = expenseRepository.save(expense);
 
-        // Activity log
         activityLogService.log(
                 adminId, adminName,
                 "EXPENSE_RECORDED",
-                "Recorded expense of ₱" + saved.getTotalAmount() + " on " + saved.getDate()
-                        + " with " + saved.getItems().size() + " item(s)",
+                "Recorded backdated expense of ₱" + saved.getTotalAmount() + " on " + saved.getDate()
+                        + " with " + saved.getItems().size() + " item(s)"
+                        + (recordingOnly ? " (recording only — no cash impact)" : ""),
                 "EXPENSE", String.valueOf(saved.getId()));
 
-        // Cash on hand: a cash-paid expense deducts from the drawer (net amount only).
-        cashLedgerService.reconcileExpenseCash(saved, adminId, adminName);
+        // Cash on hand: skip entirely for recording-only back-records.
+        if (!recordingOnly) {
+            cashLedgerService.reconcileExpenseCash(saved, adminId, adminName);
+        }
 
-        return ResponseEntity.ok(toMap(saved));
+        return saved;
     }
 
     // ── PUT /api/expenses/{id} — edit an encoded expense (fix wrong inputs) ──
@@ -1080,6 +1135,7 @@ public class ExpenseController {
         m.put("isImported",      e.isImported());
         m.put("importRef",       e.getImportRef());
         m.put("lateImported",    e.isLateImported());
+        m.put("recordingOnly",   e.isRecordingOnly());
         m.put("createdAt",       e.getCreatedAt().toString());
         m.put("items", e.getItems().stream().map(i -> {
             Map<String, Object> im = new LinkedHashMap<>();

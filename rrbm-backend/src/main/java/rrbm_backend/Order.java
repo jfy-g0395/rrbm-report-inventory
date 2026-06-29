@@ -136,6 +136,14 @@ public class Order {
     public boolean isLateImported() { return lateImported; }
     public void setLateImported(boolean lateImported) { this.lateImported = lateImported; }
 
+    // Recording-only flag (V84) — true when imported for the record only:
+    // inventory stock and cash-on-hand were intentionally NOT touched.
+    @Column(name = "recording_only", nullable = false)
+    private boolean recordingOnly = false;
+
+    public boolean isRecordingOnly() { return recordingOnly; }
+    public void setRecordingOnly(boolean recordingOnly) { this.recordingOnly = recordingOnly; }
+
     // One order has many items
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();

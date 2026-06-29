@@ -1,16 +1,16 @@
 /* ================================================================
-   RRBM Packaging Supplies and Trading — Management System
+   RRBM Packaging Supplies and Trading â€” Management System
    Main Application Script
    ================================================================ */
 
 (function () {
   'use strict';
 
-  // ── API base URL ──────────────────────────────────────────────────────────
-  // Local dev  → '' + API_BASE + ''
-  // Docker / production → ''  (nginx proxies /api/* to the backend container)
-  // Local dev  (file:// or localhost): backend runs on its own port → use full URL.
-  // Production (real hostname via nginx): nginx proxies /api/* → use relative URLs.
+  // â”€â”€ API base URL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Local dev  â†’ '' + API_BASE + ''
+  // Docker / production â†’ ''  (nginx proxies /api/* to the backend container)
+  // Local dev  (file:// or localhost): backend runs on its own port â†’ use full URL.
+  // Production (real hostname via nginx): nginx proxies /api/* â†’ use relative URLs.
   const _h = window.location.hostname;
   const API_BASE = (_h === 'localhost' || _h === '127.0.0.1' || _h === '' || window.location.protocol === 'file:')
     ? 'http://localhost:8080'
@@ -38,7 +38,7 @@
     voidTargetId: null,         // order id currently in the void modal
     dailyClosed: false,         // true when today's daily report is closed (gates void button)
     ivmOrder: null,             // full order object loaded when item-void modal opens
-    ivmTier: null,              // 'TIER_1' | 'TIER_2' | null — current void tier
+    ivmTier: null,              // 'TIER_1' | 'TIER_2' | null â€” current void tier
   };
 
   function pad(n, w) { n = '' + n; while (n.length < w) n = '0' + n; return n; }
@@ -98,7 +98,7 @@
     return '<span class="status-dot ' + info.dot + '"></span>' + info.label;
   }
 
-  // Step 10 — navigate to Order History and filter to a specific order ID.
+  // Step 10 â€” navigate to Order History and filter to a specific order ID.
   // Uses a short delay because navigateTo('order-history') calls renderOrderHistory()
   // which is async and resets the search field after its fetch completes.
   window.jumpToOrder = function (orderId) {
@@ -110,7 +110,7 @@
       if (typeof window.filterOrderHistory === 'function') window.filterOrderHistory();
     };
     if (alreadyThere) {
-      // Data already loaded — apply filter immediately; no re-fetch
+      // Data already loaded â€” apply filter immediately; no re-fetch
       apply();
     } else {
       // navigateTo triggers an async re-fetch; wait for it to settle before filtering
@@ -119,17 +119,17 @@
     }
   };
 
-  // Step 10 — returns the full status-cell HTML for an order row, including
+  // Step 10 â€” returns the full status-cell HTML for an order row, including
   // supplementary badges for voided / replacement states
   function orderStatusCell(o) {
     var base = statusBadge(o.status);
 
-    // Fully voided (Tier 2) — amber dot + "Fully Voided" overrides standard Cancelled badge
+    // Fully voided (Tier 2) â€” amber dot + "Fully Voided" overrides standard Cancelled badge
     if (o.cancellationType === 'VOIDED') {
       return '<span class="status-dot dot-pending"></span>Fully Voided';
     }
 
-    // Returned order — amber badge overrides green Delivered
+    // Returned order â€” amber badge overrides green Delivered
     if (o.status === 'DELIVERED' && o.refundedAt) {
       return '<span class="status-dot dot-pending"></span>Returned'
         + '<div style="font-size:10px;color:#F59E0B;line-height:1.3;margin-top:2px;">'
@@ -137,7 +137,7 @@
         + '</div>';
     }
 
-    // Cancelled for replacement — keep Cancelled badge, add replacement sub-line
+    // Cancelled for replacement â€” keep Cancelled badge, add replacement sub-line
     if (o.cancellationType === 'REPLACEMENT') {
       var replSub = o.replacementOrderId
         ? '<div style="font-size:10px;color:var(--accent-success);margin-top:2px;line-height:1.3;">Replaced by '
@@ -147,19 +147,19 @@
       return base + replSub;
     }
 
-    // Replacement order — keep normal status badge, add purple "Replacement for" sub-line
+    // Replacement order â€” keep normal status badge, add purple "Replacement for" sub-line
     if (o.originalOrderId) {
       return base + '<div style="font-size:10px;color:var(--accent-info);margin-top:2px;line-height:1.3;">Replacement for '
         + '<a href="#" onclick="event.preventDefault();jumpToOrder(\'' + o.originalOrderId + '\')" '
         + 'style="color:var(--accent-info);font-weight:600;">' + o.originalOrderId + '</a></div>';
     }
 
-    // Partially voided — keep normal status badge, add amber sub-line
+    // Partially voided â€” keep normal status badge, add amber sub-line
     if (Number(o.voidedAmount || 0) > 0 && o.status !== 'CANCELLED') {
-      return base + '<div style="font-size:10px;color:var(--accent-warn);margin-top:2px;line-height:1.3;">⚠ Partial void</div>';
+      return base + '<div style="font-size:10px;color:var(--accent-warn);margin-top:2px;line-height:1.3;">âš  Partial void</div>';
     }
 
-    // Standard — no change
+    // Standard â€” no change
     return base;
   }
 
@@ -329,13 +329,13 @@
 
   window._doLogout = function () {
     closeModal('modal-logout');
-    // N-9: fire-and-forget logout log — must read token before clearing localStorage
+    // N-9: fire-and-forget logout log â€” must read token before clearing localStorage
     var _logoutToken = localStorage.getItem('rrbm_token');
     if (_logoutToken) {
       fetch(API_BASE + '/api/auth/logout', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + _logoutToken }
-      }).catch(function () {}); // ignore network errors — don't block logout
+      }).catch(function () {}); // ignore network errors â€” don't block logout
     }
     localStorage.removeItem('rrbm_token');
     localStorage.removeItem('rrbm_user');
@@ -352,7 +352,7 @@
   // ROLE-BASED UI RESTRICTIONS + PAGE ACCESS CONTROL
   // ================================================================
 
-  // Map view ID → page key used in allowedPages JSON array
+  // Map view ID â†’ page key used in allowedPages JSON array
   function viewToPageKey(view) {
     const map = {
       'new': 'orders', 'list': 'orders', 'order-history': 'order-history',
@@ -388,7 +388,7 @@
   function canAccessPage(view) {
     if (currentUserRole() === 'SUPER_ADMIN') return true;
     const key = viewToPageKey(view);
-    if (!key) return true; // dashboard, settings — not page-restricted
+    if (!key) return true; // dashboard, settings â€” not page-restricted
     const pages = getAllowedPages();
     if (pages === null) return true; // null = unrestricted
     return pages.includes(key);
@@ -397,16 +397,16 @@
   function applyRoleRestrictions(role) {
     const isSuper   = role === 'SUPER_ADMIN';
     const canManage = role === 'SUPER_ADMIN' || role === 'ADMINISTRATOR';
-    // Settings nav — Super Admin only
+    // Settings nav â€” Super Admin only
     const navSet = $('nav-set');
     if (navSet) navSet.style.display = isSuper ? '' : 'none';
-    // Employee List nav — Super Admin and Administrator only
+    // Employee List nav â€” Super Admin and Administrator only
     const navEmp = $('nav-emp');
     if (navEmp) navEmp.style.display = canManage ? '' : 'none';
-    // Add Employee button — managers only
+    // Add Employee button â€” managers only
     const btnAddEmp = $('btn-add-employee');
     if (btnAddEmp) btnAddEmp.style.display = canManage ? '' : 'none';
-    // Employees actions column header — managers only
+    // Employees actions column header â€” managers only
     const empActHdr = $('emp-actions-header');
     if (empActHdr) empActHdr.style.display = canManage ? '' : 'none';
 
@@ -458,7 +458,7 @@
           + '<td>' + o.customerName + '</td>'
           + '<td>' + itemText + '</td>'
           + '<td>' + totalQty + '</td>'
-          + '<td>₱' + Number(o.total).toLocaleString() + '</td>'
+          + '<td>â‚±' + Number(o.total).toLocaleString() + '</td>'
           + '<td>' + formatSource(o.source) + '</td>'
           + '<td>' + formatPaymentMode(o.paymentMode) + '</td>'
           + '<td>' + statusBadge(o.status) + '</td>'
@@ -470,7 +470,7 @@
   }
 
   // ================================================================
-  // ORDER LIST — Today Only
+  // ORDER LIST â€” Today Only
   // ================================================================
   async function renderOrderList() {
     const tb = $('list-tbody');
@@ -478,7 +478,7 @@
     const token = localStorage.getItem('rrbm_token');
     if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loadingâ€¦</td></tr>';
 
     try {
       const res = await fetch('' + API_BASE + '/api/orders/today', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -492,7 +492,7 @@
       return;
     }
 
-    // Check daily-close status BEFORE rendering rows — appState.dailyClosed must be current
+    // Check daily-close status BEFORE rendering rows â€” appState.dailyClosed must be current
     // when void button visibility is calculated in renderOrderRows().
     await _checkDailyClosedBanner();
     renderOrderRows(appState.allOrders);
@@ -554,12 +554,12 @@
       const printBtn = '<button class="btn btn-secondary btn-sm" onclick="printOrderReceipt(\'' + safeId + '\')" title="Print Receipt"><i class="ti ti-printer"></i></button>';
       const viewBtn  = ' <button class="btn btn-secondary btn-sm" onclick="openOrderDetail(\'' + safeId + '\')" title="View Details"><i class="ti ti-eye"></i></button>';
 
-      // New item-level void button — shown on non-CANCELLED today's orders when day is not closed
+      // New item-level void button â€” shown on non-CANCELLED today's orders when day is not closed
       const ivmBtn = (canManageOrders() && !appState.dailyClosed)
         ? ' <button class="btn btn-sm" onclick="openItemVoidModal(\'' + safeId + '\')" title="Void Items" style="background:#F97316;color:#fff;"><i class="ti ti-scissors"></i></button>'
         : '';
 
-      // Cancel is an order-manager action (Accounting / Super Admin only) — gate it like ivmBtn.
+      // Cancel is an order-manager action (Accounting / Super Admin only) â€” gate it like ivmBtn.
       const cancelBtn = canManageOrders()
         ? '<button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel"><i class="ti ti-x"></i></button>'
         : '';
@@ -571,7 +571,7 @@
           + ivmBtn
           + cancelBtn;
       } else if (o.status === 'PENDING') {
-        // All pending orders require password to resume — action is logged for audit
+        // All pending orders require password to resume â€” action is logged for audit
         actions = '<button class="btn btn-primary btn-sm" onclick="askCodResume(\'' + safeId + '\', \'' + (o.paymentMode || '') + '\')" title="Resume (password required)"><i class="ti ti-player-play"></i><i class="ti ti-lock" style="font-size:9px;margin-left:2px;"></i></button>'
           + ivmBtn
           + cancelBtn;
@@ -631,9 +631,9 @@
       const _vAmt2 = Number(o.voidedAmount || 0);
       const _eff2  = Number(o.total || 0) - _vAmt2;
       const _totalCell2 = _vAmt2 > 0
-        ? '₱' + _eff2.toLocaleString()
-          + '<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;line-height:1.2;">₱' + Number(o.total || 0).toLocaleString() + '</div>'
-        : '₱' + Number(o.total || 0).toLocaleString();
+        ? 'â‚±' + _eff2.toLocaleString()
+          + '<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;line-height:1.2;">â‚±' + Number(o.total || 0).toLocaleString() + '</div>'
+        : 'â‚±' + Number(o.total || 0).toLocaleString();
       return '<tr>'
         + '<td><code style="font-size:11px;" title="' + (ecomRef2 ? 'System ID: ' + o.id : '') + '">' + displayId2 + '</code></td>'
         + '<td>' + formatDate(o.createdAt) + '</td>'
@@ -685,7 +685,7 @@
       });
       if (res.ok) {
         const updated = await res.json();
-        showToast('Order ' + orderId + ' → ' + updated.status, 'success');
+        showToast('Order ' + orderId + ' â†’ ' + updated.status, 'success');
         renderOrderList();
       } else {
         const err = await res.json();
@@ -697,7 +697,7 @@
   };
 
   // ================================================================
-  // COD RESUME — admin password confirmation
+  // COD RESUME â€” admin password confirmation
   // ================================================================
   window.askCodResume = function (orderId, paymentMode) {
     appState.codResumeTargetId = orderId;
@@ -723,7 +723,7 @@
     }
 
     const btn = document.querySelector('#modal-cod-resume .btn-primary');
-    if (btn) { btn.disabled = true; btn.textContent = 'Resuming…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Resumingâ€¦'; }
 
     try {
       closeModal('modal-cod-resume');
@@ -736,13 +736,13 @@
   };
 
   // ================================================================
-  // PRINT RECEIPT — PDF / print for a single order
+  // PRINT RECEIPT â€” PDF / print for a single order
   // ================================================================
   window.printOrderReceipt = function (orderId) {
     // Try to find the order in either the today cache or history cache
     const order = appState.allOrders.find(function (o) { return o.id === orderId; })
                || appState.orderHistoryAll.find(function (o) { return o.id === orderId; });
-    if (!order) { showToast('Order data not available — try refreshing the list', 'error'); return; }
+    if (!order) { showToast('Order data not available â€” try refreshing the list', 'error'); return; }
 
     // For ecommerce orders use the platform order number; fall back to system ID for all others
     const receiptRef = ecomOrderRef(order) || order.id;
@@ -752,8 +752,8 @@
       return '<tr>'
         + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;">' + escapeHtml(item.productName) + '</td>'
         + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:center;">' + item.quantity + '</td>'
-        + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:right;">₱' + Number(item.unitPrice || 0).toFixed(2) + '</td>'
-        + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:right;">₱' + sub + '</td>'
+        + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:right;">â‚±' + Number(item.unitPrice || 0).toFixed(2) + '</td>'
+        + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:right;">â‚±' + sub + '</td>'
         + '</tr>';
     }).join('');
 
@@ -764,11 +764,11 @@
     const total        = (Number(order.total       || 0) - voidedAmt).toFixed(2);
     const payMode  = order.paymentMode || 'CASH';
     const orderType = formatOrderType(order.orderType || 'STANDARD');
-    const address  = order.address ? ('<div style="margin-top:4px;font-size:12px;color:#555;">📍 ' + escapeHtml(order.address) + '</div>') : '';
+    const address  = order.address ? ('<div style="margin-top:4px;font-size:12px;color:#555;">ðŸ“ ' + escapeHtml(order.address) + '</div>') : '';
     const preparedBy = currentUserName();
 
     const w = window.open('', '_blank', 'width=680,height=880');
-    if (!w) { showToast('Pop-up blocked — allow pop-ups and try again', 'error'); return; }
+    if (!w) { showToast('Pop-up blocked â€” allow pop-ups and try again', 'error'); return; }
 
     var payDisplay = (payMode || 'CASH')
       .replace('BANK_TRANSFER', 'Bank Transfer')
@@ -789,7 +789,7 @@
 
     w.document.write('<!DOCTYPE html><html><head>'
       + '<meta charset="UTF-8">'
-      + '<title>Receipt — ' + receiptRef + '</title>'
+      + '<title>Receipt â€” ' + receiptRef + '</title>'
       + '<style>'
       + '*{box-sizing:border-box;margin:0;padding:0;}'
       + 'body{font-family:Arial,sans-serif;font-size:13px;color:#1a1a1a;background:#fff;padding:28px;}'
@@ -836,7 +836,7 @@
       + '@media print{body{padding:0;}.rc{border:none;box-shadow:none;}}'
       + '</style></head><body><div class="rc">'
 
-      // Header — logo left, address right
+      // Header â€” logo left, address right
       + '<div class="rc-head">'
       + '<img class="rc-logo" src="assets/logo-two.png" alt="RRBM Packaging Supplies" onerror="this.style.display=\'none\'">'
       + '<div class="rc-head-right">'
@@ -856,17 +856,17 @@
       + '<div class="rc-mc br"><div class="rc-ml">Date</div><div class="rc-mv">' + formatDate(order.createdAt) + '</div></div>'
       + '<div class="rc-mc"><div class="rc-ml">Payment</div><div class="rc-mv">' + escapeHtml(payDisplay) + '</div></div>'
       + '<div class="rc-mc br bt"><div class="rc-ml">Order type</div><div class="rc-mv">' + escapeHtml(orderType) + '</div></div>'
-      + '<div class="rc-mc bt"><div class="rc-ml">Source</div><div class="rc-mv">' + escapeHtml(srcDisplay || '—') + '</div></div>'
+      + '<div class="rc-mc bt"><div class="rc-ml">Source</div><div class="rc-mv">' + escapeHtml(srcDisplay || 'â€”') + '</div></div>'
       + '</div>'
 
       // Customer block
       + '<div class="rc-cust">'
       + '<div class="rc-cl">Bill to</div>'
-      + '<div class="rc-cn">' + escapeHtml(order.customerName || '—') + '</div>'
+      + '<div class="rc-cn">' + escapeHtml(order.customerName || 'â€”') + '</div>'
       + (order.address ? '<div class="rc-ca">&#128205; ' + escapeHtml(order.address) + '</div>' : '')
       + '</div>'
 
-      // Items table — dark brown header
+      // Items table â€” dark brown header
       + '<table>'
       + '<thead><tr>'
       + '<th>Item</th>'
@@ -922,7 +922,7 @@
   };
 
   // ================================================================
-  // ORDER HISTORY — historical orders with date range + PDF
+  // ORDER HISTORY â€” historical orders with date range + PDF
   // ================================================================
   window.renderOrderHistory = async function () {
     const tb = $('order-history-tbody');
@@ -930,7 +930,7 @@
     const token = localStorage.getItem('rrbm_token');
     if (!token) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Loadingâ€¦</td></tr>';
 
     const start = ($('history-start') || {}).value;
     const end   = ($('history-end')   || {}).value;
@@ -972,13 +972,13 @@
       const safeId    = o.id.replace(/'/g, "\\'");
       const safeTotal = Number(o.total || 0).toFixed(2);
 
-      // Action buttons — Ledger visible to all; Print, Refund, Void gated by canManageOrders()
+      // Action buttons â€” Ledger visible to all; Print, Refund, Void gated by canManageOrders()
       let actions = '<button class="btn btn-sm" onclick="viewOrderLedger(\'' + safeId + '\')" title="View Ledger" style="background:#7C3AED;color:#fff;margin-right:3px;"><i class="ti ti-scale"></i></button>'
         + '<button class="btn btn-secondary btn-sm" onclick="openOrderDetail(\'' + safeId + '\')" title="View Details" style="margin-right:3px;"><i class="ti ti-eye"></i></button>';
       if (canAdmin) {
         actions += '<button class="btn btn-secondary btn-sm" onclick="printOrderReceipt(\'' + safeId + '\')" title="Print Receipt" style="margin-right:3px;"><i class="ti ti-printer"></i></button>';
       }
-      // Correct Recorded Item — standalone wrong-input failsafe (order history only).
+      // Correct Recorded Item â€” standalone wrong-input failsafe (order history only).
       // Available on any non-cancelled order, including closed-day orders.
       if (canAdmin && o.status !== 'CANCELLED') {
         actions += '<button class="btn btn-sm" onclick="openCorrectItemModal(\'' + safeId + '\')" title="Correct Recorded Item" style="background:#C25A0A;color:#fff;margin-right:3px;"><i class="ti ti-edit-circle"></i></button>';
@@ -991,7 +991,7 @@
       if (canAdmin && o.refundedAt) {
         actions += '<button class="btn btn-sm" onclick="openReturnReplacement(\'' + safeId + '\')" title="Issue Replacement Order" style="background:#10B981;color:#fff;margin-right:3px;"><i class="ti ti-replace"></i> Issue Replacement</button>';
       }
-      // Step 9: CANCELLED + cancellationType REPLACEMENT → Create Replacement or Replaced indicator
+      // Step 9: CANCELLED + cancellationType REPLACEMENT â†’ Create Replacement or Replaced indicator
       if (canAdmin && o.status === 'CANCELLED' && o.cancellationType === 'REPLACEMENT') {
         if (!o.replacementOrderId) {
           actions += '<button class="btn btn-sm" onclick="openReplacementForm(\'' + safeId + '\')" title="Create Replacement Order" style="background:#10B981;color:#fff;margin-right:3px;"><i class="ti ti-replace"></i> Create Replacement</button>';
@@ -1013,7 +1013,7 @@
             + '</div>'
         : '';
       const collectedMetaHtml = o.collectedAt
-        ? '<div style="font-size:10px;color:var(--text-muted);line-height:1.3;">collected by ' + escapeHtml(o.collectedBy || '—')
+        ? '<div style="font-size:10px;color:var(--text-muted);line-height:1.3;">collected by ' + escapeHtml(o.collectedBy || 'â€”')
             + ' &middot; ' + new Date(o.collectedAt).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})
             + '</div>'
         : '';
@@ -1026,9 +1026,9 @@
       const _vAmt3 = Number(o.voidedAmount || 0);
       const _eff3  = Number(o.total || 0) - _vAmt3;
       const _totalCell3 = _vAmt3 > 0
-        ? '₱' + _eff3.toLocaleString()
-          + '<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;line-height:1.2;">₱' + Number(o.total || 0).toLocaleString() + '</div>'
-        : '₱' + Number(o.total || 0).toLocaleString();
+        ? 'â‚±' + _eff3.toLocaleString()
+          + '<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through;line-height:1.2;">â‚±' + Number(o.total || 0).toLocaleString() + '</div>'
+        : 'â‚±' + Number(o.total || 0).toLocaleString();
       return '<tr>'
         + '<td><code style="font-size:11px;" title="' + (ecomRef3 ? 'System ID: ' + o.id : '') + '">' + displayId3 + '</code></td>'
         + '<td>' + formatDate(o.createdAt) + '</td>'
@@ -1072,10 +1072,10 @@
   window.exportOrderHistoryPDF = function () {
     const orders = appState.orderHistoryAll || [];
     if (!orders.length) { showToast('No data to export', 'error'); return; }
-    const start = ($('history-start') || {}).value || '—';
-    const end   = ($('history-end')   || {}).value || '—';
+    const start = ($('history-start') || {}).value || 'â€”';
+    const end   = ($('history-end')   || {}).value || 'â€”';
 
-    // Rebuild table from data — no action buttons, no DOM cloning
+    // Rebuild table from data â€” no action buttons, no DOM cloning
     const dataRows = orders.map(function (o) {
       const _pdfActive  = (o.items || []).filter(function(it) { return (it.quantity - (it.voidedQuantity || 0)) > 0; });
       const _pdfFirst   = _pdfActive[0];
@@ -1090,15 +1090,15 @@
         + '<td>' + formatDate(o.createdAt) + '</td>'
         + '<td>' + escapeHtml(o.customerName || '-') + '</td>'
         + '<td>' + itemText + '</td>'
-        + '<td style="text-align:right;">₱' + (Number(o.total || 0) - Number(o.voidedAmount || 0)).toLocaleString('en-PH', {minimumFractionDigits:2}) + '</td>'
+        + '<td style="text-align:right;">â‚±' + (Number(o.total || 0) - Number(o.voidedAmount || 0)).toLocaleString('en-PH', {minimumFractionDigits:2}) + '</td>'
         + '<td>' + escapeHtml(formatSource(o.source) || '-') + '</td>'
         + '<td>' + (statusMap[o.status] || o.status || '-') + '</td>'
         + '</tr>';
     }).join('');
 
     const w = window.open('', '_blank', 'width=960,height=720');
-    if (!w) { showToast('Pop-up blocked — allow pop-ups and try again', 'error'); return; }
-    w.document.write('<!DOCTYPE html><html><head><title>Order History — RRBM</title>'
+    if (!w) { showToast('Pop-up blocked â€” allow pop-ups and try again', 'error'); return; }
+    w.document.write('<!DOCTYPE html><html><head><title>Order History â€” RRBM</title>'
       + '<style>body{font-family:Arial,sans-serif;font-size:12px;margin:24px;color:#1A1208;}'
       + 'h2{color:#2C1A0E;margin-bottom:4px;}p{color:#888;font-size:11px;margin-bottom:12px;}'
       + 'table{width:100%;border-collapse:collapse;margin-top:8px;}'
@@ -1106,7 +1106,7 @@
       + 'td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px;}code{font-family:monospace;}'
       + '@media print{body{margin:12px;}}'
       + '</style></head><body>'
-      + '<h2>RRBM Packaging — Order History</h2>'
+      + '<h2>RRBM Packaging â€” Order History</h2>'
       + '<p>Period: ' + start + ' to ' + end + ' &nbsp;|&nbsp; Exported: ' + new Date().toLocaleString() + ' &nbsp;|&nbsp; ' + orders.length + ' records</p>'
       + '<table><thead><tr>'
       + '<th>Order #</th><th>Date</th><th>Customer</th><th>Items</th><th style="text-align:right;">Total</th><th>Source</th><th>Status</th>'
@@ -1130,7 +1130,7 @@
     _closeDailyMasterKey = key;   // preserve for potential force-close
 
     const btn = document.querySelector('#modal-close-daily .btn-danger');
-    if (btn) { btn.disabled = true; btn.textContent = 'Closing…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Closingâ€¦'; }
 
     try {
       const userId = currentUserId();
@@ -1144,7 +1144,7 @@
       if (res.ok) {
         closeModal('modal-close-daily');
         var msg = 'Daily sales closed successfully!';
-        // N-3: unify accessor — force-close returns count under data.report, normal close at root
+        // N-3: unify accessor â€” force-close returns count under data.report, normal close at root
         var unfulfilled = data.unfulfilledOrders != null ? data.unfulfilledOrders : ((data.report || {}).unfulfilledOrders || 0);
         if (unfulfilled > 0) {
           msg += ' (' + unfulfilled + ' order(s) moved to Collections)';
@@ -1155,12 +1155,12 @@
         return;
       }
 
-      // 409 = active orders exist → offer the force-close override
+      // 409 = active orders exist â†’ offer the force-close override
       if (res.status === 409 && data.error === 'ACTIVE_ORDERS') {
-        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
         const warning = $('close-override-warning');
         if (warning) {
-          warning.innerHTML = '<strong>⚠ ' + (data.count||0) + ' order(s) totalling ' + fmt(data.amount)
+          warning.innerHTML = '<strong>âš  ' + (data.count||0) + ' order(s) totalling ' + fmt(data.amount)
             + ' cannot be collected today.</strong><br>'
             + 'Force-closing will move them to <em>Pending Collections</em>. Your admin security key is required.';
         }
@@ -1190,7 +1190,7 @@
     if (!superAdminKey) { showToast('Super admin security key is required', 'error'); return; }
 
     const btn = document.querySelector('#modal-close-daily-override .btn-danger');
-    if (btn) { btn.disabled = true; btn.textContent = 'Force closing…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Force closingâ€¦'; }
 
     try {
       const userId = currentUserId();
@@ -1228,11 +1228,11 @@
     }
   };
 
-  // ── Collections: load, render, badge, collect ────────────────────
+  // â”€â”€ Collections: load, render, badge, collect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   window.loadCollections = async function () {
     const tb = $('collections-tbody');
-    if (tb) tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    if (tb) tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</td></tr>';
     try {
       const res = await fetch(API_BASE + '/api/orders/collections', { headers: authHeaders() });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1251,20 +1251,20 @@
     if (!orders || !orders.length) {
       tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px;font-size:13px;">'
         + '<i class="ti ti-circle-check" style="font-size:32px;display:block;margin-bottom:8px;color:#10B981;"></i>'
-        + 'No pending collections — all orders are settled!</td></tr>';
+        + 'No pending collections â€” all orders are settled!</td></tr>';
       updateBatchCollectButton();
       return;
     }
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     var payBadge = function(mode){
       var map = { CASH:'Cash', COD:'COD', GCASH:'GCash', PAYMAYA:'PayMaya',
                   BANK_TRANSFER:'Bank Transfer', BANK_DEPOSIT:'Bank Deposit', ONLINE:'Online' };
-      return '<span class="badge badge-honey">' + (map[mode] || mode || '—') + '</span>';
+      return '<span class="badge badge-honey">' + (map[mode] || mode || 'â€”') + '</span>';
     };
     var payStatusBadge = function(ps) {
       if (!ps) return '';
-      var map = { PAID:'<span style="color:#059669;font-weight:600;font-size:11px;">● PAID</span>',
-                  UNPAID:'<span style="color:#DC2626;font-weight:600;font-size:11px;">● UNPAID</span>' };
+      var map = { PAID:'<span style="color:#059669;font-weight:600;font-size:11px;">â— PAID</span>',
+                  UNPAID:'<span style="color:#DC2626;font-weight:600;font-size:11px;">â— UNPAID</span>' };
       return ' ' + (map[ps] || '');
     };
     var sectionHeader = function(label, count) {
@@ -1273,26 +1273,26 @@
     };
     function rowHtml(o) {
       var created = o.createdAt ? new Date(o.createdAt) : null;
-      var dateStr = created ? created.toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : '—';
+      var dateStr = created ? created.toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : 'â€”';
       var daysOut;
       if (created) {
         var todayMidnight   = new Date(); todayMidnight.setHours(0,0,0,0);
         var createdMidnight = new Date(created); createdMidnight.setHours(0,0,0,0);
         daysOut = Math.round((todayMidnight - createdMidnight) / 86400000);
-      } else { daysOut = '—'; }
+      } else { daysOut = 'â€”'; }
       var daysCol = typeof daysOut === 'number'
         ? '<span style="color:' + (daysOut >= 3 ? '#EF4444' : daysOut >= 1 ? '#F59E0B' : '#10B981') + ';font-weight:600;">'
           + daysOut + (daysOut === 1 ? ' day' : ' days') + '</span>'
-        : '—';
-      var itemPreview = (o.items || []).slice(0,2).map(function(i){ return (i.quantity||1) + '× ' + (i.productName||''); }).join(', ')
+        : 'â€”';
+      var itemPreview = (o.items || []).slice(0,2).map(function(i){ return (i.quantity||1) + 'Ã— ' + (i.productName||''); }).join(', ')
         + (o.items && o.items.length > 2 ? ' +' + (o.items.length - 2) + ' more' : '');
-      var displayId = ecomOrderRef(o) || o.id || '—';
+      var displayId = ecomOrderRef(o) || o.id || 'â€”';
       var safeId = escapeHtml(o.id);
       return '<tr>'
         + '<td style="text-align:center;"><input type="checkbox" class="collection-checkbox" value="' + safeId + '" onchange="updateBatchCollectButton()"></td>'
         + '<td style="font-size:12px;">' + dateStr + '</td>'
         + '<td><span class="product-code" style="font-size:11px;">' + escapeHtml(displayId) + '</span></td>'
-        + '<td>' + escapeHtml(o.customerName || '—') + '</td>'
+        + '<td>' + escapeHtml(o.customerName || 'â€”') + '</td>'
         + '<td>' + payBadge(o.paymentMode) + payStatusBadge(o.paymentStatus) + '</td>'
         + '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(itemPreview) + '</td>'
         + '<td style="font-weight:600;">' + fmt(o.total) + '</td>'
@@ -1312,7 +1312,7 @@
       html += sectionHeader('COD', codCount) + codRows;
     }
     if (nonCodCount > 0) {
-      html += sectionHeader('Non-COD (GCash · PayMaya · Bank Transfer · Cash)', nonCodCount) + nonCodRows;
+      html += sectionHeader('Non-COD (GCash Â· PayMaya Â· Bank Transfer Â· Cash)', nonCodCount) + nonCodRows;
     }
     tb.innerHTML = html;
     updateBatchCollectButton();
@@ -1362,7 +1362,7 @@
     var confirmBtn = $('btn-batch-collect-confirm');
     var resultEl = $('batch-collect-result');
     if (confirmBtn) confirmBtn.disabled = true;
-    if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-muted);">Processing…</span>';
+    if (resultEl) resultEl.innerHTML = '<span style="color:var(--text-muted);">Processingâ€¦</span>';
     try {
       var res = await fetch(API_BASE + '/api/orders/batch-mark-collected', {
         method: 'POST',
@@ -1375,18 +1375,18 @@
         showToast(msg, 'success');
         if (resultEl) {
           var parts = [];
-          if (data.collected > 0) parts.push('<span style="color:#10B981;">✔ ' + data.collected + ' collected</span>');
+          if (data.collected > 0) parts.push('<span style="color:#10B981;">âœ” ' + data.collected + ' collected</span>');
           if (data.skipped && data.skipped.length > 0) {
             var skipList = data.skipped.map(function (s) {
-              return '<div style="font-size:12px;color:#F59E0B;margin-left:12px;">— ' + escapeHtml(s.orderId || '') + ': ' + escapeHtml(s.reason || '') + '</div>';
+              return '<div style="font-size:12px;color:#F59E0B;margin-left:12px;">â€” ' + escapeHtml(s.orderId || '') + ': ' + escapeHtml(s.reason || '') + '</div>';
             }).join('');
-            parts.push('<div><span style="color:#F59E0B;">⚠ ' + data.skipped.length + ' skipped</span>' + skipList + '</div>');
+            parts.push('<div><span style="color:#F59E0B;">âš  ' + data.skipped.length + ' skipped</span>' + skipList + '</div>');
           }
           if (data.errors && data.errors.length > 0) {
             var errList = data.errors.map(function (e) {
-              return '<div style="font-size:12px;color:#EF4444;margin-left:12px;">— ' + escapeHtml(e.orderId || '') + ': ' + escapeHtml(e.error || '') + '</div>';
+              return '<div style="font-size:12px;color:#EF4444;margin-left:12px;">â€” ' + escapeHtml(e.orderId || '') + ': ' + escapeHtml(e.error || '') + '</div>';
             }).join('');
-            parts.push('<div><span style="color:#EF4444;">✘ ' + data.errors.length + ' errors</span>' + errList + '</div>');
+            parts.push('<div><span style="color:#EF4444;">âœ˜ ' + data.errors.length + ' errors</span>' + errList + '</div>');
           }
           resultEl.innerHTML = parts.join('<br>');
         }
@@ -1420,7 +1420,7 @@
     }
   };
 
-  /** Open the collection detail modal for a specific order — always fetches fresh data from server */
+  /** Open the collection detail modal for a specific order â€” always fetches fresh data from server */
   window.openCollectionDetail = async function (orderId) {
     let order;
     try {
@@ -1433,8 +1433,8 @@
     }
     if (!order) { showToast('Order not found', 'error'); return; }
 
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
-    var created = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}) : '—';
+    var fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var created = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}) : 'â€”';
     var displayId = ecomOrderRef(order) || order.id;
 
     var hasVoids = (order.items || []).some(function(it) { return (it.voidedQuantity || 0) > 0; });
@@ -1468,7 +1468,7 @@
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:12px;">' +
           '<div><strong>Order ID:</strong> ' + escapeHtml(displayId) + '</div>' +
           '<div><strong>Date:</strong> ' + created + '</div>' +
-          '<div><strong>Customer:</strong> ' + escapeHtml(order.customerName||'—') + '</div>' +
+          '<div><strong>Customer:</strong> ' + escapeHtml(order.customerName||'â€”') + '</div>' +
           '<div><strong>Payment:</strong> ' + formatPaymentMode(order.paymentMode) + (order.paymentStatus ? ' <span style="font-size:11px;font-weight:600;color:' + (order.paymentStatus==='PAID' ? '#059669' : '#DC2626') + ';">(' + order.paymentStatus + ')</span>' : '') + '</div>' +
           (order.notes ? '<div style="grid-column:1/3;"><strong>Notes:</strong> ' + escapeHtml(order.notes) + '</div>' : '') +
         '</div>' +
@@ -1499,7 +1499,7 @@
     }
 
     var title = $('collection-detail-title');
-    if (title) title.textContent = 'Collection — ' + escapeHtml(displayId);
+    if (title) title.textContent = 'Collection â€” ' + escapeHtml(displayId);
 
     var modal = $('modal-collection-detail');
     if (modal) modal.classList.add('open');
@@ -1511,7 +1511,7 @@
     if (!key) { showToast('Security key is required', 'error'); return; }
 
     var btn = $('coll-detail-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Processingâ€¦'; }
 
     try {
       var res = await fetch(API_BASE + '/api/orders/' + encodeURIComponent(orderId) + '/collect', {
@@ -1535,7 +1535,7 @@
   };
 
   // ================================================================
-  // INVENTORY — two-tier search
+  // INVENTORY â€” two-tier search
   // ================================================================
   function getTagThresholds(tag) {
     if ((tag || '').toUpperCase() === 'HOT')  return { low: 5000, critical: 2500 };
@@ -1577,7 +1577,7 @@
     });
   }
 
-  // Called when the category filter changes — refresh sub-category list then re-filter
+  // Called when the category filter changes â€” refresh sub-category list then re-filter
   window.onInvCategoryChange = function () {
     const cat = ($('inv-category-filter') || {}).value || '';
     populateInvSubCategoryDropdown(cat);
@@ -1586,7 +1586,7 @@
     applyInventoryFilters();
   };
 
-  // Called when category input changes in Add Product modal — refresh sub-category datalist
+  // Called when category input changes in Add Product modal â€” refresh sub-category datalist
   window.onAddProdCategoryInput = function () {
     const cat = (($('addprod-category') || {}).value || '').trim();
     const dl  = $('addprod-subcategory-list');
@@ -1602,11 +1602,11 @@
   };
 
   // ================================================================
-  // EDIT PRODUCT — open modal with current values, save via PATCH
+  // EDIT PRODUCT â€” open modal with current values, save via PATCH
   // ================================================================
   window.openEditProductModal = function (productId) {
     const p = (appState.inventoryAllProducts || []).find(function (x) { return String(x.id) === String(productId); });
-    if (!p) { showToast('Product not found — try refreshing inventory', 'error'); return; }
+    if (!p) { showToast('Product not found â€” try refreshing inventory', 'error'); return; }
 
     $('editprod-id').value          = p.id;
     $('editprod-code').value         = p.productCode  || '';
@@ -1628,7 +1628,7 @@
     if (activeNo)  activeNo.checked  = (p.active === false);
 
     var nameLabel = $('editprod-name-label');
-    if (nameLabel) nameLabel.textContent = '— ' + (p.name || '');
+    if (nameLabel) nameLabel.textContent = 'â€” ' + (p.name || '');
 
     // Populate set section
     var editIsSetCb = $('editprod-is-set');
@@ -1645,7 +1645,7 @@
         var allProds = (_cached && _cached.length) ? _cached : (_inv && _inv.length) ? _inv : [];
         p.components.forEach(function (c) {
           var rowId = 'editprod-comp-row-' + c.componentProductId;
-          var opts = '<option value="">— Select component product —</option>'
+          var opts = '<option value="">â€” Select component product â€”</option>'
             + allProds.filter(function (x) { return !x.isSet; })
               .map(function (x) {
                 return '<option value="' + x.id + '"' + (x.id === c.componentProductId ? ' selected' : '') + '>' + escapeHtml(x.name) + '</option>';
@@ -1756,7 +1756,7 @@
 
     const catSel = $('inv-category-filter');
     const prevCat = catSel ? catSel.value : '';
-    tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">Loading inventory…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">Loading inventoryâ€¦</td></tr>';
 
     try {
       const headers = { 'Authorization': 'Bearer ' + token };
@@ -1777,7 +1777,7 @@
 
   window.filterInventory = function () { applyInventoryFilters(); };
 
-  // Stock status of a product — mirrors the badge logic in applyInventoryFilters' row
+  // Stock status of a product â€” mirrors the badge logic in applyInventoryFilters' row
   // render (total stock vs the product's tag thresholds). Returns OOS|CRIT|LOW|OK.
   function stockStatusOf(p) {
     var total = (p.stockWh1 || 0) + (p.stockWh2 || 0) + (p.stockWh3 || 0);
@@ -1833,7 +1833,7 @@
 
   // Build one inventory table row. Standalone (computes its own canEdit) so a
   // single row can be re-rendered in place after an edit/stock update without
-  // rebuilding — and scrolling — the whole table.
+  // rebuilding â€” and scrolling â€” the whole table.
   function buildInventoryRowHTML(p) {
       const canEdit = canEditInventory();
       const wh1 = p.stockWh1 || 0, wh2 = p.stockWh2 || 0, wh3 = p.stockWh3 || 0;
@@ -1868,24 +1868,24 @@
       const inactiveLabel = p.active ? '' : ' <span style="font-size:10px;color:#aaa;">(inactive)</span>';
       const codeCell = p.productCode
         ? '<span class="product-code">' + escapeHtml(p.productCode) + '</span>'
-        : '<span style="color:var(--border);font-size:11px;">—</span>';
+        : '<span style="color:var(--border);font-size:11px;">â€”</span>';
       const itemCodeCell = p.itemCode
         ? '<span style="font-size:11px;color:var(--text-muted);font-family:monospace;">' + escapeHtml(p.itemCode) + '</span>'
-        : '<span style="color:var(--border);font-size:11px;">—</span>';
+        : '<span style="color:var(--border);font-size:11px;">â€”</span>';
       const subCatLabel = p.subCategory
         ? '<br><span style="font-size:11px;color:var(--text-muted);font-weight:400;">' + p.subCategory + '</span>'
         : '';
       const descCell = p.description
         ? '<span style="font-size:12px;color:var(--text-secondary);">' + escapeHtml(p.description) + '</span>'
-        : '<span style="color:var(--border);font-size:11px;">—</span>';
+        : '<span style="color:var(--border);font-size:11px;">â€”</span>';
 
       // SET badge + effective stock for set products
       const setBadge = p.isSet
         ? ' <span style="font-size:10px;font-weight:700;background:#D4860A;color:#fff;padding:1px 5px;border-radius:3px;vertical-align:middle;">SET</span>'
         : '';
-      // Component of a set — not independently sellable; only the SET is sold.
+      // Component of a set â€” not independently sellable; only the SET is sold.
       const componentBadge = p.isComponent
-        ? ' <span style="font-size:10px;font-weight:700;background:#6B7280;color:#fff;padding:1px 5px;border-radius:3px;vertical-align:middle;" title="Part of a set — sold via the set, not on its own">COMPONENT</span>'
+        ? ' <span style="font-size:10px;font-weight:700;background:#6B7280;color:#fff;padding:1px 5px;border-radius:3px;vertical-align:middle;" title="Part of a set â€” sold via the set, not on its own">COMPONENT</span>'
         : '';
       let setEffectiveNote = '';
       if (p.isSet) {
@@ -1907,12 +1907,12 @@
         + '<td><span style="' + nameStyle + '">' + p.name + '</span>' + setBadge + componentBadge + subCatLabel + inactiveLabel + setEffectiveNote + '</td>'
         + '<td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (p.description ? escapeHtml(p.description) : '') + '">' + descCell + '</td>'
         + '<td>' + tagSelect + '</td>'
-        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">—</span>' : wh1.toLocaleString()) + '</td>'
-        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">—</span>' : wh2.toLocaleString()) + '</td>'
-        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">—</span>' : wh3.toLocaleString()) + '</td>'
-        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">—</span>' : '<strong>' + total.toLocaleString() + '</strong>') + '</td>'
+        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">â€”</span>' : wh1.toLocaleString()) + '</td>'
+        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">â€”</span>' : wh2.toLocaleString()) + '</td>'
+        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">â€”</span>' : wh3.toLocaleString()) + '</td>'
+        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">â€”</span>' : '<strong>' + total.toLocaleString() + '</strong>') + '</td>'
         + '<td>' + (p.isSet ? '' : '<div class="stock-bar-wrap"><div class="stock-bar" style="width:' + pct + '%;background:' + barColor + ';"></div></div>') + '</td>'
-        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">—</span>' : badge) + '</td>'
+        + '<td>' + (p.isSet ? '<span style="color:var(--text-muted);font-size:11px;">â€”</span>' : badge) + '</td>'
         + editCell
         + '</tr>';
   }
@@ -1961,7 +1961,7 @@
   };
 
   // ================================================================
-  // DELETE (DEACTIVATE) PRODUCT — master-key gated
+  // DELETE (DEACTIVATE) PRODUCT â€” master-key gated
   // ================================================================
   var _deleteProductId = null;
   window.askDeleteProduct = function (id) {
@@ -1997,7 +1997,7 @@
   };
 
   // ================================================================
-  // ADD PRODUCT — two-step flow
+  // ADD PRODUCT â€” two-step flow
   // ================================================================
   window.askAddProductKey = function () {
     appState.addProductVerifiedKey = null;
@@ -2061,7 +2061,7 @@
     if (!category) { showToast('Category is required', 'error'); return; }
     if (price <= 0) { showToast('Unit price must be greater than 0', 'error'); return; }
     if (code && !/^[A-Z0-9]{1,6}$/.test(code)) {
-      showToast('Product Code must be 1–6 alphanumeric characters', 'error'); return;
+      showToast('Product Code must be 1â€“6 alphanumeric characters', 'error'); return;
     }
 
     const isSet = !!($('addprod-is-set') && $('addprod-is-set').checked);
@@ -2139,11 +2139,11 @@
     var list = $(prefix + '-components-list');
     if (!list) return;
 
-    // Use whichever product list is populated — [] is truthy so cannot use ||
+    // Use whichever product list is populated â€” [] is truthy so cannot use ||
     var cached = appState.cachedProducts;
     var inv    = appState.inventoryAllProducts;
     var products = (cached && cached.length) ? cached : (inv && inv.length) ? inv : [];
-    var opts = '<option value="">— Select component product —</option>'
+    var opts = '<option value="">â€” Select component product â€”</option>'
       + products
           .filter(function (p) { return !p.isSet; })
           .map(function (p) {
@@ -2198,7 +2198,7 @@
   };
 
   // ================================================================
-  // DELIVERY RECEIPT — searchable product dropdown, form state
+  // DELIVERY RECEIPT â€” searchable product dropdown, form state
   // ================================================================
   function addDeliveryLineRow() {
     appState.deliveryLineCounter = (appState.deliveryLineCounter || 0) + 1;
@@ -2211,7 +2211,7 @@
       + '<div class="col-md-3"><label class="form-label">Product <span class="text-danger">*</span></label>'
       + '<div class="product-autocomplete-wrapper">'
       + '<input type="text" class="form-control delivery-product-input" id="d-prod-in-' + n + '" '
-      + 'placeholder="Type to search products…" autocomplete="off">'
+      + 'placeholder="Type to search productsâ€¦" autocomplete="off">'
       + '<input type="hidden" class="delivery-product-id" id="d-prod-id-' + n + '" value="">'
       + '<div class="product-dropdown" id="d-prod-dd-' + n + '"></div>'
       + '</div></div>'
@@ -2221,7 +2221,7 @@
       + '<input type="number" class="form-control delivery-received" id="delivery-received-' + n + '" min="0" value="0" placeholder="0" /></div>'
       + '<div class="col-md-1"><label class="form-label">Rejected</label>'
       + '<input type="number" class="form-control delivery-rejected" id="delivery-rejected-' + n + '" min="0" value="0" placeholder="0" /></div>'
-      + '<div class="col-md-2"><label class="form-label">Unit Cost (₱)</label>'
+      + '<div class="col-md-2"><label class="form-label">Unit Cost (â‚±)</label>'
       + '<input type="number" class="form-control delivery-unit-cost" id="delivery-unit-cost-' + n + '" min="0" step="0.01" placeholder="Invoice cost" /></div>'
       + '<div class="col-md-2"><label class="form-label">Warehouse</label>'
       + '<select class="form-select delivery-wh" id="delivery-wh-' + n + '"><option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">Balagtas</option></select></div>'
@@ -2312,7 +2312,7 @@
     // Always refresh the PO dropdown with current incomplete POs
     const poSel = $('delivery-po-number');
     if (poSel) {
-      poSel.innerHTML = '<option value="">— No linked PO (manual entry) —</option>';
+      poSel.innerHTML = '<option value="">â€” No linked PO (manual entry) â€”</option>';
       _deliveryPoCache = {};
       try {
         const token = localStorage.getItem('rrbm_token');
@@ -2328,12 +2328,12 @@
               _deliveryPoCache[p.poNumber] = p;
               var opt = document.createElement('option');
               opt.value = p.poNumber;
-              opt.textContent = p.poNumber + ' — ' + (p.vendorName || '');
+              opt.textContent = p.poNumber + ' â€” ' + (p.vendorName || '');
               opt.dataset.vendor = p.vendorName || '';
               poSel.appendChild(opt);
             });
         }
-      } catch(e) { /* silently skip — dropdown is optional */ }
+      } catch(e) { /* silently skip â€” dropdown is optional */ }
       poSel.value = '';
     }
 
@@ -2376,7 +2376,7 @@
         if (addBtn) addBtn.style.display = 'none'; // hide manual Add Line when PO selected
       }
     } else {
-      // No PO selected — clear auto-rows and restore manual entry
+      // No PO selected â€” clear auto-rows and restore manual entry
       if (supEl) supEl.value = '';
       if (c) { c.innerHTML = ''; appState.deliveryLineCounter = 0; }
       addDeliveryLineRow();
@@ -2411,7 +2411,7 @@
       var productId = _resolveProductIdForPoItem(item);
       var resolved  = productId ? '' : ' style="border-left:3px solid #F59E0B;"';
       var hint      = productId ? '' :
-        '<div style="font-size:10px;color:#F59E0B;margin-top:2px;">&#9888; Product not found — select manually</div>';
+        '<div style="font-size:10px;color:#F59E0B;margin-top:2px;">&#9888; Product not found â€” select manually</div>';
 
       c.insertAdjacentHTML('beforeend',
         '<div class="row align-items-end mb-2 delivery-line delivery-line-po" id="delivery-row-' + n + '"' + resolved + '>' +
@@ -2425,7 +2425,7 @@
             // Fallback: searchable when product not found
             : '<div class="product-autocomplete-wrapper">' +
               '<input type="text" class="form-control delivery-product-input" id="d-prod-in-' + n + '" ' +
-              'value="' + escapeHtml(item.itemDescription || '') + '" placeholder="Search product…" autocomplete="off">' +
+              'value="' + escapeHtml(item.itemDescription || '') + '" placeholder="Search productâ€¦" autocomplete="off">' +
               '<input type="hidden" class="delivery-product-id" id="d-prod-id-' + n + '" value="">' +
               '<div class="product-dropdown" id="d-prod-dd-' + n + '"></div>' +
               '</div>') +
@@ -2491,7 +2491,7 @@
 
     const receipt = (($('delivery-receipt') || {}).value || '').trim();
     if (!/^[A-Za-z0-9\-]{2,20}$/.test(receipt)) {
-      showToast('Receipt number must be 2–20 characters (letters, numbers, hyphens)', 'error'); return;
+      showToast('Receipt number must be 2â€“20 characters (letters, numbers, hyphens)', 'error'); return;
     }
 
     const receiverName = (($('delivery-receiver') || {}).value || '').trim();
@@ -2586,7 +2586,7 @@
     const token = localStorage.getItem('rrbm_token');
     if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loadingâ€¦</td></tr>';
 
     let url = '' + API_BASE + '/api/reports/deliveries';
     if (!all) {
@@ -2611,12 +2611,12 @@
 
         return '<tr>'
           + '<td><span class="product-code">' + escapeHtml(r.receiptNumber) + '</span></td>'
-          + '<td>' + escapeHtml(r.supplierName || '—') + '</td>'
+          + '<td>' + escapeHtml(r.supplierName || 'â€”') + '</td>'
           + '<td>' + formatDate(r.reportDate || r.createdAt) + '</td>'
-          + '<td><span style="font-family:monospace;font-size:11px;">' + escapeHtml(r.poNumber || '—') + '</span></td>'
-          + '<td>' + (r.receivedBy || '—') + '</td>'
-          + '<td>' + (r.verifiedBy || '—') + '</td>'
-          + '<td>' + (r.encodedByName || '—') + '</td>'
+          + '<td><span style="font-family:monospace;font-size:11px;">' + escapeHtml(r.poNumber || 'â€”') + '</span></td>'
+          + '<td>' + (r.receivedBy || 'â€”') + '</td>'
+          + '<td>' + (r.verifiedBy || 'â€”') + '</td>'
+          + '<td>' + (r.encodedByName || 'â€”') + '</td>'
           + '<td>' + statusBadge + '</td>'
           + '<td style="display:flex;gap:6px;align-items:center;">'
           +   '<button class="btn btn-secondary btn-sm" onclick="openDeliveryDetail(' + r.id + ')"><i class="ti ti-list-details"></i> View</button>'
@@ -2652,7 +2652,7 @@
       const d = await res.json().catch(function() { return {}; });
       if (!res.ok) { showToast(d.message || 'Cancel failed', 'error'); return; }
       closeModal('modal-cancel-delivery');
-      showToast('Delivery cancelled — stock and PO items reversed', 'success');
+      showToast('Delivery cancelled â€” stock and PO items reversed', 'success');
       renderDeliveryReports(true);
     } catch (err) {
       showToast('Connection error', 'error');
@@ -2667,19 +2667,19 @@
     if (!r) { showToast('Record not found', 'error'); return; }
     _deliveryEditId = id;
 
-    var setText = function(elId, val){ var el = $(elId); if (el) el.textContent = val || '—'; };
+    var setText = function(elId, val){ var el = $(elId); if (el) el.textContent = val || 'â€”'; };
     setText('dd-receipt',  r.receiptNumber);
     setText('dd-date',     formatDate(r.reportDate || r.createdAt));
     setText('dd-supplier', r.supplierName);
-    setText('dd-po',       r.poNumber || '—');
-    setText('dd-truck',    r.truckPlate || '—');
-    setText('dd-driver',   r.driverName || '—');
+    setText('dd-po',       r.poNumber || 'â€”');
+    setText('dd-truck',    r.truckPlate || 'â€”');
+    setText('dd-driver',   r.driverName || 'â€”');
     setText('dd-receiver', r.receivedBy);
     setText('dd-verifier', r.verifiedBy);
     setText('dd-encoder',  r.encodedByName);
-    setText('dd-notes',    r.notes || '—');
+    setText('dd-notes',    r.notes || 'â€”');
 
-    // Change history (edits) — only shown when present
+    // Change history (edits) â€” only shown when present
     var clWrap = $('dd-changelog-wrap');
     var clBox  = $('dd-changelog');
     if (clWrap && clBox) {
@@ -2692,7 +2692,7 @@
       }
     }
 
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     var items = r.items || [];
     var totalReceived = 0, totalRejected = 0;
     var totalLineCost = 0;
@@ -2708,7 +2708,7 @@
       totalLineCost  += lineTotal;
       return '<tr>'
         + '<td style="text-align:center;color:var(--text-muted);">' + (idx + 1) + '</td>'
-        + '<td>' + escapeHtml(item.productName || '—') + '</td>'
+        + '<td>' + escapeHtml(item.productName || 'â€”') + '</td>'
         + '<td style="text-align:right;">' + ordered + '</td>'
         + '<td style="text-align:right;color:#10B981;font-weight:600;">' + received + '</td>'
         + '<td style="text-align:right;color:' + (rejected > 0 ? '#EF4444' : 'var(--text-muted)') + ';">' + rejected + '</td>'
@@ -2734,7 +2734,7 @@
     $('modal-delivery-detail').classList.add('open');
   };
 
-  // ── Edit a delivery report (admin-security-key gated) ─────────────────────
+  // â”€â”€ Edit a delivery report (admin-security-key gated) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   window.askDeliveryEditKey = function () {
     if (!_deliveryEditId) { showToast('Open a delivery report first', 'error'); return; }
     if ($('delivery-edit-key')) $('delivery-edit-key').value = '';
@@ -2775,7 +2775,7 @@
     }
   };
 
-  // ── Editable delivery-items table (edit modal) ───────────────────────────
+  // â”€â”€ Editable delivery-items table (edit modal) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   var _deEditCounter = 0;
 
   function populateDeliveryEditItems(items) {
@@ -2805,7 +2805,7 @@
       '<div class="row align-items-end mb-2 de-line" id="de-row-' + n + '">'
       + '<div class="col-md-4"><label class="form-label">Product <span class="text-danger">*</span></label>'
       + '<div class="product-autocomplete-wrapper">'
-      + '<input type="text" class="form-control" id="de-prod-in-' + n + '" placeholder="Type to search products…" autocomplete="off" value="' + escapeHtml(preset.productName || '') + '">'
+      + '<input type="text" class="form-control" id="de-prod-in-' + n + '" placeholder="Type to search productsâ€¦" autocomplete="off" value="' + escapeHtml(preset.productName || '') + '">'
       + '<input type="hidden" id="de-prod-id-' + n + '" value="' + (preset.productId != null ? preset.productId : '') + '">'
       + '<div class="product-dropdown" id="de-prod-dd-' + n + '"></div>'
       + '</div></div>'
@@ -2814,7 +2814,7 @@
       + '<div class="col-md-3"><label class="form-label">Warehouse</label>'
       + '<select class="form-select" id="de-wh-' + n + '">'
       + '<option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">Balagtas</option></select></div>'
-      + '<div class="col-md-2"><label class="form-label">Unit Cost (₱)</label>'
+      + '<div class="col-md-2"><label class="form-label">Unit Cost (â‚±)</label>'
       + '<input type="number" class="form-control" id="de-uc-' + n + '" min="0" step="0.01" placeholder="Invoice cost" value="' + (preset.unitCost != null ? preset.unitCost : '') + '" /></div>'
       + '<div class="col-md-1 text-end"><label class="form-label">&nbsp;</label>'
       + '<button type="button" class="btn btn-outline-danger btn-sm d-block" onclick="removeDeliveryEditRow(\'de-row-' + n + '\')"><i class="ti ti-trash"></i></button></div>'
@@ -2945,7 +2945,7 @@
   };
 
   // ================================================================
-  // PRINT — Monthly Report (API-driven, all 9 endpoints)
+  // PRINT â€” Monthly Report (API-driven, all 9 endpoints)
   // ================================================================
   window.printMonthlyReport = async function () {
     var token = localStorage.getItem('rrbm_token');
@@ -2960,13 +2960,13 @@
     // base64 PNG embedded directly into the print document.
     var chartImages = {};
 
-    showToast('Preparing report…', 'success');
+    showToast('Preparing reportâ€¦', 'success');
 
     var headers = { 'Authorization': 'Bearer ' + token };
     var base    = API_BASE + '/api/reports/';
     var q       = '?month=' + month;
 
-    // ── Local helpers ──────────────────────────────────────────────
+    // â”€â”€ Local helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     function fmt(n) {
       return '&#8369;' + Number(n || 0).toLocaleString('en-PH', {
         minimumFractionDigits: 2, maximumFractionDigits: 2
@@ -3019,10 +3019,10 @@
       return '<img src="' + url + '" style="width:' + (widthPct || 100)
         + '%;border-radius:6px;border:1px solid #e0d4c0;margin:0 0 18px;" alt="chart" />';
     }
-    // Palette — Direct = brand amber; platforms use brand-recognisable colours.
+    // Palette â€” Direct = brand amber; platforms use brand-recognisable colours.
     var COL = { direct:'#D4860A', ecom:'#8B5CF6', tiktok:'#111827', lazada:'#2563EB',
                 shopee:'#EE4D2D', green:'#27500A', red:'#791F1F', blue:'#042C53', amber:'#D4860A' };
-    function pesoTick(v){ return '₱' + Number(v||0).toLocaleString('en-PH'); }
+    function pesoTick(v){ return 'â‚±' + Number(v||0).toLocaleString('en-PH'); }
 
     try {
       var results = await Promise.all([
@@ -3056,7 +3056,7 @@
       var payAll = results[11].ok ? await results[11].json() : [];
       var collAll= results[12].ok ? await results[12].json() : [];
 
-      // ── Consolidated corporate report (net, reconciling) ──────────────────
+      // â”€â”€ Consolidated corporate report (net, reconciling) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var mc       = results[13].ok ? await results[13].json() : {};
       var summary  = mc.summary        || {};
       var recon    = mc.reconciliation || {};
@@ -3067,7 +3067,7 @@
       var momByMetric = {};
       (mom.metrics || []).forEach(function (m) { momByMetric[m.metric] = m; });
 
-      // MoM ▲/▼ badge for a KPI box. invertGood=true → a rise is bad (e.g. expenses).
+      // MoM â–²/â–¼ badge for a KPI box. invertGood=true â†’ a rise is bad (e.g. expenses).
       function deltaBadge(metricName, invertGood) {
         var m = momByMetric[metricName];
         if (!m || m.deltaPct === null || m.deltaPct === undefined) return '';
@@ -3078,7 +3078,7 @@
           + arrow + ' ' + Math.abs(m.deltaPct) + '% vs ' + (mom.prevMonth || 'prev') + '</p>';
       }
 
-      // ── 1. Executive summary KPIs (NET basis, with MoM movement) ─────────
+      // â”€â”€ 1. Executive summary KPIs (NET basis, with MoM movement) â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var netProfit = Number(summary.netProfit || 0);
       var summaryBoxes =
         '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">'
@@ -3088,7 +3088,7 @@
         + box('Net profit',    fmt(netProfit), netProfit >= 0 ? '#27500A' : '#791F1F', deltaBadge('Net profit'))
         + '</div>';
 
-      // ── 2. Revenue reconciliation bridge (gross → net) ──────────────────
+      // â”€â”€ 2. Revenue reconciliation bridge (gross â†’ net) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var reconBoxes =
         '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px;">'
         + box('Gross sales',     fmt(recon.grossSales),       '#27500A', '')
@@ -3103,7 +3103,7 @@
         + '</strong>. All channel &amp; expense figures below are on this net basis '
         + '(product/pizza tables are gross, as labelled).</p>';
 
-      // ── Build charts off-screen from report data ────────────────────────
+      // â”€â”€ Build charts off-screen from report data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Exec trend: daily sales vs expenses (from insights-summary daily series).
       var salesExpPng = (function () {
         var db = ins.dailyBreakdown || [];
@@ -3126,7 +3126,7 @@
         }, 860, 300);
       })();
 
-      // ── 3. Month-over-month growth (compare & dissect) ──────────────────
+      // â”€â”€ 3. Month-over-month growth (compare & dissect) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var momSection = '';
       var momMetrics = mom.metrics || [];
       if (momMetrics.length) {
@@ -3135,7 +3135,7 @@
           var f = isCount(m.metric) ? num : fmt;
           var dColor = m.direction === 'flat' ? '#888' : (m.direction === 'up' ? '#27500A' : '#791F1F');
           var arrow  = m.direction === 'up' ? '&#9650;' : (m.direction === 'down' ? '&#9660;' : '&#8212;');
-          var pctTxt = (m.deltaPct === null || m.deltaPct === undefined) ? '—' : (Math.abs(m.deltaPct) + '%');
+          var pctTxt = (m.deltaPct === null || m.deltaPct === undefined) ? 'â€”' : (Math.abs(m.deltaPct) + '%');
           var dVal   = (Number(m.delta) >= 0 ? '+' : '') + (isCount(m.metric) ? num(m.delta) : fmt(m.delta));
           return '<tr>'
             + '<td style="font-weight:500;">' + esc(m.metric) + '</td>'
@@ -3158,12 +3158,12 @@
           options: { plugins: { legend: { position: 'top' } },
                      scales: { y: { ticks: { callback: pesoTick } } } }
         }, 860, 320);
-        momSection = heading('Month-over-month — ' + (mc.month || '') + ' vs ' + (mom.prevMonth || ''))
+        momSection = heading('Month-over-month â€” ' + (mc.month || '') + ' vs ' + (mom.prevMonth || ''))
           + chartImg(momBarPng)
           + tbl(['Metric', 'This month', 'Last month', 'Change', '%'], momRows);
       }
 
-      // ── 4. Top 5 products ──────────────────────────────────────
+      // â”€â”€ 4. Top 5 products â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var topProdSection = '';
       var topProds = ins.topProducts || [];
       if (topProds.length > 0) {
@@ -3180,7 +3180,7 @@
           + tbl(['#','Product','Qty sold','Revenue','Share'], tpRows);
       }
 
-      // ── 4. Orders by channel (NET revenue, ledger-attributed) ───────────
+      // â”€â”€ 4. Orders by channel (NET revenue, ledger-attributed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var platLabel = { TIKTOK:'TikTok', LAZADA:'Lazada', SHOPEE:'Shopee',
                         OTHER:'Other', UNKNOWN:'Unknown' };
       var chDirect = channels.direct || { orderCount:0, netRevenue:0 };
@@ -3188,7 +3188,7 @@
       var chPlats  = chEcom.platforms || [];
       var chUnattr = Number(channels.unattributed || 0);
       var chTotal  = Number(channels.netRevenue || 0);
-      var pctOf = function (v) { return chTotal ? (Number(v || 0) / chTotal * 100).toFixed(1) + '%' : '—'; };
+      var pctOf = function (v) { return chTotal ? (Number(v || 0) / chTotal * 100).toFixed(1) + '%' : 'â€”'; };
 
       var chRows =
           '<tr><td style="font-weight:600;">Direct</td>'
@@ -3241,7 +3241,7 @@
         + chartImg(chDonutPng, 58)
         + tbl(['Channel', 'Orders', 'Net revenue', '% of net'], chRows);
 
-      // ── 6. Top agents ──────────────────────────────────────────
+      // â”€â”€ 6. Top agents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var agtSection = '';
       var agtList = (agt.agents || []);
       if (agtList.length > 0) {
@@ -3259,7 +3259,7 @@
           + tbl(['#','Name','Type','Orders','Revenue'], agtRows);
       }
 
-      // ── 7. Top 3 dates ─────────────────────────────────────────
+      // â”€â”€ 7. Top 3 dates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var dtsSection = '';
       var dtsList = (dts.dates || []);
       if (dtsList.length > 0) {
@@ -3276,7 +3276,7 @@
           + tbl(['#','Date','Orders','Revenue'], dtsRows);
       }
 
-      // ── 5. Pizza Box report (headline product; category-based; GROSS) ───
+      // â”€â”€ 5. Pizza Box report (headline product; category-based; GROSS) â”€â”€â”€
       var pzPlats = pizza.platforms || [];
       var pzPlatQty = function (name) {
         var hit = pzPlats.filter(function (p) { return p.platform === name; })[0];
@@ -3311,7 +3311,7 @@
           datasets: [{ data: [Number(pizza.directQty || 0), Number(pizza.ecomQty || 0)],
             backgroundColor: [COL.direct, COL.ecom] }] },
         options: { plugins: { legend: { position: 'right' },
-          title: { display: true, text: 'Pizza qty — Direct vs E-commerce' } } }
+          title: { display: true, text: 'Pizza qty â€” Direct vs E-commerce' } } }
       }, 420, 280);
       var pzBarPng = renderChartPng({
         type: 'bar',
@@ -3329,7 +3329,7 @@
           + '<td style="text-align:right;">' + fmt(r.gross) + '</td></tr>';
       }).join('');
 
-      var pzSection = heading('Pizza Box report — headline product (gross sales)')
+      var pzSection = heading('Pizza Box report â€” headline product (gross sales)')
         + pzKpis
         + chartImg(pzDonutPng, 48) + chartImg(pzBarPng, 48)
         + tbl(['Channel', 'Qty sold', 'Gross sales'], pzChannelRows)
@@ -3338,7 +3338,7 @@
               + tbl(['#', 'Pizza box', 'Qty sold', 'Gross sales'], pzTopRows)
             : '');
 
-      // ── 9. Hot & selling items ─────────────────────────────────
+      // â”€â”€ 9. Hot & selling items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var hotSection = '';
       var hotList = (hot.items || []);
       if (hotList.length > 0) {
@@ -3359,8 +3359,8 @@
           + tbl(['#','Product','Tag','Qty sold','Revenue'], hotRows);
       }
 
-      // ── 10. Delivery fees ──────────────────────────────────────
-      var dfSection = heading('Delivery fees — Total: ' + fmt(df.totalFees));
+      // â”€â”€ 10. Delivery fees â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      var dfSection = heading('Delivery fees â€” Total: ' + fmt(df.totalFees));
       var dfList = (df.orders || []);
       if (dfList.length > 0) {
         var dfRows = dfList.map(function (r) {
@@ -3376,7 +3376,7 @@
         dfSection += '<p style="color:#888;font-size:12px;margin-bottom:16px;">No delivery fees this month.</p>';
       }
 
-      // ── 6. Expense report (by category; voided excluded) ────────────────
+      // â”€â”€ 6. Expense report (by category; voided excluded) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var expCats = expData.byCategory || [];
       var expSection;
       if (Number(expData.grandTotal || 0) === 0 && !expCats.length) {
@@ -3411,7 +3411,7 @@
         var hiLo = (expData.highestDay
           ? '<p style="font-size:11px;color:#666;margin:0 0 14px;">Highest spend day: <strong>'
             + esc(expData.highestDay) + '</strong> (' + fmt(expData.highestDayAmount) + ') &nbsp;&middot;&nbsp; '
-            + 'Lowest: <strong>' + esc(expData.lowestDay || '—') + '</strong> (' + fmt(expData.lowestDayAmount) + ')</p>'
+            + 'Lowest: <strong>' + esc(expData.lowestDay || 'â€”') + '</strong> (' + fmt(expData.lowestDayAmount) + ')</p>'
           : '');
 
         var subs = (expData.bySubcategory || []).filter(function (s) { return s.subName !== s.primaryName; });
@@ -3434,14 +3434,14 @@
           + subSection;
       }
 
-      // ── 12. Non-pizza items full breakdown ─────────────────────
-      var npzSection = heading('Non-pizza items — product breakdown');
+      // â”€â”€ 12. Non-pizza items full breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      var npzSection = heading('Non-pizza items â€” product breakdown');
       var npzProds = (npz.topProducts || []);
       if (npzProds.length > 0) {
         var npzRows = npzProds.map(function(r, i) {
           return '<tr>'
             + '<td style="text-align:center;color:#888;">' + (i+1) + '</td>'
-            + '<td style="font-weight:500;">' + esc(r.productName || '—') + '</td>'
+            + '<td style="font-weight:500;">' + esc(r.productName || 'â€”') + '</td>'
             + '<td style="text-align:right;color:#F59E0B;">' + num(r.directQty || 0) + '</td>'
             + '<td style="text-align:right;color:#8B5CF6;">' + num(r.ecomQty || 0) + '</td>'
             + '<td style="text-align:right;font-weight:600;">' + num(r.totalQty || 0) + '</td>'
@@ -3453,7 +3453,7 @@
         npzSection += '<p style="color:#888;font-size:12px;margin-bottom:16px;">No non-pizza items this month.</p>';
       }
 
-      // ── 13. Supplier payables outstanding ──────────────────────
+      // â”€â”€ 13. Supplier payables outstanding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var pendingPayables = (payAll || []).filter(function(p){ return p.status === 'PENDING'; });
       var paySection = heading('Supplier payables outstanding');
       if (pendingPayables.length > 0) {
@@ -3462,21 +3462,21 @@
           + fmt(payTotal) + ' across ' + pendingPayables.length + ' payable(s).</p>';
         var payRows = pendingPayables.map(function(p) {
           var created = p.createdAt ? new Date(p.createdAt) : null;
-          var days = created ? Math.floor((Date.now() - created.getTime()) / 86400000) : '—';
+          var days = created ? Math.floor((Date.now() - created.getTime()) / 86400000) : 'â€”';
           return '<tr>'
-            + '<td style="font-family:monospace;font-size:11px;">' + esc(p.receiptNumber||'—') + '</td>'
-            + '<td>' + esc(p.supplierName||'—') + '</td>'
+            + '<td style="font-family:monospace;font-size:11px;">' + esc(p.receiptNumber||'â€”') + '</td>'
+            + '<td>' + esc(p.supplierName||'â€”') + '</td>'
             + '<td style="text-align:right;font-weight:600;color:#791F1F;">' + fmt(p.totalAmount) + '</td>'
-            + '<td>' + (created ? created.toLocaleDateString('en-PH') : '—') + '</td>'
-            + '<td style="text-align:center;">' + (typeof days==='number' ? days + 'd' : '—') + '</td>'
+            + '<td>' + (created ? created.toLocaleDateString('en-PH') : 'â€”') + '</td>'
+            + '<td style="text-align:center;">' + (typeof days==='number' ? days + 'd' : 'â€”') + '</td>'
             + '</tr>';
         }).join('');
         paySection += tbl(['Receipt #','Supplier','Amount','Date Created','Days Outstanding'], payRows);
       } else {
-        paySection += '<p style="color:#10B981;font-size:12px;margin-bottom:16px;">No outstanding payables — all cleared.</p>';
+        paySection += '<p style="color:#10B981;font-size:12px;margin-bottom:16px;">No outstanding payables â€” all cleared.</p>';
       }
 
-      // ── 14. Pending collections ─────────────────────────────────
+      // â”€â”€ 14. Pending collections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var collSection = heading('Pending collections');
       var payModeMap = { CASH:'Cash', COD:'COD', GCASH:'GCash', PAYMAYA:'PayMaya',
                          BANK_TRANSFER:'Bank Transfer', BANK_DEPOSIT:'Bank Deposit', ONLINE:'Online' };
@@ -3486,29 +3486,29 @@
           + fmt(collTotal) + ' across ' + collAll.length + ' order(s).</p>';
         var collRows = collAll.map(function(o) {
           var created = o.createdAt ? new Date(o.createdAt) : null;
-          var dateStr = created ? created.toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : '—';
-          var days = created ? Math.floor((Date.now() - created.getTime()) / 86400000) : '—';
+          var dateStr = created ? created.toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : 'â€”';
+          var days = created ? Math.floor((Date.now() - created.getTime()) / 86400000) : 'â€”';
           return '<tr>'
             + '<td style="font-size:11px;">' + dateStr + '</td>'
-            + '<td style="font-family:monospace;font-size:11px;">' + esc(ecomOrderRef(o)||o.id||'—') + '</td>'
-            + '<td>' + esc(o.customerName||'—') + '</td>'
-            + '<td>' + (payModeMap[o.paymentMode]||o.paymentMode||'—') + '</td>'
+            + '<td style="font-family:monospace;font-size:11px;">' + esc(ecomOrderRef(o)||o.id||'â€”') + '</td>'
+            + '<td>' + esc(o.customerName||'â€”') + '</td>'
+            + '<td>' + (payModeMap[o.paymentMode]||o.paymentMode||'â€”') + '</td>'
             + '<td style="text-align:right;font-weight:600;">' + fmt(o.total) + '</td>'
-            + '<td style="text-align:center;">' + (typeof days==='number' ? days + 'd' : '—') + '</td>'
+            + '<td style="text-align:center;">' + (typeof days==='number' ? days + 'd' : 'â€”') + '</td>'
             + '</tr>';
         }).join('');
         collSection += tbl(['Order Date','Order ID','Customer','Payment','Total','Days Outstanding'], collRows);
       } else {
-        collSection += '<p style="color:#10B981;font-size:12px;margin-bottom:16px;">No pending collections — all orders settled.</p>';
+        collSection += '<p style="color:#10B981;font-size:12px;margin-bottom:16px;">No pending collections â€” all orders settled.</p>';
       }
 
-      // ── Assemble document ──────────────────────────────────────
+      // â”€â”€ Assemble document â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       var w = window.open('', '_blank', 'width=960,height=820');
-      if (!w) { showToast('Pop-up blocked — allow pop-ups and try again', 'error'); return; }
+      if (!w) { showToast('Pop-up blocked â€” allow pop-ups and try again', 'error'); return; }
 
       w.document.write(
         '<!DOCTYPE html><html><head><meta charset="UTF-8">'
-        + '<title>Monthly Report — ' + month + '</title>'
+        + '<title>Monthly Report â€” ' + month + '</title>'
         + '<style>'
         + 'body{font-family:Arial,sans-serif;padding:32px;color:#1A1208;font-size:13px;max-width:900px;margin:0 auto;}'
         + '.co-hdr{display:flex;align-items:center;gap:14px;margin-bottom:6px;}'
@@ -3540,7 +3540,7 @@
         + '<hr class="divider">'
         + heading('Executive summary')
         + summaryBoxes
-        + (salesExpPng ? heading('Sales vs expenses — daily trend') + chartImg(salesExpPng) : '')
+        + (salesExpPng ? heading('Sales vs expenses â€” daily trend') + chartImg(salesExpPng) : '')
         + heading('Revenue reconciliation')
         + reconBoxes
         + channelSection
@@ -3551,7 +3551,7 @@
         + '<div class="page-break"></div>'
         + momSection
         + '<div class="page-break"></div>'
-        + heading('Appendix — supporting detail')
+        + heading('Appendix â€” supporting detail')
         + topProdSection
         + agtSection
         + dtsSection
@@ -3575,7 +3575,7 @@
   };
 
   // ================================================================
-  // PRINT — Delivery Reports
+  // PRINT â€” Delivery Reports
   // ================================================================
   window.printDeliveryReports = function () {
     const tb = $('delivery-rep-tbody');
@@ -3591,7 +3591,7 @@
     const w = window.open('', '_blank', 'width=900,height=650');
     w.document.write(`
       <!DOCTYPE html><html><head><meta charset="UTF-8">
-      <title>Delivery Reports — ${dateLabel}</title>
+      <title>Delivery Reports â€” ${dateLabel}</title>
       <style>
         body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
         h2 { margin: 0 0 4px; } p { margin: 0 0 16px; font-size: 12px; color: #555; }
@@ -3600,7 +3600,7 @@
         @media print { button { display: none !important; } }
       </style></head><body>
       <h2>RRBM Packaging Supplies and Trading</h2>
-      <p>Delivery Reports — ${dateLabel} &nbsp;|&nbsp; Printed: ${new Date().toLocaleString('en-PH')}</p>
+      <p>Delivery Reports â€” ${dateLabel} &nbsp;|&nbsp; Printed: ${new Date().toLocaleString('en-PH')}</p>
       <table>
         <thead><tr>
           <th>Receipt #</th><th>Supplier</th><th>Date</th><th>Received By</th>
@@ -3614,7 +3614,7 @@
   };
 
   // ================================================================
-  // PRINT — Daily / Monthly Reports summary
+  // PRINT â€” Daily / Monthly Reports summary
   // ================================================================
   window.printDailyReport = async function () {
     const token = localStorage.getItem('rrbm_token');
@@ -3636,11 +3636,11 @@
       const rows = reports.map(function (r) {
         return '<tr>'
           + '<td>' + (r.reportDate || '') + '</td>'
-          + '<td style="text-align:right;">₱' + Number(r.totalRevenue || 0).toLocaleString('en-PH', {minimumFractionDigits:2}) + '</td>'
+          + '<td style="text-align:right;">â‚±' + Number(r.totalRevenue || 0).toLocaleString('en-PH', {minimumFractionDigits:2}) + '</td>'
           + '<td style="text-align:right;">' + (r.totalOrders || 0) + '</td>'
           + '<td style="text-align:right;">' + (r.totalCancelled || 0) + '</td>'
           + '<td style="text-align:right;">' + (r.totalItemsSold || 0).toLocaleString() + '</td>'
-          + '<td>' + (r.topProduct || '—') + ' ×' + (r.topProductQty || 0) + '</td>'
+          + '<td>' + (r.topProduct || 'â€”') + ' Ã—' + (r.topProductQty || 0) + '</td>'
           + '</tr>';
       }).join('');
 
@@ -3660,7 +3660,7 @@
           @media print { button { display: none !important; } }
         </style></head><body>
         <h2>RRBM Packaging Supplies and Trading</h2>
-        <p>Daily Sales Report — Last 30 Days &nbsp;|&nbsp; Printed: ${new Date().toLocaleString('en-PH')}</p>
+        <p>Daily Sales Report â€” Last 30 Days &nbsp;|&nbsp; Printed: ${new Date().toLocaleString('en-PH')}</p>
         <table>
           <thead><tr>
             <th>Date</th><th>Revenue</th><th>Orders</th><th>Cancelled</th><th>Items Sold</th><th>Top Product</th>
@@ -3668,7 +3668,7 @@
           <tbody>${rows}</tbody>
           <tfoot><tr>
             <td>TOTAL</td>
-            <td style="text-align:right;">₱${Number(grandTotal).toLocaleString('en-PH',{minimumFractionDigits:2})}</td>
+            <td style="text-align:right;">â‚±${Number(grandTotal).toLocaleString('en-PH',{minimumFractionDigits:2})}</td>
             <td colspan="4"></td>
           </tr></tfoot>
         </table>
@@ -3681,7 +3681,7 @@
   };
 
   // ================================================================
-  // ACTIVITY LOG — fixed ID column (show userId, not entityId)
+  // ACTIVITY LOG â€” fixed ID column (show userId, not entityId)
   // ================================================================
   window.renderActivityLog = async function (today) {
     const tb = $('activity-log-tbody');
@@ -3689,7 +3689,7 @@
     const token = localStorage.getItem('rrbm_token');
     if (!token) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Loadingâ€¦</td></tr>';
 
     let url;
     if (today) {
@@ -3742,17 +3742,17 @@
         const entityRef = l.entityType
           ? '<span style="font-size:11px;color:var(--text-muted);">' + l.entityType + '</span>'
             + (l.entityId ? '<br><code style="font-size:10px;">' + l.entityId + '</code>' : '')
-          : '—';
+          : 'â€”';
         // User ID column: show the actor's userId (employee ID)
         const userIdDisplay = l.userId
           ? '<code style="font-size:10px;">' + l.userId + '</code>'
-          : '<span style="color:#ccc;">—</span>';
+          : '<span style="color:#ccc;">â€”</span>';
 
         return '<tr>'
           + '<td style="font-size:11px;color:var(--text-muted);">' + formatTime(l.createdAt) + '</td>'
-          + '<td style="font-size:12px;">' + (l.userName || '—') + '</td>'
+          + '<td style="font-size:12px;">' + (l.userName || 'â€”') + '</td>'
           + '<td>' + actionBadge(l.action) + '</td>'
-          + '<td style="font-size:12px;max-width:260px;">' + (l.description || '—') + '</td>'
+          + '<td style="font-size:12px;max-width:260px;">' + (l.description || 'â€”') + '</td>'
           + '<td style="font-size:11px;">' + entityRef + '</td>'
           + '<td>' + userIdDisplay + '</td>'
           + '</tr>';
@@ -3786,7 +3786,7 @@
     var code = primarySel ? primarySel.value : '';
     var prim = (_expCatData.primaries || []).find(function (p) { return p.code === code; });
     var subs = prim ? (prim.subcategories || []) : [];
-    subSel.innerHTML = '<option value="">Select sub-category…</option>';
+    subSel.innerHTML = '<option value="">Select sub-categoryâ€¦</option>';
     subs.forEach(function (s) {
       var opt = document.createElement('option');
       opt.value = s.id;
@@ -3832,7 +3832,7 @@
   function populateExpensePrimarySelect(cats) {
     var primSel = $('exp-primary-cat');
     if (!primSel) return;
-    primSel.innerHTML = '<option value="">Select category…</option>';
+    primSel.innerHTML = '<option value="">Select categoryâ€¦</option>';
     (cats.primaries || []).forEach(function (p) {
       var opt = document.createElement('option');
       opt.value = p.code;
@@ -3861,7 +3861,7 @@
       if (cats) populateExpensePrimarySelect(cats);
     });
 
-    // Pre-fill expense history range (start of current month → today)
+    // Pre-fill expense history range (start of current month â†’ today)
     const todayStr = new Date().toISOString().split('T')[0];
     const startOfMonthDate = new Date();
     startOfMonthDate.setDate(1);
@@ -3884,7 +3884,7 @@
   // Returns { year, week } for a given date using ISO 8601 week numbering.
   function _currentISOWeekYear(date) {
     var d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    var day = d.getUTCDay() || 7; // Mon=1…Sun=7
+    var day = d.getUTCDay() || 7; // Mon=1â€¦Sun=7
     d.setUTCDate(d.getUTCDate() + 4 - day); // Nearest Thursday determines the year
     var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
     var week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
@@ -3895,7 +3895,7 @@
     var year = parseInt(($('exp-weekly-year') || {}).value, 10);
     var week = parseInt(($('exp-weekly-week') || {}).value, 10);
     if (!year || !week || week < 1 || week > 53) {
-      showToast('Enter a valid year and ISO week number (1–53)', 'error');
+      showToast('Enter a valid year and ISO week number (1â€“53)', 'error');
       return;
     }
     var resultsEl = $('exp-weekly-results');
@@ -3912,16 +3912,16 @@
       var wowColor = data.weekOverWeek != null && data.weekOverWeek < 0 ? '#10B981' : '#EF4444';
       var statsEl  = $('exp-weekly-stats');
       if (statsEl) statsEl.innerHTML =
-        '<div class="stat-card"><div class="stat-label">Week ' + data.week + ' · ' + data.weekStart + ' → ' + data.weekEnd + '</div>' +
-          '<div class="stat-value" style="color:var(--accent);">₱' + Number(data.grandTotal||0).toFixed(2) + '</div>' +
+        '<div class="stat-card"><div class="stat-label">Week ' + data.week + ' Â· ' + data.weekStart + ' â†’ ' + data.weekEnd + '</div>' +
+          '<div class="stat-value" style="color:var(--accent);">â‚±' + Number(data.grandTotal||0).toFixed(2) + '</div>' +
           '<div class="stat-sub">Grand Total</div></div>' +
         '<div class="stat-card"><div class="stat-label">Week-over-Week</div>' +
           '<div class="stat-value" style="color:' + wowColor + ';font-size:20px;">' + wowText + '</div>' +
           '<div class="stat-sub">vs. Week ' + (data.week - 1 || '(prev)') + '</div></div>' +
         '<div class="stat-card"><div class="stat-label">Daily Average</div>' +
-          '<div class="stat-value" style="color:var(--accent);">₱' + Number(data.dailyAvg||0).toFixed(2) + '</div>' +
+          '<div class="stat-value" style="color:var(--accent);">â‚±' + Number(data.dailyAvg||0).toFixed(2) + '</div>' +
           '<div class="stat-sub">' +
-            (data.highestDay ? 'High: ₱' + Number(data.highestDay.total||0).toFixed(2) + ' (' + data.highestDay.date + ')' : 'No spend days') +
+            (data.highestDay ? 'High: â‚±' + Number(data.highestDay.total||0).toFixed(2) + ' (' + data.highestDay.date + ')' : 'No spend days') +
           '</div></div>';
 
       // Day-by-day table
@@ -3945,7 +3945,7 @@
         if (catTbody) catTbody.innerHTML = data.byCategory.map(function(c) {
           return '<tr><td>' + escapeHtml(c.categoryName) + ' <span style="color:var(--text-muted);font-size:11px;">(' + c.categoryCode + ')</span></td>' +
             '<td style="text-align:right;">' + Number(c.total||0).toFixed(2) + '</td>' +
-            '<td style="text-align:right;">' + (c.pct != null ? c.pct.toFixed(1) + '%' : '—') + '</td></tr>';
+            '<td style="text-align:right;">' + (c.pct != null ? c.pct.toFixed(1) + '%' : 'â€”') + '</td></tr>';
         }).join('');
         if (catSection) catSection.style.display = '';
       } else {
@@ -3960,8 +3960,8 @@
           return '<tr style="color:#EF4444;">' +
             '<td>#' + v.id + '</td>' +
             '<td>' + v.date + '</td>' +
-            '<td>' + escapeHtml(v.voidReason || '—') + '</td>' +
-            '<td style="text-align:right;">₱' + Number(v.totalAmount||0).toFixed(2) + '</td>' +
+            '<td>' + escapeHtml(v.voidReason || 'â€”') + '</td>' +
+            '<td style="text-align:right;">â‚±' + Number(v.totalAmount||0).toFixed(2) + '</td>' +
             '</tr>';
         }).join('');
         if (voidSection) voidSection.style.display = '';
@@ -3980,7 +3980,7 @@
     const end   = ($('exp-range-end')   || {}).value;
     if (!start || !end) { showToast('Select a start and end date', 'error'); return; }
     const tbody = $('exp-range-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loadingâ€¦</td></tr>';
     const pdfBtn = $('exp-range-pdf-btn');
     if (pdfBtn) pdfBtn.style.display = 'none';
     try {
@@ -3998,21 +3998,21 @@
       let grandTotal = 0;
       tbody.innerHTML = data.map(function (e) {
         const itemsList = (e.items || []).map(function (i) {
-          return i.itemDescription + ' (₱' + Number(i.amount).toFixed(2) + ')';
+          return i.itemDescription + ' (â‚±' + Number(i.amount).toFixed(2) + ')';
         }).join(', ');
         const amt = Number(e.totalAmount || 0);
         grandTotal += amt;
-        const lateBadge = e.lateImported ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span> ' : '';
+        const lateBadge = e.lateImported ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">âš  Late recorded</span> ' : '';
         const editBtn = e.voided ? '' : '<button class="btn btn-secondary btn-sm" onclick="editExpense(' + e.id + ')" title="Edit expense" style="padding:2px 8px;"><i class="ti ti-edit"></i></button>';
         return `<tr>
-          <td>${e.date || '—'}</td>
-          <td>${e.adminName || '—'}</td>
-          <td style="font-size:12px;color:var(--text-muted);">${itemsList || '—'}</td>
-          <td style="text-align:right;font-weight:600;">₱${amt.toFixed(2)}</td>
+          <td>${e.date || 'â€”'}</td>
+          <td>${e.adminName || 'â€”'}</td>
+          <td style="font-size:12px;color:var(--text-muted);">${itemsList || 'â€”'}</td>
+          <td style="text-align:right;font-weight:600;">â‚±${amt.toFixed(2)}</td>
           <td style="font-size:11px;white-space:nowrap;">${lateBadge}${editBtn}</td>
         </tr>`;
       }).join('');
-      if (totalEl) totalEl.textContent = 'Total: ₱' + grandTotal.toFixed(2);
+      if (totalEl) totalEl.textContent = 'Total: â‚±' + grandTotal.toFixed(2);
       // Store for PDF export
       window._expRangeData  = data;
       window._expRangeStart = start;
@@ -4044,7 +4044,7 @@
       <style>body{font-family:sans-serif;padding:20px;} table{width:100%;border-collapse:collapse;}
       th{background:#f5f5f5;padding:6px 10px;border:1px solid #ddd;font-size:12px;text-align:left;}</style></head>
       <body>
-      <h2 style="margin:0 0 4px;">RRBM — Expense History</h2>
+      <h2 style="margin:0 0 4px;">RRBM â€” Expense History</h2>
       <p style="margin:0 0 12px;font-size:13px;color:#555;">${start} to ${end}</p>
       <table><thead><tr>
         <th>Date</th><th>Recorded By</th><th>Items</th><th style="text-align:right;">Total</th>
@@ -4062,15 +4062,15 @@
     const end   = window._expRangeEnd   || '';
     if (!data.length) { showToast('Load expense data first', 'error'); return; }
 
-    const fmt = function(n){ return '₱' + Number(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+    const fmt = function(n){ return 'â‚±' + Number(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
     let grandTotal = 0;
 
-    // Day-by-day rows — uses i.itemDescription (correct API field name)
+    // Day-by-day rows â€” uses i.itemDescription (correct API field name)
     const dayRows = data.map(function(e){
       const amt = Number(e.totalAmount || 0);
       grandTotal += amt;
       const itemsList = (e.items || []).map(function(i){
-        return '<li>' + escapeHtml(i.itemDescription || '') + ' — ' + fmt(i.amount) + '</li>';
+        return '<li>' + escapeHtml(i.itemDescription || '') + ' â€” ' + fmt(i.amount) + '</li>';
       }).join('');
       return '<tr>'
         + '<td>' + escapeHtml(e.date || '') + '</td>'
@@ -4080,7 +4080,7 @@
         + '</tr>';
     }).join('');
 
-    // Expense type summary — uses i.itemDescription (correct API field name)
+    // Expense type summary â€” uses i.itemDescription (correct API field name)
     const summaryMap = {};
     data.forEach(function(e){
       (e.items || []).forEach(function(i){
@@ -4100,7 +4100,7 @@
       }).join('');
 
     const w = window.open('', '_blank', 'width=800,height=900');
-    if (!w) { showToast('Pop-up blocked — allow pop-ups and try again', 'error'); return; }
+    if (!w) { showToast('Pop-up blocked â€” allow pop-ups and try again', 'error'); return; }
     w.document.write('<!DOCTYPE html><html><head><title>Expense Report ' + start + ' to ' + end + '</title>'
       + '<style>'
       + 'body{font-family:Arial,sans-serif;font-size:13px;padding:24px;color:#1A1208;max-width:750px;margin:0 auto;}'
@@ -4151,7 +4151,7 @@
         // Fetch HTML, inject into a new window; the page auto-prints via window.onload
         const html = await res.text();
         const w = window.open('', '_blank', 'width=900,height=700');
-        if (!w) { showToast('Pop-up blocked — allow pop-ups and try again', 'error'); return; }
+        if (!w) { showToast('Pop-up blocked â€” allow pop-ups and try again', 'error'); return; }
         w.document.open();
         w.document.write(html);
         w.document.close();
@@ -4183,7 +4183,7 @@
     row.innerHTML =
       '<input type="text" class="form-control exp-item-desc" placeholder="Item description" />' +
       '<input type="number" class="form-control exp-item-amount" placeholder="Amount" min="0" step="0.01" oninput="updateExpenseTotal()" />' +
-      '<button class="btn btn-secondary btn-sm" onclick="removeExpenseRow(this)" title="Remove" style="padding:0 10px;">×</button>';
+      '<button class="btn btn-secondary btn-sm" onclick="removeExpenseRow(this)" title="Remove" style="padding:0 10px;">Ã—</button>';
     container.appendChild(row);
   };
 
@@ -4203,7 +4203,7 @@
       total += parseFloat(inp.value) || 0;
     });
     const el = $('exp-running-total');
-    if (el) el.textContent = '₱' + total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (el) el.textContent = 'â‚±' + total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   window.submitExpense = async function () {
@@ -4335,7 +4335,7 @@
     }
     if ($('exp-payment-method')) $('exp-payment-method').value = '';
     if ($('exp-primary-cat'))    $('exp-primary-cat').value = '';
-    if ($('exp-sub-cat'))        $('exp-sub-cat').innerHTML = '<option value="">Select sub-category…</option>';
+    if ($('exp-sub-cat'))        $('exp-sub-cat').innerHTML = '<option value="">Select sub-categoryâ€¦</option>';
     if ($('exp-notes'))          $('exp-notes').value = '';
     if ($('exp-reference'))      $('exp-reference').value = '';
     updateExpenseTotal();
@@ -4353,7 +4353,7 @@
       if (!res.ok) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Error</td></tr>'; return; }
       const data  = await res.json();
       window._expTodayData = data; // cached for inline edit lookup
-      const fmt   = function (n) { return '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+      const fmt   = function (n) { return 'â‚±' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
       if (!data || data.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No expenses recorded today</td></tr>';
@@ -4364,11 +4364,11 @@
       let grandTotal = 0;
       tbody.innerHTML = data.map(function (e) {
         grandTotal += parseFloat(e.totalAmount) || 0;
-        const time  = e.createdAt ? new Date(e.createdAt).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : '—';
+        const time  = e.createdAt ? new Date(e.createdAt).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'â€”';
         const itemsSummary = (e.items || []).map(function (i) {
-          return escapeHtml(i.itemDescription) + ' — ' + fmt(i.amount);
+          return escapeHtml(i.itemDescription) + ' â€” ' + fmt(i.amount);
         }).join('<br>');
-        const lateBadge = e.lateImported ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span> ' : '';
+        const lateBadge = e.lateImported ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">âš  Late recorded</span> ' : '';
         const editBtn = e.voided ? '' : '<button class="btn btn-secondary btn-sm" onclick="editExpense(' + e.id + ')" title="Edit expense" style="padding:2px 8px;"><i class="ti ti-edit"></i></button>';
         return '<tr>'
           + '<td style="font-size:12px;">' + time + '</td>'
@@ -4381,24 +4381,24 @@
 
       if (totalEl) totalEl.textContent = 'Total: ' + fmt(grandTotal);
     } catch (err) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">—</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">â€”</td></tr>';
     }
   }
 
   // ================================================================
-  // PAYABLES — list, detail modal, status toggle, delete
+  // PAYABLES â€” list, detail modal, status toggle, delete
   // ================================================================
   var _currentPayableId     = null;
   var _currentPayableStatus = null;
   var _pendingPayableStatus = null;
-  var _closeDailyMasterKey  = '';        // preserved across normal→override flow
+  var _closeDailyMasterKey  = '';        // preserved across normalâ†’override flow
   var _collectionsParsed    = [];        // cached collections list
 
   window.loadPayables = async function () {
     const token = localStorage.getItem('rrbm_token');
     const tb    = $('payables-tbody');
     if (!token || !tb) return;
-    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">Loadingâ€¦</td></tr>';
     try {
       const [listRes, sumRes] = await Promise.all([
         fetch(API_BASE + '/api/payables',         { headers: { 'Authorization': 'Bearer ' + token } }),
@@ -4406,7 +4406,7 @@
       ]);
       if (sumRes.ok) {
         const s = await sumRes.json();
-        const fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
+        const fmt = function (n) { return 'â‚±' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
         setText('payable-total-outstanding', fmt(s.totalOutstanding));
         setText('payable-pending-count', (s.pendingCount || 0).toString());
       }
@@ -4426,7 +4426,7 @@
         tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">No payables recorded yet</td></tr>';
         return;
       }
-      var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
+      var fmt = function (n) { return 'â‚±' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
       var idx = 1;
       tb.innerHTML = records.map(function (r) {
         var statusBadge = r.status === 'PAID'
@@ -4435,9 +4435,9 @@
         var balance = Number(r.totalAmount || 0) - Number(r.amountPaid || 0);
         return '<tr>'
           + '<td>' + (idx++) + '</td>'
-          + '<td><span class="product-code">' + escapeHtml(r.receiptNumber || '—') + '</span></td>'
+          + '<td><span class="product-code">' + escapeHtml(r.receiptNumber || 'â€”') + '</span></td>'
           + '<td>' + formatDate(r.createdAt) + '</td>'
-          + '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(r.supplierName || '—') + '</td>'
+          + '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(r.supplierName || 'â€”') + '</td>'
           + '<td style="font-weight:600;">' + fmt(r.totalAmount) + '</td>'
           + '<td style="font-weight:600;color:' + (balance > 0 ? '#EF4444' : '#10B981') + ';">' + fmt(balance) + '</td>'
           + '<td>' + statusBadge + '</td>'
@@ -4455,16 +4455,16 @@
     const token = localStorage.getItem('rrbm_token');
     const body  = $('payable-detail-body');
     if (!body) return;
-    body.innerHTML = '<p style="color:var(--text-muted);padding:20px;text-align:center;">Loading…</p>';
+    body.innerHTML = '<p style="color:var(--text-muted);padding:20px;text-align:center;">Loadingâ€¦</p>';
     $('modal-payable-detail').classList.add('open');
     try {
       const res = await fetch(API_BASE + '/api/payables/' + id, { headers: { 'Authorization': 'Bearer ' + token } });
       if (!res.ok) { body.innerHTML = '<p style="color:#EF4444;padding:20px;">Failed to load</p>'; return; }
       const p = await res.json();
       _currentPayableStatus = p.status;
-      var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
+      var fmt = function (n) { return 'â‚±' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
       var balance = Number(p.totalAmount || 0) - Number(p.amountPaid || 0);
-      setText('payable-detail-receipt', '— Receipt #' + (p.receiptNumber || id));
+      setText('payable-detail-receipt', 'â€” Receipt #' + (p.receiptNumber || id));
       var toggleBtn = $('payable-toggle-status-btn');
       if (toggleBtn) {
         if (p.status === 'PAID') {
@@ -4484,7 +4484,7 @@
           + '<tbody>'
           + p.items.map(function (i) {
               return '<tr>'
-                + '<td>' + escapeHtml(i.productName || '—') + '</td>'
+                + '<td>' + escapeHtml(i.productName || 'â€”') + '</td>'
                 + '<td style="text-align:center;">' + (i.quantity || 0) + '</td>'
                 + '<td style="text-align:center;">' + (i.receivedQty || 0) + '</td>'
                 + '<td style="text-align:center;">' + (i.rejectedQty || 0) + '</td>'
@@ -4500,12 +4500,12 @@
         + '<div class="stat-card"><div class="stat-label">Outstanding Balance</div><div class="stat-value" style="color:' + (balance > 0 ? '#EF4444' : '#10B981') + ';">' + fmt(balance) + '</div></div>'
         + '</div>'
         + '<table class="table" style="margin-bottom:12px;">'
-        + '<tr><td style="color:var(--text-muted);width:40%;">Receipt Number</td><td><span class="product-code">' + escapeHtml(p.receiptNumber || '—') + '</span></td></tr>'
-        + '<tr><td style="color:var(--text-muted);">Supplier</td><td>' + escapeHtml(p.supplierName || '—') + '</td></tr>'
+        + '<tr><td style="color:var(--text-muted);width:40%;">Receipt Number</td><td><span class="product-code">' + escapeHtml(p.receiptNumber || 'â€”') + '</span></td></tr>'
+        + '<tr><td style="color:var(--text-muted);">Supplier</td><td>' + escapeHtml(p.supplierName || 'â€”') + '</td></tr>'
         + '<tr><td style="color:var(--text-muted);">Status</td><td>' + (p.status === 'PAID' ? '<span class="badge badge-ok">PAID</span>' : '<span class="badge badge-honey">PENDING</span>') + '</td></tr>'
         + '<tr><td style="color:var(--text-muted);">Date Recorded</td><td>' + formatDate(p.createdAt) + '</td></tr>'
-        + '<tr><td style="color:var(--text-muted);">Recorded By</td><td>' + escapeHtml(p.createdBy || '—') + '</td></tr>'
-        + (p.status === 'PAID' ? '<tr><td style="color:var(--text-muted);">Paid At</td><td>' + formatDate(p.paidAt) + '</td></tr><tr><td style="color:var(--text-muted);">Paid By</td><td>' + escapeHtml(p.paidBy || '—') + '</td></tr>' : '')
+        + '<tr><td style="color:var(--text-muted);">Recorded By</td><td>' + escapeHtml(p.createdBy || 'â€”') + '</td></tr>'
+        + (p.status === 'PAID' ? '<tr><td style="color:var(--text-muted);">Paid At</td><td>' + formatDate(p.paidAt) + '</td></tr><tr><td style="color:var(--text-muted);">Paid By</td><td>' + escapeHtml(p.paidBy || 'â€”') + '</td></tr>' : '')
         + (p.notes ? '<tr><td style="color:var(--text-muted);">Notes</td><td>' + escapeHtml(p.notes) + '</td></tr>' : '')
         + '</table>'
         + itemsHtml;
@@ -4540,7 +4540,7 @@
         const vData = await vRes.json().catch(function () { return {}; });
         showToast(vData.message || 'Incorrect security key', 'error'); return;
       }
-      // Key verified — update payable status
+      // Key verified â€” update payable status
       const res = await fetch(API_BASE + '/api/payables/' + _currentPayableId + '/status', {
         method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ status: _pendingPayableStatus })
       });
@@ -4592,7 +4592,7 @@
     const token = localStorage.getItem('rrbm_token');
     if (!token) { tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
 
-    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);">Loadingâ€¦</td></tr>';
 
     try {
       const res = await fetch('' + API_BASE + '/api/users', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -4624,10 +4624,10 @@
 
         return '<tr>'
           + '<td>' + photoHtml + '</td>'
-          + '<td>' + escapeHtml(u.employeeId || '—') + '</td>'
+          + '<td>' + escapeHtml(u.employeeId || 'â€”') + '</td>'
           + '<td><strong>' + escapeHtml(u.fullName) + (String(u.id) === myId ? ' <span style="font-size:10px;color:#999;">(you)</span>' : '') + '</strong></td>'
-          + '<td>' + escapeHtml(u.designation || '—') + '</td>'
-          + '<td>' + escapeHtml(u.contactNumber || '—') + '</td>'
+          + '<td>' + escapeHtml(u.designation || 'â€”') + '</td>'
+          + '<td>' + escapeHtml(u.contactNumber || 'â€”') + '</td>'
           + '<td>' + escapeHtml(u.email) + '</td>'
           + '<td>' + roleBadge(u.role) + '</td>'
           + '<td>' + statusDot + '</td>'
@@ -4738,9 +4738,9 @@
           const skConf = (($('add-emp-security-key-confirm') || {}).value || '').trim();
           if (sk) {
             if (sk !== skConf) {
-              showToast('Security key mismatch — account created but key not saved', 'error');
+              showToast('Security key mismatch â€” account created but key not saved', 'error');
             } else if (sk.length < 6) {
-              showToast('Security key too short — account created but key not saved', 'error');
+              showToast('Security key too short â€” account created but key not saved', 'error');
             } else {
               await fetch(API_BASE + '/api/users/' + data.id + '/security-key', {
                 method: 'PATCH', headers: authHeaders(),
@@ -4800,7 +4800,7 @@
       document.querySelectorAll('#edit-emp-page-access input[type=checkbox]').forEach(function (cb) {
         cb.checked = (allowedPages === null) || allowedPages.includes(cb.value);
       });
-      // Only Super Admin can edit page access — disable for others
+      // Only Super Admin can edit page access â€” disable for others
       const editPageAccess = $('edit-emp-page-access');
       if (editPageAccess) {
         const disabled = !isSuperAdmin();
@@ -4820,7 +4820,7 @@
       var fcCheck = $('edit-emp-force-change');
       if (fcCheck) fcCheck.checked = true;
 
-      // Credential Viewer — Super Admin only
+      // Credential Viewer â€” Super Admin only
       const credSection = $('edit-emp-credential-viewer');
       if (credSection) {
         if (isSuperAdmin()) {
@@ -4844,13 +4844,13 @@
               if (skInp) skInp.value = c.securityKeyPlain || '';
               $('cred-view-password-hint').textContent = c.passwordPlain
                 ? 'Click the eye icon to reveal'
-                : 'Not available — set before tracking was enabled';
+                : 'Not available â€” set before tracking was enabled';
               if (c.hasSecurityKey === false) {
                 $('cred-view-seckey-hint').textContent = 'No security key assigned';
               } else {
                 $('cred-view-seckey-hint').textContent = c.securityKeyPlain
                   ? 'Click the eye icon to reveal'
-                  : 'Not available — set before tracking was enabled';
+                  : 'Not available â€” set before tracking was enabled';
               }
             }).catch(function () {
               $('cred-view-password-hint').textContent = 'Could not load credentials';
@@ -5029,7 +5029,7 @@
   };
 
   // ================================================================
-  // CHANGE PASSWORD (own — accessible to all logged-in users)
+  // CHANGE PASSWORD (own â€” accessible to all logged-in users)
   // ================================================================
   window.openChangePasswordModal = function (forced) {
     if ($('cp-current-pw'))  $('cp-current-pw').value = '';
@@ -5061,7 +5061,7 @@
     const currentPw = (($('cp-current-pw')  || {}).value || '').trim();
     const newPw     = (($('cp-new-pw')      || {}).value || '').trim();
     const confirmPw = (($('cp-confirm-pw')  || {}).value || '').trim();
-    // In forced mode the current-password field is hidden — skip its validation
+    // In forced mode the current-password field is hidden â€” skip its validation
     if (!_forcedPasswordChange && !currentPw) { showToast('Current password is required', 'error'); return; }
     if (!newPw || newPw.length < 6) { showToast('New password must be at least 6 characters', 'error'); return; }
     if (newPw !== confirmPw) { showToast('New passwords do not match', 'error'); return; }
@@ -5100,7 +5100,7 @@
   };
 
   // ================================================================
-  // MASTER KEYS (Settings — up to 3 active keys)
+  // MASTER KEYS (Settings â€” up to 3 active keys)
   // ================================================================
   window.loadMasterKeys = async function () {
     var container = $('master-keys-list');
@@ -5180,7 +5180,7 @@
   };
 
   // ================================================================
-  // NOTIFICATION EMAILS (Settings — low-stock alerts)
+  // NOTIFICATION EMAILS (Settings â€” low-stock alerts)
   // ================================================================
   window.loadNotificationEmails = async function () {
     var container = $('notif-emails-list');
@@ -5247,7 +5247,7 @@
   };
 
   // ================================================================
-  // Navigation — settings restriction, form state, order-history
+  // Navigation â€” settings restriction, form state, order-history
   // ================================================================
   window.navigateTo = function (view) {
     // Block Settings for non-Super-Admins
@@ -5286,7 +5286,7 @@
       dash:           ['Dashboard',        "Today's overview"],
       new:            ['New Order',         'Create an order'],
       list:           ['Order List',        "Today's orders"],
-      cashflow:       ['Cash Flow',         'Cash on hand — inflows & outflows'],
+      cashflow:       ['Cash Flow',         'Cash on hand â€” inflows & outflows'],
       inv:            ['Inventory',         'Stock levels'],
       delivery:       ['Receive Stock',     'Delivery receipt & stock in'],
       'rejected-items':    ['Rejected Items',    'Items rejected during delivery'],
@@ -5298,7 +5298,7 @@
       'delivery-rep': ['Delivery Reports',  'Received stock history'],
       'activity-log': ['Activity Log',      'Admin action history'],
       agents:         ['Agent Registry',     'View and manage agents'],
-      'import':       ['Import',             'Import orders and expenses from CSV'],
+      'import':       ['Add Records',        'Add backdated orders & expenses'],
       transactions:   ['Transaction Ledger', 'Accounting ledger entries'],
       emp:            ['Employee List',      'Manage employees'],
       expenses:       ['Expenses',           'Daily expense tracking'],
@@ -5342,7 +5342,7 @@
     if (view === 'delivery-rep') renderDeliveryReports(true);
     if (view === 'activity-log') renderActivityLog(true);
     if (view === 'agents')       loadAgents();
-    if (view === 'import')       loadImportHistory();
+    if (view === 'import')       initAddRecords();
     if (view === 'transactions') loadTransactions();
     if (view === 'expenses')     initExpensesView();
     if (view === 'payables')     loadPayables();
@@ -5356,7 +5356,7 @@
   // Cash Flow (cash on hand)
   // ================================================================
   function cashMoney(v) {
-    return '₱' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return 'â‚±' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
   const CASH_TYPE_LABELS = {
@@ -5370,7 +5370,7 @@
 
   function loadCashFlow() {
     const tb = $('cashflow-tbody');
-    if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+    if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loadingâ€¦</td></tr>';
     fetch(API_BASE + '/api/cash-flow', { headers: authHeaders() })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (data) { renderCashFlow(data); })
@@ -5387,7 +5387,7 @@
       balEl.style.color = bal < 0 ? '#EF4444' : '#059669';
     }
     const note = $('cashflow-balance-note');
-    if (note) note.textContent = bal < 0 ? 'Negative — reconcile with an Adjustment' : '';
+    if (note) note.textContent = bal < 0 ? 'Negative â€” reconcile with an Adjustment' : '';
 
     // Show the one-time opening-balance button only while the ledger is empty
     const openBtn = $('cashflow-opening-btn');
@@ -5405,8 +5405,8 @@
       const color = amt < 0 ? '#EF4444' : '#059669';
       const sign = amt > 0 ? '+' : '';
       const label = CASH_TYPE_LABELS[e.entryType] || e.entryType;
-      const ref = (e.referenceType === 'ORDER' && e.referenceId) ? ' · Order ' + e.referenceId
-                : (e.referenceType === 'EXPENSE' && e.referenceId) ? ' · Expense #' + e.referenceId : '';
+      const ref = (e.referenceType === 'ORDER' && e.referenceId) ? ' Â· Order ' + e.referenceId
+                : (e.referenceType === 'EXPENSE' && e.referenceId) ? ' Â· Expense #' + e.referenceId : '';
       return '<tr>'
         + '<td style="white-space:nowrap;">' + (e.entryDate || '') + '</td>'
         + '<td><span style="font-weight:600;">' + label + '</span></td>'
@@ -5494,7 +5494,7 @@
   };
 
   // ================================================================
-  // NEW ORDER FORM — form state, new fields
+  // NEW ORDER FORM â€” form state, new fields
   // ================================================================
   async function loadProducts() {
     try {
@@ -5536,14 +5536,14 @@
 
   async function loadAgentOptions() {
     var input = $('field-agent-input');
-    if (input) input.placeholder = 'Loading agents…';
+    if (input) input.placeholder = 'Loading agentsâ€¦';
     try {
       // Use the order-scoped endpoint so admins without the Agents page can still
       // assign an agent (gated by the "orders" page, not "agents").
       var res = await fetch(API_BASE + '/api/orders/agent-options', { headers: authHeaders() });
       if (!res.ok) { if (input) input.placeholder = 'Failed to load agents'; return; }
       _cachedAgents = await res.json();
-      if (input) input.placeholder = 'Type to search agents…';
+      if (input) input.placeholder = 'Type to search agentsâ€¦';
       setupAgentAutocomplete();
     } catch(e) {
       if (input) input.placeholder = 'Failed to load agents';
@@ -5585,7 +5585,7 @@
       return '<div class="product-dropdown-item" data-id="' + a.id + '" data-name="' + escapeHtml(a.fullName) + '" data-code="' + escapeHtml(a.agentCode) + '">'
         + '<strong>' + escapeHtml(a.fullName) + '</strong>'
         + ' <span style="font-size:11px;color:var(--text-muted);">(' + escapeHtml(a.agentCode) + ')</span>'
-        + (a.territory ? ' <span style="font-size:10px;color:var(--text-muted);">· ' + escapeHtml(a.territory) + '</span>' : '')
+        + (a.territory ? ' <span style="font-size:10px;color:var(--text-muted);">Â· ' + escapeHtml(a.territory) + '</span>' : '')
         + '</div>';
     }).join('');
     dropdown.classList.add('show');
@@ -5672,15 +5672,15 @@
     container.insertAdjacentHTML('beforeend', '<div class="order-item-row" id="' + rowId + '"><div class="row align-items-end">'
       + '<div class="col-md-4"><label class="form-label">Product <span class="text-danger">*</span></label><div class="product-autocomplete-wrapper"><input type="text" class="form-control product-input" id="productInput-' + num + '" placeholder="Type to search products..." autocomplete="off" required><input type="hidden" class="product-id-hidden" id="productId-' + num + '" value=""><input type="hidden" id="warehouse-' + num + '" value="wh1"><div class="product-dropdown" id="productDropdown-' + num + '"></div><div id="productStatus-' + num + '" style="display:none;font-size:11px;margin-top:3px;"></div></div></div>'
       + '<div class="col-md-2"><label class="form-label">Qty <span class="text-danger">*</span></label><input type="number" class="form-control item-quantity" id="quantity-' + num + '" min="1" value="1" required></div>'
-      + '<div class="col-md-2"><label class="form-label">Unit Price (₱) <span class="text-danger">*</span></label><input type="number" class="form-control item-unit-price" id="unitPrice-' + num + '" min="0" step="0.01" value="0" required></div>'
+      + '<div class="col-md-2"><label class="form-label">Unit Price (â‚±) <span class="text-danger">*</span></label><input type="number" class="form-control item-unit-price" id="unitPrice-' + num + '" min="0" step="0.01" value="0" required></div>'
       + '<div class="col-md-2"><label class="form-label">Stock Info</label><div class="stock-info-display" id="stockInfo-' + num + '" style="font-size:11px;padding:6px 8px;background:#f0f0f0;border-radius:6px;min-height:34px;display:flex;align-items:center;color:#666;">Select a product</div></div>'
-      + '<div class="col-md-1"><label class="form-label">Subtotal</label><input type="text" class="form-control item-subtotal" id="subtotal-' + num + '" value="₱0.00" readonly style="background-color:#e9ecef;font-size:12px;"></div>'
+      + '<div class="col-md-1"><label class="form-label">Subtotal</label><input type="text" class="form-control item-subtotal" id="subtotal-' + num + '" value="â‚±0.00" readonly style="background-color:#e9ecef;font-size:12px;"></div>'
       + '<div class="col-md-1 text-center"><label class="form-label">&nbsp;</label><button type="button" class="remove-item-btn d-block" onclick="removeItemRow(\'' + rowId + '\')"><i class="ti ti-trash"></i></button></div>'
       + '</div>'
       + '<div class="row agent-op-row g-2 mt-0" id="op-row-' + num + '" style="display:' + (isAgent ? '' : 'none') + ';padding:4px 0;">'
-      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Base Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="basePrice-' + num + '" min="0" step="0.01" placeholder="Company price per unit"></div>'
-      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Over Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="opPerUnit-' + num + '" min="0" step="0.01" placeholder="Agent commission per unit"></div>'
-      + '<div class="col-md-6 d-flex align-items-end" style="padding-bottom:4px;"><small style="color:#888;font-size:11px;">Commission = Over Price × Qty</small></div>'
+      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Base Price/Unit (â‚±)</label><input type="number" class="form-control form-control-sm" id="basePrice-' + num + '" min="0" step="0.01" placeholder="Company price per unit"></div>'
+      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Over Price/Unit (â‚±)</label><input type="number" class="form-control form-control-sm" id="opPerUnit-' + num + '" min="0" step="0.01" placeholder="Agent commission per unit"></div>'
+      + '<div class="col-md-6 d-flex align-items-end" style="padding-bottom:4px;"><small style="color:#888;font-size:11px;">Commission = Over Price Ã— Qty</small></div>'
       + '</div>'
       + '</div>');
     setupProductAutocomplete(num);
@@ -5700,7 +5700,7 @@
       var pid = $('productId-' + rowNum); if (pid) pid.value = '';
       var ps  = $('productStatus-' + rowNum);
       if (ps) {
-        if (this.value.trim()) { ps.style.display = ''; ps.style.color = '#D97706'; ps.textContent = '⚠ Select from catalog'; }
+        if (this.value.trim()) { ps.style.display = ''; ps.style.color = '#D97706'; ps.textContent = 'âš  Select from catalog'; }
         else { ps.style.display = 'none'; ps.textContent = ''; }
       }
     });
@@ -5708,7 +5708,7 @@
   }
 
   function renderProductDropdown(dropdown, products, rowNum) {
-    // Set components are not independently sellable — only the SET is sold.
+    // Set components are not independently sellable â€” only the SET is sold.
     products = (products || []).filter(function (p) { return !p.isComponent; });
     if (products.length === 0) { dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>'; dropdown.classList.add('show'); return; }
     let html = '';
@@ -5724,7 +5724,7 @@
         stockClass = (eff === null || eff <= 0) ? 'critical' : 'ok';
         stockLabel = eff === null ? 'no components' : (eff + ' sets');
         whParts = product.components && product.components.length
-          ? product.components.map(function (c) { return escapeHtml(c.componentProductName || '') + ' ×' + c.quantityPerSet; })
+          ? product.components.map(function (c) { return escapeHtml(c.componentProductName || '') + ' Ã—' + c.quantityPerSet; })
           : ['no components'];
         primaryWh = ''; // sets are sourced across warehouses; backend allocates
       } else {
@@ -5737,7 +5737,7 @@
       }
 
       const setLabel = product.isSet ? ' <span style="font-size:9px;font-weight:700;background:#D4860A;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle;">SET</span>' : '';
-      html += '<div class="product-dropdown-item" data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '" data-price="' + product.unitPrice + '" data-wh="' + primaryWh + '" data-wh1="' + wh1 + '" data-wh2="' + wh2 + '" data-wh3="' + wh3 + '" data-isset="' + (product.isSet ? '1' : '0') + '" data-setavail="' + (setAvail == null ? '' : setAvail) + '" data-row="' + rowNum + '"><div style="flex:1;"><div class="product-name">' + product.name + setLabel + '</div><div style="font-size:10px;color:#888;">' + (whParts.join(' · ') || 'No stock') + '</div></div><div style="text-align:right;"><span class="product-price">₱' + parseFloat(product.unitPrice).toFixed(2) + '</span><br><span class="product-stock ' + stockClass + '">' + stockLabel + '</span></div></div>';
+      html += '<div class="product-dropdown-item" data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '" data-price="' + product.unitPrice + '" data-wh="' + primaryWh + '" data-wh1="' + wh1 + '" data-wh2="' + wh2 + '" data-wh3="' + wh3 + '" data-isset="' + (product.isSet ? '1' : '0') + '" data-setavail="' + (setAvail == null ? '' : setAvail) + '" data-row="' + rowNum + '"><div style="flex:1;"><div class="product-name">' + product.name + setLabel + '</div><div style="font-size:10px;color:#888;">' + (whParts.join(' Â· ') || 'No stock') + '</div></div><div style="text-align:right;"><span class="product-price">â‚±' + parseFloat(product.unitPrice).toFixed(2) + '</span><br><span class="product-stock ' + stockClass + '">' + stockLabel + '</span></div></div>';
     });
     dropdown.innerHTML = html; dropdown.classList.add('show');
     dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
@@ -5747,7 +5747,7 @@
         const setAvail  = parseInt(this.getAttribute('data-setavail'));
         $('productInput-' + rn).value = this.getAttribute('data-name');
         $('productId-' + rn).value = this.getAttribute('data-id');
-        var ps = $('productStatus-' + rn); if (ps) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = '✓ Catalog product'; }
+        var ps = $('productStatus-' + rn); if (ps) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = 'âœ“ Catalog product'; }
         $('unitPrice-' + rn).value = parseFloat(this.getAttribute('data-price')).toFixed(2);
         const si = $('stockInfo-' + rn);
         const qEl = $('quantity-' + rn);
@@ -5758,13 +5758,13 @@
           if (qEl) { qEl.max = avail > 0 ? avail : ''; qEl.setAttribute('data-setmax', avail); }
           if (si) {
             si.innerHTML = avail > 0
-              ? '📦 <span style="color:#10B981;font-weight:600;">' + avail.toLocaleString() + ' sets available</span> <span style="color:#888;">(all warehouses)</span>'
+              ? 'ðŸ“¦ <span style="color:#10B981;font-weight:600;">' + avail.toLocaleString() + ' sets available</span> <span style="color:#888;">(all warehouses)</span>'
               : '<span style="color:#EF4444;">No sets available</span>';
           }
         } else {
           $('warehouse-' + rn).value = pw;
           if (qEl) { qEl.removeAttribute('max'); qEl.removeAttribute('data-setmax'); }
-          if (si) { let pts = []; if (wh1 > 0) pts.push('<span style="color:' + (pw === 'wh1' ? '#10B981;font-weight:600' : '#666') + '">WH1: ' + wh1.toLocaleString() + '</span>'); if (wh2 > 0) pts.push('<span style="color:' + (pw === 'wh2' ? '#10B981;font-weight:600' : '#666') + '">WH2: ' + wh2.toLocaleString() + '</span>'); if (wh3 > 0) pts.push('<span style="color:' + (pw === 'wh3' ? '#10B981;font-weight:600' : '#666') + '">Balagtas: ' + wh3.toLocaleString() + '</span>'); si.innerHTML = pts.length > 0 ? '📦 ' + pts.join(' · ') : '<span style="color:#EF4444;">No stock</span>'; }
+          if (si) { let pts = []; if (wh1 > 0) pts.push('<span style="color:' + (pw === 'wh1' ? '#10B981;font-weight:600' : '#666') + '">WH1: ' + wh1.toLocaleString() + '</span>'); if (wh2 > 0) pts.push('<span style="color:' + (pw === 'wh2' ? '#10B981;font-weight:600' : '#666') + '">WH2: ' + wh2.toLocaleString() + '</span>'); if (wh3 > 0) pts.push('<span style="color:' + (pw === 'wh3' ? '#10B981;font-weight:600' : '#666') + '">Balagtas: ' + wh3.toLocaleString() + '</span>'); si.innerHTML = pts.length > 0 ? 'ðŸ“¦ ' + pts.join(' Â· ') : '<span style="color:#EF4444;">No stock</span>'; }
         }
         dropdown.classList.remove('show'); calcItemSubtotal(rn);
       });
@@ -5773,14 +5773,14 @@
 
   function calcItemSubtotal(rn) {
     const q = parseFloat(($('quantity-' + rn) || {}).value) || 0, p = parseFloat(($('unitPrice-' + rn) || {}).value) || 0;
-    const el = $('subtotal-' + rn); if (el) el.value = '₱' + (q * p).toFixed(2);
+    const el = $('subtotal-' + rn); if (el) el.value = 'â‚±' + (q * p).toFixed(2);
     calculateOrderTotals();
   }
 
   window.applyDiscountPreset = function (pct) {
     let sub = 0;
     document.querySelectorAll('.item-subtotal').forEach(function (i) {
-      sub += parseFloat(i.value.replace('₱', '')) || 0;
+      sub += parseFloat(i.value.replace('â‚±', '')) || 0;
     });
     const disc = $('orderDiscount');
     if (disc) {
@@ -5790,20 +5790,20 @@
   };
 
   function calculateOrderTotals() {
-    let sub = 0; $$('.item-subtotal').forEach(function (i) { sub += parseFloat(i.value.replace('₱', '')) || 0; });
+    let sub = 0; $$('.item-subtotal').forEach(function (i) { sub += parseFloat(i.value.replace('â‚±', '')) || 0; });
     const disc = parseFloat(($('orderDiscount')     || {}).value) || 0;
     const fee  = parseFloat(($('orderDeliveryFee')  || {}).value) || 0;
-    if ($('orderSubtotal'))       $('orderSubtotal').textContent       = '₱' + sub.toFixed(2);
-    if ($('orderDiscountAmount')) $('orderDiscountAmount').textContent  = '-₱' + disc.toFixed(2);
+    if ($('orderSubtotal'))       $('orderSubtotal').textContent       = 'â‚±' + sub.toFixed(2);
+    if ($('orderDiscountAmount')) $('orderDiscountAmount').textContent  = '-â‚±' + disc.toFixed(2);
     if ($('orderDeliveryFeeDisplay')) {
       $('orderDeliveryFeeDisplay').style.display = fee > 0 ? 'flex' : 'none';
     }
-    if ($('orderDeliveryFeeAmt'))    $('orderDeliveryFeeAmt').textContent = '+₱' + fee.toFixed(2);
-    if ($('orderTotal'))          $('orderTotal').textContent           = '₱' + (sub - disc + fee).toFixed(2);
+    if ($('orderDeliveryFeeAmt'))    $('orderDeliveryFeeAmt').textContent = '+â‚±' + fee.toFixed(2);
+    if ($('orderTotal'))          $('orderTotal').textContent           = 'â‚±' + (sub - disc + fee).toFixed(2);
   }
 
   // ================================================================
-  // Replacement Order — open pre-populated form
+  // Replacement Order â€” open pre-populated form
   // ================================================================
   window.openReplacementForm = async function (originalOrderId) {
     // Load original order from cache or fetch
@@ -5828,7 +5828,7 @@
     if ($('field-source'))     $('field-source').value     = order.source       || '';
     // Trigger onSourceChange to show/hide conditional contact fields before filling them
     if (typeof window.onSourceChange === 'function') window.onSourceChange();
-    // Contact name — fill whichever conditional field matches the source
+    // Contact name â€” fill whichever conditional field matches the source
     if (order.source === 'AGENT' && order.agentId) {
       loadAgentOptions().then(async function() {
         var match = _cachedAgents.find(function(a) { return a.id === order.agentId; });
@@ -5836,13 +5836,13 @@
           if ($('field-agent-id'))    $('field-agent-id').value    = String(order.agentId);
           if ($('field-agent-input')) $('field-agent-input').value = match.fullName + ' (' + match.agentCode + ')';
         } else {
-          // Agent is INACTIVE — clear hidden id to force re-selection; show name as placeholder
+          // Agent is INACTIVE â€” clear hidden id to force re-selection; show name as placeholder
           if ($('field-agent-id')) $('field-agent-id').value = '';
           try {
             var agRes = await fetch(API_BASE + '/api/agents/' + order.agentId, { headers: authHeaders() });
             if (agRes.ok) {
               var ag = await agRes.json();
-              if ($('field-agent-input')) $('field-agent-input').placeholder = ag.fullName + ' (' + ag.agentCode + ') — Inactive, select a new agent';
+              if ($('field-agent-input')) $('field-agent-input').placeholder = ag.fullName + ' (' + ag.agentCode + ') â€” Inactive, select a new agent';
             }
           } catch (e) {}
         }
@@ -5870,7 +5870,7 @@
   };
 
   // ================================================================
-  // Return Replacement — open new order form pre-filled for returned order
+  // Return Replacement â€” open new order form pre-filled for returned order
   // Does NOT set replacementMode; creates a normal new order for the same customer.
   // ================================================================
   window.openReturnReplacement = async function (returnedOrderId) {
@@ -5908,15 +5908,15 @@
     if ($('field-order-type')) $('field-order-type').value = order.orderType    || 'STANDARD';
     if ($('field-address'))    $('field-address').value    = order.address      || '';
 
-    showToast('New order opened for ' + (order.customerName || 'customer') + ' — return replacement for ' + returnedOrderId, 'success');
+    showToast('New order opened for ' + (order.customerName || 'customer') + ' â€” return replacement for ' + returnedOrderId, 'success');
   };
 
   // ================================================================
-  // Replacement Order — submit
+  // Replacement Order â€” submit
   // ================================================================
   window.addReplacementOrder = async function () {
     var originalOrderId = appState.replacementMode && appState.replacementMode.originalOrderId;
-    if (!originalOrderId) { showToast('Replacement mode lost — please start again', 'error'); return; }
+    if (!originalOrderId) { showToast('Replacement mode lost â€” please start again', 'error'); return; }
 
     const customerName = (($('field-customer')  || {}).value || '').trim();
     const source       = ($('field-source')     || {}).value;
@@ -5961,7 +5961,7 @@
       const unitPrice   = parseFloat(($('unitPrice-'  + rn) || {}).value) || 0;
       const warehouse   = ($('warehouse-'    + rn) || {}).value || 'wh1';
       if (!productName.trim()) { showToast('Please select a product for all items', 'error'); hasError = true; return; }
-      if (!productId || productId === '') { showToast('Select "' + productName + '" from the product catalog — type and choose from the list', 'error'); var ps0 = $('productStatus-' + rn); if (ps0) { ps0.style.display = ''; ps0.style.color = '#D97706'; ps0.textContent = '⚠ Select from catalog'; } hasError = true; return; }
+      if (!productId || productId === '') { showToast('Select "' + productName + '" from the product catalog â€” type and choose from the list', 'error'); var ps0 = $('productStatus-' + rn); if (ps0) { ps0.style.display = ''; ps0.style.color = '#D97706'; ps0.textContent = 'âš  Select from catalog'; } hasError = true; return; }
       if (quantity <= 0)       { showToast('Quantity must be at least 1 for ' + productName, 'error'); hasError = true; return; }
       if (unitPrice <= 0)      { showToast('Unit price must be greater than 0 for ' + productName, 'error'); hasError = true; return; }
       const item = { productName: productName.trim(), quantity, unitPrice, warehouse };
@@ -5990,7 +5990,7 @@
     if (window._addOrderSubmitting) return;
     window._addOrderSubmitting = true;
     const _submitBtn = document.querySelector('button[onclick="addOrder()"]');
-    if (_submitBtn) { _submitBtn.disabled = true; _submitBtn.innerHTML = 'Creating…'; }
+    if (_submitBtn) { _submitBtn.disabled = true; _submitBtn.innerHTML = 'Creatingâ€¦'; }
 
     try {
       const token = localStorage.getItem('rrbm_token');
@@ -6073,10 +6073,10 @@
       const unitPrice = parseFloat(($('unitPrice-' + rn) || {}).value) || 0;
       var _prodObj = (appState.cachedProducts || []).find(function (pp) { return String(pp.id) === String(productId); });
       var _isSetItem = !!(_prodObj && _prodObj.isSet);
-      // Sets are sourced across warehouses (backend allocates) — send blank warehouse.
+      // Sets are sourced across warehouses (backend allocates) â€” send blank warehouse.
       const warehouse = _isSetItem ? '' : (($('warehouse-' + rn) || {}).value || 'wh1');
       if (!productName.trim()) { showToast('Please select a product for all items', 'error'); hasError = true; return; }
-      if (!productId || productId === '') { showToast('Select "' + productName + '" from the product catalog — type and choose from the list', 'error'); var ps0 = $('productStatus-' + rn); if (ps0) { ps0.style.display = ''; ps0.style.color = '#D97706'; ps0.textContent = '⚠ Select from catalog'; } hasError = true; return; }
+      if (!productId || productId === '') { showToast('Select "' + productName + '" from the product catalog â€” type and choose from the list', 'error'); var ps0 = $('productStatus-' + rn); if (ps0) { ps0.style.display = ''; ps0.style.color = '#D97706'; ps0.textContent = 'âš  Select from catalog'; } hasError = true; return; }
       if (quantity <= 0)       { showToast('Quantity must be at least 1 for ' + productName, 'error'); hasError = true; return; }
       if (unitPrice <= 0)      { showToast('Unit price must be greater than 0 for ' + productName, 'error'); hasError = true; return; }
       if (_isSetItem) {
@@ -6107,12 +6107,12 @@
       discount, deliveryFee, notes, items
     };
 
-    // M-20: Double-submit lock — all validation early-returns have already fired above.
+    // M-20: Double-submit lock â€” all validation early-returns have already fired above.
     // Lock here so a second click during the async fetch is a no-op.
     if (window._addOrderSubmitting) return;
     window._addOrderSubmitting = true;
     const _submitBtn = document.querySelector('button[onclick="addOrder()"]');
-    if (_submitBtn) { _submitBtn.disabled = true; _submitBtn.innerHTML = 'Creating…'; }
+    if (_submitBtn) { _submitBtn.disabled = true; _submitBtn.innerHTML = 'Creatingâ€¦'; }
 
     try {
       const token = localStorage.getItem('rrbm_token');
@@ -6168,7 +6168,7 @@
   window.clearOrderForm = clearOrderForm;
 
   // ================================================================
-  // Low Stock — full-list modal
+  // Low Stock â€” full-list modal
   // ================================================================
   window.openLowStockModal = function () {
     const items   = window._allLowStockItems || [];
@@ -6176,7 +6176,7 @@
     const countEl = $('low-stock-modal-count');
 
     if (countEl) {
-      countEl.textContent = '— ' + items.length + ' item' + (items.length !== 1 ? 's' : '');
+      countEl.textContent = 'â€” ' + items.length + ' item' + (items.length !== 1 ? 's' : '');
     }
 
     if (tbody) {
@@ -6188,10 +6188,10 @@
           const tagCls = p.tag === 'HOT' ? 'badge-hot' : p.tag === 'SELLING' ? 'badge-selling' : 'badge-slow';
           return '<tr>'
             + '<td><strong>' + escapeHtml(p.name) + '</strong></td>'
-            + '<td><span class="badge ' + tagCls + '">' + (p.tag || '—') + '</span></td>'
+            + '<td><span class="badge ' + tagCls + '">' + (p.tag || 'â€”') + '</span></td>'
             + '<td style="color:#EF4444;font-weight:600;">' + (p.stock || 0).toLocaleString() + ' pcs</td>'
             + '<td>' + (p.threshold || 0).toLocaleString() + ' pcs</td>'
-            + '<td style="color:#EF4444;">−' + shortfall.toLocaleString() + ' pcs</td>'
+            + '<td style="color:#EF4444;">âˆ’' + shortfall.toLocaleString() + ' pcs</td>'
             + '</tr>';
         }).join('');
       }
@@ -6202,10 +6202,10 @@
   };
 
   // ================================================================
-  // Cancel Order — master key protected
+  // Cancel Order â€” master key protected
   // ================================================================
   // ================================================================
-  // ITEM-LEVEL VOID MODAL (Change 4 — open, Change 5 — render items)
+  // ITEM-LEVEL VOID MODAL (Change 4 â€” open, Change 5 â€” render items)
   // ================================================================
 
   /** Open the item-level void modal for a same-day order.
@@ -6220,15 +6220,15 @@
     var sk = $('ivm-security-key'); if (sk) sk.value = '';
     var mk = $('ivm-master-key');   if (mk) mk.value = '';
 
-    // Reset tier sections — start in Tier 1 state
+    // Reset tier sections â€” start in Tier 1 state
     var t1 = $('ivm-tier1-section'); if (t1) t1.style.display = '';
     var t2 = $('ivm-tier2-section'); if (t2) t2.style.display = 'none';
 
     // Reset totals bar
     $('ivm-order-id').textContent  = orderId;
-    $('ivm-orig-total').textContent  = '₱—';
-    $('ivm-voiding-now').textContent = '₱0.00';
-    $('ivm-new-total').textContent   = '₱—';
+    $('ivm-orig-total').textContent  = 'â‚±â€”';
+    $('ivm-voiding-now').textContent = 'â‚±0.00';
+    $('ivm-new-total').textContent   = 'â‚±â€”';
     $('ivm-new-total').style.color   = '';
 
     // Reset submit button
@@ -6239,7 +6239,7 @@
 
     // Show loading state and open modal
     $('ivm-items-container').innerHTML =
-      '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">Loading order…</div>';
+      '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">Loading orderâ€¦</div>';
     $('modal-item-void').classList.add('open');
 
     // Fetch full order (need voidedQuantity per item)
@@ -6255,15 +6255,15 @@
       // Populate item rows
       _renderVoidItems(appState.ivmOrder);
 
-      // Populate totals bar — "Current Total" = effective total before this void
+      // Populate totals bar â€” "Current Total" = effective total before this void
       var gross   = parseFloat(appState.ivmOrder.total       || 0);
       var voided  = parseFloat(appState.ivmOrder.voidedAmount || 0);
       var current = gross - voided;
-      $('ivm-orig-total').textContent = '₱' + current.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
-      $('ivm-new-total').textContent  = '₱' + current.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
+      $('ivm-orig-total').textContent = 'â‚±' + current.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
+      $('ivm-new-total').textContent  = 'â‚±' + current.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
     } catch (e) {
       $('ivm-items-container').innerHTML =
-        '<div style="color:#EF4444;font-size:13px;padding:8px 0;">Connection error — could not load items.</div>';
+        '<div style="color:#EF4444;font-size:13px;padding:8px 0;">Connection error â€” could not load items.</div>';
     }
   };
 
@@ -6338,7 +6338,7 @@
   }
 
   // ================================================================
-  // VOID TIER TRANSITION (Change 6 — onVoidQtyChange)
+  // VOID TIER TRANSITION (Change 6 â€” onVoidQtyChange)
   // ================================================================
 
   /** Called on every keystroke in any qty input.
@@ -6354,7 +6354,7 @@
 
     order.items.forEach(function(item) {
       var remaining = item.quantity - (item.voidedQuantity || 0);
-      if (remaining <= 0) return; // item has no active units — skip
+      if (remaining <= 0) return; // item has no active units â€” skip
 
       var input  = $('ivm-qty-' + item.id);
       var qtyVal = input ? parseInt(input.value, 10) : 0;
@@ -6386,26 +6386,26 @@
     var prevTier = appState.ivmTier;
     appState.ivmTier = newTier;
 
-    // ── Tier transition UI ─────────────────────────────────────────
+    // â”€â”€ Tier transition UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (newTier !== prevTier) {
       var t1  = $('ivm-tier1-section');
       var t2  = $('ivm-tier2-section');
       var lbl = $('ivm-submit-label');
 
       if (newTier === 'TIER_2') {
-        // → master key + all disposition rows shown
+        // â†’ master key + all disposition rows shown
         if (t1) t1.style.display = 'none';
         var sk = $('ivm-security-key'); if (sk) sk.value = ''; // clear on hide
         if (t2) t2.style.display = '';
         if (lbl) lbl.textContent = 'Void All Items (Tier 2)';
         if (!isDelivered) {
-          // Disposition rows hidden during Tier 1 on non-DELIVERED — show them now
+          // Disposition rows hidden during Tier 1 on non-DELIVERED â€” show them now
           order.items.forEach(function(item) {
             var d = $('ivm-disp-' + item.id); if (d) d.style.display = '';
           });
         }
       } else if (newTier === 'TIER_1') {
-        // → security key; disposition rows hidden on non-DELIVERED
+        // â†’ security key; disposition rows hidden on non-DELIVERED
         if (t2) t2.style.display = 'none';
         var mk = $('ivm-master-key'); if (mk) mk.value = ''; // clear on hide
         if (t1) t1.style.display = '';
@@ -6416,7 +6416,7 @@
           });
         }
       } else {
-        // newTier = null — nothing being voided — reset to Tier 1 appearance
+        // newTier = null â€” nothing being voided â€” reset to Tier 1 appearance
         if (t2) t2.style.display = 'none';
         var mk2 = $('ivm-master-key'); if (mk2) mk2.value = '';
         if (t1) t1.style.display = '';
@@ -6429,7 +6429,7 @@
       }
     }
 
-    // ── Totals bar update ──────────────────────────────────────────
+    // â”€â”€ Totals bar update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     var gross   = parseFloat(order.total       || 0);
     var voided  = parseFloat(order.voidedAmount || 0);
     var current = gross - voided;
@@ -6437,9 +6437,9 @@
 
     var vNow = $('ivm-voiding-now');
     var nTot = $('ivm-new-total');
-    if (vNow) vNow.textContent = '₱' + totalVoidingValue.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
+    if (vNow) vNow.textContent = 'â‚±' + totalVoidingValue.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
     if (nTot) {
-      nTot.textContent  = '₱' + after.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
+      nTot.textContent  = 'â‚±' + after.toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
       // Turn red when reaching zero (Tier 2 territory)
       nTot.style.color  = (newTier === 'TIER_2') ? '#EF4444' : '';
     }
@@ -6448,7 +6448,7 @@
   };
 
   // ================================================================
-  // VOID SUBMIT STATE (Change 7 — _ivmUpdateSubmitState)
+  // VOID SUBMIT STATE (Change 7 â€” _ivmUpdateSubmitState)
   // ================================================================
 
   /** Enable / disable the submit button.
@@ -6476,7 +6476,7 @@
 
     // Dispositions: required for each item being voided when DELIVERED or TIER_2
     // (radio buttons are pre-checked SELLABLE, so this check normally passes unless
-    //  someone programmatically deselects all — kept as a safety guard)
+    //  someone programmatically deselects all â€” kept as a safety guard)
     if (isDelivered || tier === 'TIER_2') {
       var allOk = true;
       order.items.forEach(function(item) {
@@ -6508,7 +6508,7 @@
   };
 
   // ================================================================
-  // VOID SUBMIT (Change 8 — confirmItemVoid)
+  // VOID SUBMIT (Change 8 â€” confirmItemVoid)
   // ================================================================
 
   window.confirmItemVoid = async function () {
@@ -6520,7 +6520,7 @@
     var reason = ($('ivm-reason') || {}).value || '';
     if (!reason.trim()) { showToast('Reason is required', 'error'); return; }
 
-    // Build items array — only include items with qty > 0
+    // Build items array â€” only include items with qty > 0
     var items = [];
     order.items.forEach(function(item) {
       var input = $('ivm-qty-' + item.id);
@@ -6559,7 +6559,7 @@
     var lbl = $('ivm-submit-label');
     var origLabel = lbl ? lbl.textContent : 'Void Items';
     if (btn) btn.disabled = true;
-    if (lbl) lbl.textContent = 'Voiding…';
+    if (lbl) lbl.textContent = 'Voidingâ€¦';
 
     try {
       var res = await fetch(API_BASE + '/api/orders/' + order.id + '/void', {
@@ -6580,8 +6580,8 @@
       closeItemVoidModal();
       var voidedAmt = Number(data.voidedNow || 0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
       var msg = (tier === 'TIER_2')
-        ? 'Tier 2 void applied — ₱' + voidedAmt + ' removed from order ' + order.id + ' (order cancelled)'
-        : 'Partial void applied — ₱' + voidedAmt + ' removed from order ' + order.id;
+        ? 'Tier 2 void applied â€” â‚±' + voidedAmt + ' removed from order ' + order.id + ' (order cancelled)'
+        : 'Partial void applied â€” â‚±' + voidedAmt + ' removed from order ' + order.id;
       showToast(msg, 'success');
       renderOrderList();
 
@@ -6622,7 +6622,7 @@
   window.onCancelTypeChange = function (type) {
     appState.cancelType = type;
     var isCfr = type === 'replacement';
-    // Drive the CFR footer button — becomes "← Back" in CFR mode
+    // Drive the CFR footer button â€” becomes "â† Back" in CFR mode
     var cfrBtn2 = $('cancel-cfr-btn');
     if (cfrBtn2) {
       if (isCfr) {
@@ -6635,7 +6635,7 @@
         cfrBtn2.className = 'btn btn-secondary';
       }
     }
-    // Swap key fields — clear the field being hidden so values never persist
+    // Swap key fields â€” clear the field being hidden so values never persist
     $('cancel-seckey-section').style.display = isCfr ? 'none' : '';
     $('cancel-masterkey-section').style.display = isCfr ? '' : 'none';
     if (isCfr) {
@@ -6649,7 +6649,7 @@
     $('cancel-disposition-section').style.display = isCfr ? '' : 'none';
     if (isCfr && order) window.renderCfrDispositions(order);
     // Update submit button label and lock state
-    $('cancel-submit-btn').textContent = isCfr ? 'Confirm — Cancel for Replacement' : 'Cancel Order';
+    $('cancel-submit-btn').textContent = isCfr ? 'Confirm â€” Cancel for Replacement' : 'Cancel Order';
     $('cancel-submit-btn').className = isCfr ? 'btn btn-warning' : 'btn btn-danger';
     if (isCfr) {
       $('cancel-submit-btn').disabled = true;
@@ -6677,7 +6677,7 @@
       var whDisplay = isDelivered ? 'none' : '';
       return '<div style="padding:7px 0;border-bottom:1px solid var(--border);" data-item-id="' + it.id + '">'
         + '<div style="display:flex;align-items:center;gap:8px;">'
-        + '<div style="flex:1;font-size:12px;">' + escapeHtml(it.productName || '') + ' <span style="color:var(--text-muted);">×' + effQty + '</span></div>'
+        + '<div style="flex:1;font-size:12px;">' + escapeHtml(it.productName || '') + ' <span style="color:var(--text-muted);">Ã—' + effQty + '</span></div>'
         + (isDelivered
             ? '<div style="display:flex;gap:4px;">'
               + '<button type="button" class="btn btn-sm cfr-disp-btn" data-item="' + it.id + '" data-val="SELLABLE"'
@@ -6750,7 +6750,7 @@
     $('cancel-submit-btn').disabled = !(masterKey && (!isDelivered || allDisposed) && warehouseOk);
   };
 
-  // Unified cancel submit — routes to standard cancel or cancel-for-replacement
+  // Unified cancel submit â€” routes to standard cancel or cancel-for-replacement
   window.confirmCancel = async function () {
     var type   = appState.cancelType || 'standard';
     var reason = ($('cancel-reason-input').value || '').trim();
@@ -6893,7 +6893,7 @@
   }
 
   // ================================================================
-  // Charts — Dashboard (initialise empty; renderDashboard fills them)
+  // Charts â€” Dashboard (initialise empty; renderDashboard fills them)
   // ================================================================
   function initDashboardCharts() {
     if (typeof Chart === 'undefined') { setTimeout(initDashboardCharts, 100); return; }
@@ -6922,7 +6922,7 @@
     if (appState.chartSales)   { appState.chartSales.destroy();   appState.chartSales   = null; }
     if (appState.chartPayment) { appState.chartPayment.destroy(); appState.chartPayment = null; }
 
-    // ── CHART 1: Sales Trend (line with gradient fill) ─────────────
+    // â”€â”€ CHART 1: Sales Trend (line with gradient fill) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const c1 = $('chart-sales');
     if (c1) {
       appState.chartSales = new Chart(c1, {
@@ -6955,7 +6955,7 @@
           plugins: {
             legend: { display: false },
             tooltip: Object.assign({}, sharedTooltip, {
-              callbacks: { label: function(ctx) { return '₱' + ctx.parsed.y.toLocaleString('en-PH'); } }
+              callbacks: { label: function(ctx) { return 'â‚±' + ctx.parsed.y.toLocaleString('en-PH'); } }
             })
           },
           scales: {
@@ -6970,7 +6970,7 @@
               ticks:  {
                 color: tickColor,
                 font:  { size: 11 },
-                callback: function(v) { return '₱' + (v / 1000).toFixed(0) + 'k'; }
+                callback: function(v) { return 'â‚±' + (v / 1000).toFixed(0) + 'k'; }
               }
             }
           }
@@ -6978,7 +6978,7 @@
       });
     }
 
-    // ── CHART 2: Payment Breakdown (donut, brand colors) ───────────
+    // â”€â”€ CHART 2: Payment Breakdown (donut, brand colors) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const c2 = $('chart-ecommerce');
     if (c2) {
       appState.chartPayment = new Chart(c2, {
@@ -7006,7 +7006,7 @@
             tooltip: Object.assign({}, sharedTooltip, {
               displayColors: true,
               callbacks: {
-                label: function(ctx) { return ' ' + ctx.label + ': ₱' + Number(ctx.raw).toLocaleString('en-PH'); }
+                label: function(ctx) { return ' ' + ctx.label + ': â‚±' + Number(ctx.raw).toLocaleString('en-PH'); }
               }
             })
           }
@@ -7016,7 +7016,7 @@
   }
 
   // ================================================================
-  // Dashboard — tab switching
+  // Dashboard â€” tab switching
   // ================================================================
   appState.dashPeriod = 'daily';
 
@@ -7060,8 +7060,8 @@
     var lowStockPanel = $('low-stock-panel');
     if (lowStockPanel && period !== 'daily') lowStockPanel.style.display = 'none';
 
-    // Row 9 (top-products analytics table) duplicates Row 2 Right on weekly/monthly — hide it there.
-    // Rows 7–8 (pizza KPI + category charts) are period-aware and stay visible on all tabs.
+    // Row 9 (top-products analytics table) duplicates Row 2 Right on weekly/monthly â€” hide it there.
+    // Rows 7â€“8 (pizza KPI + category charts) are period-aware and stay visible on all tabs.
     var topRow = $('dash-pa-top-row');
     if (topRow) topRow.style.display = (period === 'daily') ? '' : 'none';
 
@@ -7081,7 +7081,7 @@
     var sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
     var fmt = function(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-    return 'Week ' + weekNum + ', ' + fmt(monday) + ' – ' + fmt(sunday) + ', ' + sunday.getFullYear();
+    return 'Week ' + weekNum + ', ' + fmt(monday) + ' â€“ ' + fmt(sunday) + ', ' + sunday.getFullYear();
   }
 
   function getMonthlyHeaderText() {
@@ -7094,7 +7094,7 @@
   };
 
   // ================================================================
-  // Dashboard — fetch live stats and update all cards + charts
+  // Dashboard â€” fetch live stats and update all cards + charts
   // ================================================================
   async function renderDashboard(period) {
     const token = localStorage.getItem('rrbm_token');
@@ -7107,7 +7107,7 @@
       if (!res.ok) return;
       const s = await res.json();
 
-      // ── Greeting (daily tab only) ────────────────────────────────
+      // â”€â”€ Greeting (daily tab only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (period === 'daily') {
         const greetEl = $('dash-greeting-time');
         const nameEl  = $('dash-greeting-name');
@@ -7127,9 +7127,9 @@
         }
       }
 
-      // ── Stat card labels (update for period) ─────────────────────
+      // â”€â”€ Stat card labels (update for period) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const periodLabel = period === 'weekly' ? 'This Week' : period === 'monthly' ? 'This Month' : 'Today';
-      const fmt = function(n) { return '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+      const fmt = function(n) { return 'â‚±' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
       setText('stat-sales-label',    'Total Sales ' + periodLabel);
       setText('stat-cancelled-label','Cancelled ' + periodLabel);
@@ -7142,7 +7142,7 @@
       if ($('stat-cancelled'))      $('stat-cancelled').textContent      = s.cancelledOrders || 0;
       if ($('stat-low-stock'))      $('stat-low-stock').textContent      = s.lowStockCount || 0;
 
-      // ── Pizza Box Quota Tracker (two-tone: direct=amber, ecom=purple) ──
+      // â”€â”€ Pizza Box Quota Tracker (two-tone: direct=amber, ecom=purple) â”€â”€
       const PIZZA_QUOTA    = 5000;
       const pizzaQty       = s.pizzaBoxQtyToday || 0;
       const directPizzaQty = s.directPizzaQty   || 0;
@@ -7151,7 +7151,7 @@
       const qtyEl          = $('pizza-qty-display');
       const statusEl       = $('pizza-status-text');
 
-      // Quantity display — daily: live today total; weekly/monthly: overwritten by loadProductAnalytics
+      // Quantity display â€” daily: live today total; weekly/monthly: overwritten by loadProductAnalytics
       if (period === 'daily' && qtyEl) qtyEl.textContent = pizzaQty.toLocaleString();
 
       // Two-tone bar: daily = proportion of 5,000 quota; weekly/monthly = direct vs ecom share of total
@@ -7167,7 +7167,7 @@
       if (directLbl)   directLbl.textContent   = directPizzaQty.toLocaleString();
       if (ecomLbl)     ecomLbl.textContent      = ecomPizzaQty.toLocaleString();
 
-      // Pct badge, status text, color — daily tab only (uses 5,000 daily quota)
+      // Pct badge, status text, color â€” daily tab only (uses 5,000 daily quota)
       if (period === 'daily') {
         const pizzaPct = Math.round((pizzaQty / PIZZA_QUOTA) * 100);
         const pctBadge = $('pizza-pct-badge');
@@ -7177,22 +7177,22 @@
           statusColor = '#10B981';
           if (qtyEl) { qtyEl.style.color = '#10B981'; qtyEl.style.webkitTextFillColor = ''; }
           if (pizzaCard) pizzaCard.classList.add('pizza-quota-met');
-          if (statusEl) statusEl.textContent = pizzaPct + '% — Quota reached! Great work!';
+          if (statusEl) statusEl.textContent = pizzaPct + '% â€” Quota reached! Great work!';
         } else if (pizzaPct >= 50) {
           statusColor = '#F59E0B';
           if (qtyEl) { qtyEl.style.color = '#F59E0B'; qtyEl.style.webkitTextFillColor = '#F59E0B'; }
           if (pizzaCard) pizzaCard.classList.remove('pizza-quota-met');
-          if (statusEl) statusEl.textContent = pizzaPct + '% of quota — Keep going!';
+          if (statusEl) statusEl.textContent = pizzaPct + '% of quota â€” Keep going!';
         } else {
           statusColor = '#EF4444';
           if (qtyEl) { qtyEl.style.color = '#EF4444'; qtyEl.style.webkitTextFillColor = '#EF4444'; }
           if (pizzaCard) pizzaCard.classList.remove('pizza-quota-met');
-          if (statusEl) statusEl.textContent = pizzaPct + '% of quota — Needs attention';
+          if (statusEl) statusEl.textContent = pizzaPct + '% of quota â€” Needs attention';
         }
         if (statusEl) statusEl.style.color = statusColor;
       }
 
-      // ── Low stock detail panel (daily tab only) ───────────────────
+      // â”€â”€ Low stock detail panel (daily tab only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const panel = $('low-stock-panel');
       const lsTb  = $('low-stock-tbody');
       const lsCnt = $('low-stock-panel-count');
@@ -7211,10 +7211,10 @@
             const tagCls = p.tag === 'HOT' ? 'badge-hot' : p.tag === 'SELLING' ? 'badge-selling' : 'badge-slow';
             return '<tr>'
               + '<td><strong>' + escapeHtml(p.name) + '</strong></td>'
-              + '<td><span class="badge ' + tagCls + '">' + (p.tag || '—') + '</span></td>'
+              + '<td><span class="badge ' + tagCls + '">' + (p.tag || 'â€”') + '</span></td>'
               + '<td style="color:#EF4444;font-weight:600;">' + (p.stock || 0).toLocaleString() + ' pcs</td>'
               + '<td>' + (p.threshold || 0).toLocaleString() + ' pcs</td>'
-              + '<td style="color:#EF4444;">−' + shortfall.toLocaleString() + ' pcs</td>'
+              + '<td style="color:#EF4444;">âˆ’' + shortfall.toLocaleString() + ' pcs</td>'
               + '</tr>';
           }
 
@@ -7241,10 +7241,10 @@
         }
       }
 
-      // ── Payment breakdown cards ───────────────────────────────────
+      // â”€â”€ Payment breakdown cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Rule: Cash = CASH; E-wallet/Online = every non-cash electronic mode
-      // (GCASH, PAYMAYA, ONLINE, BANK_TRANSFER, BANK_DEPOSIT, …). COD is excluded
-      // here — its real mode is captured when the order is resumed.
+      // (GCASH, PAYMAYA, ONLINE, BANK_TRANSFER, BANK_DEPOSIT, â€¦). COD is excluded
+      // here â€” its real mode is captured when the order is resumed.
       const pd = s.paymentBreakdown || {};
       const cashTotal    = (pd['CASH'] || 0);
       const codTotal     = (pd['COD'] || 0);
@@ -7259,14 +7259,14 @@
       if ($('stat-bank'))           $('stat-bank').textContent           = fmt(bankTotal);
       if ($('stat-expenses-today')) $('stat-expenses-today').textContent = fmt(s.totalExpensesToday || 0);
 
-      // ── Sales trend chart ─────────────────────────────────────────
+      // â”€â”€ Sales trend chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (appState.chartSales && s.salesTrend) {
         appState.chartSales.data.labels           = s.salesTrend.map(function(d) { return d.label; });
         appState.chartSales.data.datasets[0].data = s.salesTrend.map(function(d) { return Number(d.total) || 0; });
         appState.chartSales.update();
       }
 
-      // ── Payment donut chart ───────────────────────────────────────
+      // â”€â”€ Payment donut chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Two slices matching the cards: Cash vs E-wallet/Online (all non-cash,
       // COD excluded until resolved at resume).
       if (appState.chartPayment) {
@@ -7282,20 +7282,20 @@
         appState.chartPayment.update();
       }
 
-      // ── Channel summary (fire-and-forget — updates channel cards async) ─
+      // â”€â”€ Channel summary (fire-and-forget â€” updates channel cards async) â”€
       loadChannelSummary(period);
 
     } catch (err) {
-      // Silently ignore — dashboard will show last values
+      // Silently ignore â€” dashboard will show last values
     }
   }
 
   // ================================================================
-  // Dashboard — Channel Summary (Direct vs Ecommerce, Platforms, Payables)
+  // Dashboard â€” Channel Summary (Direct vs Ecommerce, Platforms, Payables)
   // ================================================================
   function loadChannelSummary(period) {
     period = period || appState.dashPeriod || 'daily';
-    const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    const fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     fetch(API_BASE + '/api/dashboard/channel-summary?period=' + period, { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(d){
@@ -7344,7 +7344,7 @@
   }
 
   // ================================================================
-  // Dashboard — Product Analytics (Session 53)
+  // Dashboard â€” Product Analytics (Session 53)
   // ================================================================
   var _chartPaTrend = null, _chartPaCategory = null, _chartPaPerformance = null;
   var _origGreetingName = null;
@@ -7366,7 +7366,7 @@
         var pct = q.pct;
         setText('dash-pa-quota-actual', actual.toLocaleString());
         setText('dash-pa-quota-target', target ? target.toLocaleString() : 'N/A');
-        setText('dash-pa-quota-pct', pct != null ? pct + '%' : '—');
+        setText('dash-pa-quota-pct', pct != null ? pct + '%' : 'â€”');
         setText('dash-pa-quota-label', target ? 'Target: ' + target.toLocaleString() + ' pcs' : 'No previous month data');
         setText('dash-pa-quota-period', periodLabel);
         var bar = $('dash-pa-quota-bar');
@@ -7385,7 +7385,7 @@
           }
         }
 
-        // Non-pizza total — all units sold minus pizza box units
+        // Non-pizza total â€” all units sold minus pizza box units
         var nonPizzaEl = $('dash-pa-nonpizza-qty');
         if (nonPizzaEl) {
           var nonPizzaQty = Math.max(0, (d.totalQtySold || 0) - actual);
@@ -7436,7 +7436,7 @@
           if (tops.length === 0) {
             topTbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:18px;">No data</td></tr>';
           } else {
-            var medals = ['🥇','🥈','🥉','4','5'];
+            var medals = ['ðŸ¥‡','ðŸ¥ˆ','ðŸ¥‰','4','5'];
             var thtml = '';
             tops.forEach(function(t, i){
               thtml += '<tr><td style="text-align:center;">' + medals[i] + '</td><td>' + escapeHtml(t.name) + '</td><td style="text-align:right;font-weight:600;">' + (t.qty || 0).toLocaleString() + '</td></tr>';
@@ -7445,7 +7445,7 @@
           }
         }
 
-        // ── Row 2 updates for weekly / monthly tabs ────────────────
+        // â”€â”€ Row 2 updates for weekly / monthly tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (period !== 'daily') {
           var paQ      = d.pizzaQuota || {};
           var paActual = paQ.actual || 0;
@@ -7479,7 +7479,7 @@
             if (subEl) subEl.textContent =
               (isWeekly ? 'Weekly quota: ' : 'Prev. month: ') + targetFmt + ' pcs';
             if (pctDispEl) pctDispEl.textContent = '/ ' + targetFmt + ' pcs';
-            if (badgeEl2) badgeEl2.textContent = (paPct != null ? paPct : '—') + '%';
+            if (badgeEl2) badgeEl2.textContent = (paPct != null ? paPct : 'â€”') + '%';
 
             // Monthly: show vs last month comparison row
             if (!isWeekly && compEl) {
@@ -7495,10 +7495,10 @@
             var pctNum = paPct || 0;
             if (statusEl2) {
               statusEl2.textContent = pctNum >= 100
-                ? pctNum + '% — Target reached!'
+                ? pctNum + '% â€” Target reached!'
                 : pctNum >= 50
-                  ? pctNum + '% — On track'
-                  : pctNum + '% — Needs attention';
+                  ? pctNum + '% â€” On track'
+                  : pctNum + '% â€” Needs attention';
               statusEl2.style.color = pctNum >= 100 ? '#10B981' : pctNum >= 50 ? '#F59E0B' : '#EF4444';
             }
           } else {
@@ -7506,7 +7506,7 @@
             if (subEl) subEl.textContent =
               isWeekly ? 'Weekly quota: 30,000 pcs' : 'No previous month data';
             if (pctDispEl) pctDispEl.textContent = '';
-            if (badgeEl2) badgeEl2.textContent = '—';
+            if (badgeEl2) badgeEl2.textContent = 'â€”';
             if (compEl) compEl.style.display = 'none';
             if (statusEl2) { statusEl2.textContent = 'No comparison data available'; statusEl2.style.color = ''; }
           }
@@ -7666,13 +7666,13 @@
   }
 
   // ================================================================
-  // Dashboard — Top 5 Products Today (FEATURE 5)
+  // Dashboard â€” Top 5 Products Today (FEATURE 5)
   // ================================================================
   window.renderTopProductsToday = async function () {
     const token = localStorage.getItem('rrbm_token');
     if (!token) return;
 
-    // Only run for daily tab — weekly/monthly show product-analytics data instead
+    // Only run for daily tab â€” weekly/monthly show product-analytics data instead
     if (appState.dashPeriod && appState.dashPeriod !== 'daily') return;
 
     // Restore daily card title (may have been changed by a prior weekly/monthly render)
@@ -7684,7 +7684,7 @@
     const oldTbody  = $('top-products-today-tbody');
     if (!container && !oldTbody) return;
 
-    const fmt = function(n) { return '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    const fmt = function(n) { return 'â‚±' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
     try {
       const res = await fetch(API_BASE + '/api/dashboard/top-products-today',
@@ -7706,12 +7706,12 @@
         return;
       }
 
-      // API returns { name, qty, revenue } — support both naming conventions
+      // API returns { name, qty, revenue } â€” support both naming conventions
       const maxQty = products[0].qty || products[0].qtySold || 1;
 
       const rows = products.slice(0, 5).map(function(p, i) {
         const qty  = p.qty || p.qtySold || 0;
-        const name = p.name || p.productName || '—';
+        const name = p.name || p.productName || 'â€”';
         const pct  = Math.round((qty / maxQty) * 100);
         return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">'
           + '<div style="width:18px;font-size:12px;font-weight:700;color:' + (i === 0 ? '#D4860A' : 'var(--text-muted)') + ';flex-shrink:0;text-align:center;">' + (i + 1) + '</div>'
@@ -7733,7 +7733,7 @@
       if (oldTbody) {
         oldTbody.innerHTML = products.slice(0, 5).map(function(p, i) {
           const qty  = p.qty || p.qtySold || 0;
-          const name = p.name || p.productName || '—';
+          const name = p.name || p.productName || 'â€”';
           return '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(name) + '</td>'
             + '<td style="text-align:right;">' + qty.toLocaleString() + ' pcs</td>'
             + '<td style="text-align:right;">' + fmt(p.revenue || 0) + '</td></tr>';
@@ -7741,14 +7741,14 @@
       }
 
     } catch (err) {
-      const errHtml = '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">—</div>';
+      const errHtml = '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">â€”</div>';
       if (container) container.innerHTML = errHtml;
-      if (oldTbody)  oldTbody.innerHTML  = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">—</td></tr>';
+      if (oldTbody)  oldTbody.innerHTML  = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">â€”</td></tr>';
     }
   };
 
   // ================================================================
-  // Settings — load and save company info
+  // Settings â€” load and save company info
   // ================================================================
   async function loadSettings() {
     const token = localStorage.getItem('rrbm_token');
@@ -7784,7 +7784,7 @@
   };
 
   // ================================================================
-  // Reports — Insights Summary (real data)
+  // Reports â€” Insights Summary (real data)
   // ================================================================
   function initReportsView() {
     // Set month picker to current month on first open
@@ -7798,13 +7798,13 @@
     loadAllReports();
   }
 
-  /** Switch the monthly report tabs — stats / accounting / ecommerce */
+  /** Switch the monthly report tabs â€” stats / accounting / ecommerce */
   window.switchRepTab = function (tab) {
     // Toggle tab content sections
     document.querySelectorAll('.rep-tab-content').forEach(function (el) {
       el.style.display = el.getAttribute('data-tab') === tab ? '' : 'none';
     });
-    // Toggle tab button active state — match dashboard period tab design
+    // Toggle tab button active state â€” match dashboard period tab design
     document.querySelectorAll('.rep-tab-btn').forEach(function (btn) {
       if (btn.getAttribute('data-tab') === tab) {
         btn.classList.add('active');
@@ -7862,7 +7862,7 @@
     var tb    = $('rejected-items-tbody');
     var tf    = $('rejected-items-tfoot');
     var pdfBtn = $('btn-rejected-pdf');
-    if (tb) tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    if (tb) tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</td></tr>';
     if (tf) tf.innerHTML = '';
     if (pdfBtn) pdfBtn.style.display = 'none';
 
@@ -7904,10 +7904,10 @@
     };
 
     var truncReason = function(s) {
-      if (!s) return '—';
+      if (!s) return 'â€”';
       var safe = escapeHtml(s);
       if (s.length <= 60) return safe;
-      return '<span title="' + safe + '">' + escapeHtml(s.substring(0, 60)) + '…</span>';
+      return '<span title="' + safe + '">' + escapeHtml(s.substring(0, 60)) + 'â€¦</span>';
     };
 
     if (!items.length) {
@@ -7931,14 +7931,14 @@
           '<button class="icon-btn" onclick="deleteManualRejected(' + r.id + ')" title="Delete"><i class="ti ti-trash" style="color:#EF4444;"></i></button>' +
           '</td>';
       } else {
-        actionsCell = '<td style="text-align:center;color:var(--border);">—</td>';
+        actionsCell = '<td style="text-align:center;color:var(--border);">â€”</td>';
       }
       rows += '<tr>' +
-        '<td style="font-size:12px;white-space:nowrap;">' + escapeHtml(r.date || '—') + chevron + '</td>' +
+        '<td style="font-size:12px;white-space:nowrap;">' + escapeHtml(r.date || 'â€”') + chevron + '</td>' +
         '<td>' + sourceBadge(r.source) + '</td>' +
-        '<td><span style="font-family:monospace;font-size:11px;background:var(--bg-secondary);padding:1px 5px;border-radius:3px;">' + escapeHtml(r.reference || '—') + '</span></td>' +
-        '<td><span style="font-family:monospace;font-size:11px;color:var(--text-muted);">' + escapeHtml(r.productCode || '—') + '</span></td>' +
-        '<td style="font-size:13px;font-weight:600;">' + escapeHtml(r.productName || '—') + '</td>' +
+        '<td><span style="font-family:monospace;font-size:11px;background:var(--bg-secondary);padding:1px 5px;border-radius:3px;">' + escapeHtml(r.reference || 'â€”') + '</span></td>' +
+        '<td><span style="font-family:monospace;font-size:11px;color:var(--text-muted);">' + escapeHtml(r.productCode || 'â€”') + '</span></td>' +
+        '<td style="font-size:13px;font-weight:600;">' + escapeHtml(r.productName || 'â€”') + '</td>' +
         '<td style="text-align:right;font-weight:700;color:#EF4444;">' + (r.rejectedQty || 0) + '</td>' +
         '<td style="font-size:12px;color:var(--text-secondary);">' + truncReason(r.reason) + '</td>' +
         actionsCell +
@@ -7946,9 +7946,9 @@
       if (isDelivery) {
         rows += '<tr id="ri-detail-' + i + '" style="display:none;background:var(--bg-secondary);">' +
           '<td colspan="8" style="padding:8px 16px;">' +
-          '<span style="font-size:11px;color:var(--text-muted);margin-right:20px;"><strong>Supplier:</strong> ' + escapeHtml(r.supplierName || '—') + '</span>' +
-          '<span style="font-size:11px;color:var(--text-muted);margin-right:20px;"><strong>PO #:</strong> ' + escapeHtml(r.poNumber || '—') + '</span>' +
-          '<span style="font-size:11px;color:var(--text-muted);"><strong>Received By:</strong> ' + escapeHtml(r.receivedBy || '—') + '</span>' +
+          '<span style="font-size:11px;color:var(--text-muted);margin-right:20px;"><strong>Supplier:</strong> ' + escapeHtml(r.supplierName || 'â€”') + '</span>' +
+          '<span style="font-size:11px;color:var(--text-muted);margin-right:20px;"><strong>PO #:</strong> ' + escapeHtml(r.poNumber || 'â€”') + '</span>' +
+          '<span style="font-size:11px;color:var(--text-muted);"><strong>Received By:</strong> ' + escapeHtml(r.receivedBy || 'â€”') + '</span>' +
           '</td></tr>';
       }
     });
@@ -7971,7 +7971,7 @@
     }
   };
 
-  // ── Manual rejected items: add / edit / delete (accounting + super-admin) ──
+  // â”€â”€ Manual rejected items: add / edit / delete (accounting + super-admin) â”€â”€
   var _editingManualRejectedId = null;
 
   // Smart-search product picker for the manual rejected-item modal. Only inventory
@@ -7992,7 +7992,7 @@
       prods = prods.slice(0, 50);
       if (!prods.length) { dd.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>'; dd.classList.add('show'); return; }
       dd.innerHTML = prods.map(function(p){
-        var code = p.productCode ? '<span style="font-family:monospace;color:#888;">' + escapeHtml(p.productCode) + '</span> · ' : '';
+        var code = p.productCode ? '<span style="font-family:monospace;color:#888;">' + escapeHtml(p.productCode) + '</span> Â· ' : '';
         return '<div class="product-dropdown-item" data-id="' + p.id + '" data-code="' + escapeHtml(p.productCode || '') + '" data-name="' + escapeHtml(p.name) + '"><div class="product-name">' + escapeHtml(p.name) + '</div><div style="font-size:10px;color:#888;">' + code + 'inventory item</div></div>';
       }).join('');
       dd.classList.add('show');
@@ -8002,7 +8002,7 @@
           if ($('mr-product-id')) $('mr-product-id').value = this.getAttribute('data-id');
           var code = this.getAttribute('data-code');
           var sel = $('mr-product-selected');
-          if (sel) sel.innerHTML = '✓ ' + (code ? '<strong>' + escapeHtml(code) + '</strong> · ' : '') + escapeHtml(this.getAttribute('data-name'));
+          if (sel) sel.innerHTML = 'âœ“ ' + (code ? '<strong>' + escapeHtml(code) + '</strong> Â· ' : '') + escapeHtml(this.getAttribute('data-name'));
           dd.classList.remove('show');
         });
       });
@@ -8011,7 +8011,7 @@
     input.addEventListener('input', function(){
       if ($('mr-product-id')) $('mr-product-id').value = ''; // editing text invalidates a prior pick
       var sel = $('mr-product-selected');
-      if (sel) sel.innerHTML = '<span style="color:#D97706;">⚠ Select a product from the list</span>';
+      if (sel) sel.innerHTML = '<span style="color:#D97706;">âš  Select a product from the list</span>';
       render();
     });
     document.addEventListener('click', function(e){ if (!input.contains(e.target) && !dd.contains(e.target)) dd.classList.remove('show'); });
@@ -8022,8 +8022,8 @@
     if ($('mr-product-id')) $('mr-product-id').value = '';
     var sel = $('mr-product-selected');
     if (sel) sel.innerHTML = name
-      ? '✓ ' + (code ? '<strong>' + escapeHtml(code) + '</strong> · ' : '') + escapeHtml(name)
-      : 'Pick a product from inventory — its code and name are filled automatically.';
+      ? 'âœ“ ' + (code ? '<strong>' + escapeHtml(code) + '</strong> Â· ' : '') + escapeHtml(name)
+      : 'Pick a product from inventory â€” its code and name are filled automatically.';
   }
 
   window.openManualRejectedModal = function() {
@@ -8043,7 +8043,7 @@
   window.editManualRejected = function(id) {
     if (!canManageRejected()) { showToast('Not permitted', 'error'); return; }
     var r = (window._rejectedData || []).find(function(x){ return x.source === 'MANUAL' && String(x.id) === String(id); });
-    if (!r) { showToast('Item not found — reload the list', 'error'); return; }
+    if (!r) { showToast('Item not found â€” reload the list', 'error'); return; }
     _editingManualRejectedId = id;
     setupManualRejectedAutocomplete();
     if ($('mr-date'))    $('mr-date').value = r.date || '';
@@ -8110,7 +8110,7 @@
     if (!items.length) { showToast('No rejected items to export', 'error'); return; }
 
     var sourceLabel = function(src) {
-      return { 'DELIVERY': 'Delivery', 'VOID': 'Void', 'CANCEL': 'Cancel', 'RETURN': 'Return' }[src] || src || '—';
+      return { 'DELIVERY': 'Delivery', 'VOID': 'Void', 'CANCEL': 'Cancel', 'RETURN': 'Return' }[src] || src || 'â€”';
     };
 
     var rows = items.map(function(r) {
@@ -8118,24 +8118,24 @@
       var detailRow = isDelivery
         ? '<tr style="background:#FFF9E6;">' +
             '<td colspan="7" style="font-size:10px;color:#666;padding:3px 10px 6px;">' +
-            'Supplier: ' + escapeHtml(r.supplierName || '—') +
-            ' &nbsp;|&nbsp; PO #: ' + escapeHtml(r.poNumber || '—') +
-            ' &nbsp;|&nbsp; Received By: ' + escapeHtml(r.receivedBy || '—') +
+            'Supplier: ' + escapeHtml(r.supplierName || 'â€”') +
+            ' &nbsp;|&nbsp; PO #: ' + escapeHtml(r.poNumber || 'â€”') +
+            ' &nbsp;|&nbsp; Received By: ' + escapeHtml(r.receivedBy || 'â€”') +
             '</td></tr>'
         : '';
       return '<tr>' +
-        '<td>' + escapeHtml(r.date || '—') + '</td>' +
+        '<td>' + escapeHtml(r.date || 'â€”') + '</td>' +
         '<td>' + escapeHtml(sourceLabel(r.source)) + '</td>' +
-        '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(r.reference || '—') + '</td>' +
-        '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(r.productCode || '—') + '</td>' +
-        '<td>' + escapeHtml(r.productName || '—') + '</td>' +
+        '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(r.reference || 'â€”') + '</td>' +
+        '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(r.productCode || 'â€”') + '</td>' +
+        '<td>' + escapeHtml(r.productName || 'â€”') + '</td>' +
         '<td style="text-align:right;font-weight:700;color:#CC2222;">' + (r.rejectedQty || 0) + '</td>' +
-        '<td style="font-size:11px;color:#555;">' + escapeHtml(r.reason || '—') + '</td>' +
+        '<td style="font-size:11px;color:#555;">' + escapeHtml(r.reason || 'â€”') + '</td>' +
         '</tr>' + detailRow;
     }).join('');
 
     var w = window.open('', '_blank', 'width=960,height=900');
-    if (!w) { showToast('Pop-up blocked — allow pop-ups and try again', 'error'); return; }
+    if (!w) { showToast('Pop-up blocked â€” allow pop-ups and try again', 'error'); return; }
     w.document.write('<!DOCTYPE html><html><head><title>Rejected Items ' + start + ' to ' + end + '</title>'
       + '<style>'
       + 'body{font-family:Arial,sans-serif;font-size:12px;padding:24px;color:#1A1208;max-width:920px;margin:0 auto;}'
@@ -8228,7 +8228,7 @@
     reader.readAsText(file);
   };
 
-  // Parse CSV text → array of order objects grouped by Order No.
+  // Parse CSV text â†’ array of order objects grouped by Order No.
   // Template format (1 header row only):
   //   [0] Order Number  [1] Shipping  [2] Tracking Number  [3] Product Name
   //   [4] Quantity      [5] Total     [6] Customer Name    [7] SKU (optional)
@@ -8244,9 +8244,9 @@
     }
     if (!dataLines.length) throw new Error('No data rows found after skipping the header row');
 
-    // Parse each row — handle quoted fields containing commas
+    // Parse each row â€” handle quoted fields containing commas
     var rows = dataLines.map(parseCsvRow).filter(function(r){ return r.length >= 5 && r[0]; });
-    if (!rows.length) throw new Error('No valid rows found — ensure the file matches the RRBM template format');
+    if (!rows.length) throw new Error('No valid rows found â€” ensure the file matches the RRBM template format');
 
     // Group by Order Number (col 0)
     var orderMap = {};
@@ -8277,7 +8277,7 @@
       // Carry customer name from first non-blank occurrence
       if (customer && !orderMap[orderNo].customer) orderMap[orderNo].customer = customer;
 
-      // Unit price derived from CSV line total — preserves actual ecommerce pricing
+      // Unit price derived from CSV line total â€” preserves actual ecommerce pricing
       var unitPrice = total > 0 ? Math.round((total / qty) * 100) / 100 : 0;
 
       // Match: SKU exact first, then name fuzzy
@@ -8396,7 +8396,7 @@
   }
 
   // Match a CSV product to the inventory.
-  // Step 1: SKU exact match (if csvSku provided) → immediate high-confidence result.
+  // Step 1: SKU exact match (if csvSku provided) â†’ immediate high-confidence result.
   // Step 2: Improved name fuzzy match with dimension-aware token scoring.
   function matchCsvProduct(csvName, csvSku) {
     var _c = appState.cachedProducts, _i = appState.inventoryAllProducts;
@@ -8404,7 +8404,7 @@
       .filter(function(p){ return p.active !== false; });
     if (!products.length) return null;
 
-    // — Step 1: SKU exact match —
+    // â€” Step 1: SKU exact match â€”
     if (csvSku) {
       var skuNorm = csvSku.toLowerCase().trim();
       var skuMatch = null;
@@ -8419,11 +8419,11 @@
       if (skuMatch) return { product: skuMatch, confidence: 'high' };
     }
 
-    // — Step 2: Name fuzzy match —
+    // â€” Step 2: Name fuzzy match â€”
     // Normalise: lowercase; convert inch/in suffixes to bare number; keep 'x' for "10x10"
     function norm(s) {
       return (s || '').toLowerCase()
-        .replace(/(\d+)\s*(?:inches?|in\b|")/g, '$1')   // "10 inches" → "10"
+        .replace(/(\d+)\s*(?:inches?|in\b|")/g, '$1')   // "10 inches" â†’ "10"
         .replace(/[^a-z0-9\sx]/g, ' ')
         .replace(/\s+/g, ' ').trim();
     }
@@ -8450,12 +8450,12 @@
       var score = 0;
       csvTokens.forEach(function(t) {
         if (pTokens.indexOf(t) >= 0) {
-          // Exact token match — weight by token type
+          // Exact token match â€” weight by token type
           if (DIMEN.test(t))       score += 4;   // size dimension: highest weight
           else if (VARIANT.test(t)) score += 3;  // colour / variant
           else                      score += 3;  // other exact keyword
         } else {
-          // Partial substring match — require ≥ 4 chars overlap to reduce false positives
+          // Partial substring match â€” require â‰¥ 4 chars overlap to reduce false positives
           var partial = pTokens.some(function(pt){
             var minLen = Math.min(pt.length, t.length);
             if (minLen < 4) return false;
@@ -8468,7 +8468,7 @@
     });
 
     if (!best || bestScore < 2) return null;    // raised minimum threshold
-    // High: ≥ 5 points; Low: 2–4
+    // High: â‰¥ 5 points; Low: 2â€“4
     return { product: best, confidence: bestScore >= 5 ? 'high' : 'low' };
   }
 
@@ -8497,7 +8497,7 @@
     if (empty) empty.style.display = 'none';
     if (wrap)  wrap.style.display  = '';
 
-    // Always refresh the shared datalist here — products are loaded by the time
+    // Always refresh the shared datalist here â€” products are loaded by the time
     // the file has been parsed, even if they weren't ready when the modal first opened.
     var dl = document.getElementById('import-product-datalist');
     if (dl) {
@@ -8509,7 +8509,7 @@
         .join('');
     }
 
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
 
     var html = '';
     orders.forEach(function(order, oi) {
@@ -8528,18 +8528,18 @@
         statusClass = 'review';
       }
 
-      // Header row — chip gets an id so we can update it live as user corrects items
+      // Header row â€” chip gets an id so we can update it live as user corrects items
       // For grouped orders show all order numbers (truncated if too long)
       var displayNo = (order.allOrderNos && order.allOrderNos.length > 1)
         ? order.allOrderNos.join(' + ')
         : order.orderNo;
-      var displayNoShort = displayNo.length > 26 ? displayNo.substring(0, 24) + '…' : displayNo;
+      var displayNoShort = displayNo.length > 26 ? displayNo.substring(0, 24) + 'â€¦' : displayNo;
       html += '<tr style="cursor:pointer;" onclick="toggleImportRow(' + oi + ')">'
         + '<td style="text-align:center;color:var(--text-muted);"><i class="ti ti-chevron-right" id="import-chev-' + oi + '" style="transition:transform 0.2s;font-size:11px;"></i></td>'
         + '<td><span style="font-family:monospace;font-size:11px;" title="' + escapeHtml(displayNo) + '">' + escapeHtml(displayNoShort) + '</span></td>'
         + '<td>' + platformBadge(order.platform) + '</td>'
         + '<td style="font-size:11px;">' + escapeHtml(order.shipping) + '</td>'
-        + '<td>' + escapeHtml(order.customer || '—') + '</td>'
+        + '<td>' + escapeHtml(order.customer || 'â€”') + '</td>'
         + '<td style="text-align:right;">' + order.items.length + '</td>'
         + '<td style="text-align:right;font-weight:600;">' + fmt(order.orderTotal) + '</td>'
         + '<td style="text-align:center;" id="import-chip-' + oi + '">' + statusChip + '</td>'
@@ -8573,10 +8573,10 @@
           + '<td style="color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(item.csvName) + '">'
           +   escapeHtml(item.csvName)
           + '</td>'
-          // Searchable product input — shared datalist provides typeahead suggestions
+          // Searchable product input â€” shared datalist provides typeahead suggestions
           + '<td><input type="text" id="ipi-' + oi + '-' + ii + '" list="import-product-datalist"'
           +   ' value="' + escapeHtml(item.productName || '') + '"'
-          +   ' placeholder="Type to search inventory…"'
+          +   ' placeholder="Type to search inventoryâ€¦"'
           +   ' oninput="onImportProdInput(this,' + oi + ',' + ii + ')"'
           +   ' style="width:100%;min-width:180px;' + inputBase + 'border:1.5px solid ' + borderColor + ';"></td>'
           // Editable qty
@@ -8604,7 +8604,7 @@
   /**
    * Called as user types in the product search input for a CSV item.
    * Matches against inventory by exact name (datalist selection) or partial.
-   * Does NOT auto-fill the price — CSV-derived pricing is preserved.
+   * Does NOT auto-fill the price â€” CSV-derived pricing is preserved.
    * Updates the border colour and status chip.
    */
   window.onImportProdInput = function(input, oi, ii) {
@@ -8624,14 +8624,14 @@
       item.productName = match.name;
       item.warehouse   = bestWarehouse(match);
       item.confidence  = 'high';
-      // Price stays as-is (CSV-derived) — user can override it in the price input
-      // Green border — confirmed match
+      // Price stays as-is (CSV-derived) â€” user can override it in the price input
+      // Green border â€” confirmed match
       input.style.borderColor = '#10B981';
     } else if (typed) {
       item.productId   = null;
       item.productName = typed;
       item.confidence  = null;
-      input.style.borderColor = '#EF4444'; // red — no match yet
+      input.style.borderColor = '#EF4444'; // red â€” no match yet
     } else {
       item.productId   = null;
       item.productName = '';
@@ -8644,14 +8644,14 @@
     updateImportSummary();
   };
 
-  /** Qty field edited — update state and line total. */
+  /** Qty field edited â€” update state and line total. */
   window.onImportQtyInput = function(input, oi, ii) {
     if (!_importParsed[oi] || !_importParsed[oi].items[ii]) return;
     _importParsed[oi].items[ii].qty = Math.max(1, parseInt(input.value, 10) || 1);
     _importUpdateLineTotal(oi, ii);
   };
 
-  /** Unit price field edited — update state and line total. */
+  /** Unit price field edited â€” update state and line total. */
   window.onImportPriceInput = function(input, oi, ii) {
     if (!_importParsed[oi] || !_importParsed[oi].items[ii]) return;
     _importParsed[oi].items[ii].unitPrice = parseFloat(input.value) || 0;
@@ -8664,7 +8664,7 @@
     if (!item) return;
     var lt = (item.qty || 0) * (item.unitPrice || 0);
     var cell = document.getElementById('iplt-' + oi + '-' + ii);
-    if (cell) cell.textContent = '₱' + lt.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if (cell) cell.textContent = 'â‚±' + lt.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
   }
 
   /** Update the status chip on the order's header row based on current item states. */
@@ -8713,8 +8713,8 @@
     if (summary) {
       summary.style.display = _importParsed.length ? '' : 'none';
       summary.innerHTML = '<span style="color:#10B981;font-weight:600;">' + ready + ' ready</span>'
-        + (review ? ' &nbsp;·&nbsp; <span style="color:#F59E0B;font-weight:600;">' + review + ' review</span>' : '')
-        + (fix    ? ' &nbsp;·&nbsp; <span style="color:#EF4444;font-weight:600;">' + fix + ' need fixing</span>' : '');
+        + (review ? ' &nbsp;Â·&nbsp; <span style="color:#F59E0B;font-weight:600;">' + review + ' review</span>' : '')
+        + (fix    ? ' &nbsp;Â·&nbsp; <span style="color:#EF4444;font-weight:600;">' + fix + ' need fixing</span>' : '');
     }
   }
 
@@ -8756,7 +8756,7 @@
     });
 
     var btn = document.getElementById('import-submit-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i>  Importing…'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i>  Importingâ€¦'; }
 
     try {
       const token = localStorage.getItem('rrbm_token');
@@ -8776,16 +8776,16 @@
       var failed   = result.failed   || 0;
       var skippedList = result.skipped || [];
       if (imported === 0 && failed > 0 && skippedList.length === 0) {
-        // Nothing went through — leave modal open so user can retry
+        // Nothing went through â€” leave modal open so user can retry
         showToast('All ' + failed + ' order' + (failed !== 1 ? 's' : '') + ' failed to import', 'error');
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-cloud-upload"></i>  Import Orders'; }
         return;
       }
-      // At least some orders were imported (or skipped as dupes) — close main modal and reload
+      // At least some orders were imported (or skipped as dupes) â€” close main modal and reload
       closeModal('modal-import-ecom');
       var msg = imported + ' order' + (imported !== 1 ? 's' : '') + ' imported';
-      if (failed) msg += ' · ' + failed + ' failed';
-      if (skippedList.length) msg += ' · ' + skippedList.length + ' duplicate' + (skippedList.length !== 1 ? 's' : '') + ' skipped';
+      if (failed) msg += ' Â· ' + failed + ' failed';
+      if (skippedList.length) msg += ' Â· ' + skippedList.length + ' duplicate' + (skippedList.length !== 1 ? 's' : '') + ' skipped';
       showToast(msg, (failed || skippedList.length) ? 'warning' : 'success');
       loadOrders();
       // Show skipped-orders modal if any duplicates were found
@@ -8793,18 +8793,18 @@
         var skippedTbody = $('csv-skipped-tbody');
         if (skippedTbody) {
           skippedTbody.innerHTML = skippedList.map(function(s) {
-            return '<tr><td>' + escapeHtml(s.ref || '—') + '</td><td>' + escapeHtml(s.customer || '—') + '</td></tr>';
+            return '<tr><td>' + escapeHtml(s.ref || 'â€”') + '</td><td>' + escapeHtml(s.customer || 'â€”') + '</td></tr>';
           }).join('');
         }
         setText('csv-skipped-count', skippedList.length + ' order' + (skippedList.length !== 1 ? 's' : '') + ' already exist in the system and were not re-imported.');
         openModal('modal-csv-skipped');
       }
     } catch (err) {
-      // Network timeout or parse error — the backend may have already committed some/all orders.
+      // Network timeout or parse error â€” the backend may have already committed some/all orders.
       // Reload the order list so the user can see what was actually saved.
       console.warn('CSV import fetch error (orders may still have been saved):', err);
       loadOrders();
-      showToast('Connection timed out — check the order list to see what was saved', 'warning');
+      showToast('Connection timed out â€” check the order list to see what was saved', 'warning');
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-cloud-upload"></i>  Import Orders'; }
     }
   };
@@ -8813,18 +8813,18 @@
   // PURCHASE ORDERS PAGE
   // ================================================================
   var _allPoData        = [];    // raw list from backend
-  var _poItemCodeMap      = {};   // itemCode → {name, unitCost, productId} from products
-  var _poDescMap          = {};   // product name.toLowerCase() → itemCode (reverse lookup)
+  var _poItemCodeMap      = {};   // itemCode â†’ {name, unitCost, productId} from products
+  var _poDescMap          = {};   // product name.toLowerCase() â†’ itemCode (reverse lookup)
   var _poSuppliersCache   = null; // session-level cache of active suppliers for PO dropdown (null = not loaded)
-  var _poSupplierMappings = {};   // productId → {supplierItemCode, supplierDescription, unitCost}
-  var _deliveryPoCache  = {};    // poNumber → full PO object (for receive stocks auto-populate)
+  var _poSupplierMappings = {};   // productId â†’ {supplierItemCode, supplierDescription, unitCost}
+  var _deliveryPoCache  = {};    // poNumber â†’ full PO object (for receive stocks auto-populate)
   var _deliveryRecords  = [];    // cached delivery report rows (for detail modal)
   var _importParsed     = [];    // parsed CSV orders waiting for import confirmation
   var _lastCsvText      = '';    // raw CSV text from last file read (for re-grouping)
 
   function loadPurchaseOrders() {
     var tbody = $('po-list-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</td></tr>';
     fetch(API_BASE + '/api/purchase-orders', { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(data){
@@ -8849,7 +8849,7 @@
   function renderPoList(data) {
     var tbody = $('po-list-tbody');
     if (!tbody) return;
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     if (!data.length) {
       tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px;">No purchase orders</td></tr>';
       return;
@@ -8864,7 +8864,7 @@
         : '<span style="background:#F59E0B;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">INCOMPLETE</span>';
       var fulfilled   = po.fulfilledCount || 0;
       var total       = po.totalItems     || 0;
-      var dateStr     = po.createdAt ? formatDate(po.createdAt.substring(0,10)) : '—';
+      var dateStr     = po.createdAt ? formatDate(po.createdAt.substring(0,10)) : 'â€”';
       // Collect unique DR numbers from fulfilled items
       var drNums = [];
       (po.items || []).forEach(function(i){
@@ -8872,7 +8872,7 @@
       });
       var drCell = drNums.length
         ? drNums.map(function(n){ return '<span style="font-family:monospace;font-size:11px;background:var(--bg-secondary);padding:1px 5px;border-radius:3px;">' + escapeHtml(n) + '</span>'; }).join(' ')
-        : '<span style="color:var(--text-muted);">—</span>';
+        : '<span style="color:var(--text-muted);">â€”</span>';
       return '<tr id="po-row-' + po.id + '" style="cursor:pointer;" onclick="togglePoRow(' + po.id + ')">' +
         '<td style="text-align:center;color:var(--text-muted);"><i class="ti ti-chevron-right" id="po-chevron-' + po.id + '" style="transition:transform 0.2s;"></i></td>' +
         '<td style="font-family:monospace;font-weight:700;">' + escapeHtml(po.poNumber) + '</td>' +
@@ -8895,7 +8895,7 @@
   }
 
   function buildPoDetailHtml(po) {
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     var items = po.items || [];
     var rows = items.map(function(item){
       var fulfilled    = item.isFulfilled;
@@ -8907,15 +8907,15 @@
             '<i class="ti ti-package-import"></i> Receive</button>'
         : '';
       return '<tr style="' + rowBg + '">' +
-        '<td style="font-family:monospace;font-size:12px;color:var(--text-muted);">' + escapeHtml(item.itemCode || '—') + '</td>' +
+        '<td style="font-family:monospace;font-size:12px;color:var(--text-muted);">' + escapeHtml(item.itemCode || 'â€”') + '</td>' +
         '<td>' + escapeHtml(item.itemDescription) + '</td>' +
-        '<td style="font-family:monospace;font-size:11px;color:var(--text-muted);">' + escapeHtml(item.supplierItemCode || '—') + '</td>' +
-        '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(item.supplierDescription || '—') + '</td>' +
+        '<td style="font-family:monospace;font-size:11px;color:var(--text-muted);">' + escapeHtml(item.supplierItemCode || 'â€”') + '</td>' +
+        '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(item.supplierDescription || 'â€”') + '</td>' +
         '<td style="text-align:right;">' + (item.quantityOrdered || 0) + '</td>' +
         '<td style="text-align:right;">' + fmt(item.unitPrice) + '</td>' +
         '<td style="text-align:right;font-weight:600;">' + fmt(item.lineTotal) + '</td>' +
         '<td style="text-align:right;">' + (item.fulfilledQty || 0) + '</td>' +
-        '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(item.drNumber || '—') + '</td>' +
+        '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(item.drNumber || 'â€”') + '</td>' +
         '<td>' + (fulfilled
           ? '<span style="background:#10B981;color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;">Fulfilled</span>'
           : '<span style="background:#9CA3AF;color:#fff;padding:1px 6px;border-radius:4px;font-size:10px;">Pending</span>')
@@ -8928,7 +8928,7 @@
     return '<div style="padding:10px 16px;">' +
       '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">' +
         escapeHtml(po.vendorName || '') +
-        (po.vendorContact ? ' · ' + escapeHtml(po.vendorContact) : '') +
+        (po.vendorContact ? ' Â· ' + escapeHtml(po.vendorContact) : '') +
         (po.shippingArrangement ? ' &nbsp;|&nbsp; Shipping: ' + escapeHtml(po.shippingArrangement) : '') +
         (po.vatType ? ' &nbsp;|&nbsp; VAT: ' + escapeHtml(po.vatType) : '') +
         (po.vendorReference ? ' &nbsp;|&nbsp; Ref: <span style="font-family:monospace;">' + escapeHtml(po.vendorReference) + '</span>' : '') +
@@ -8953,7 +8953,7 @@
         return '<div style="margin-top:8px;padding:8px 10px;background:#FEF3C7;border:1px solid #F59E0B;border-radius:6px;font-size:12px;">'
           + '<i class="ti ti-receipt" style="margin-right:4px;color:#B45309;"></i>'
           + '<strong>Quoted Total:</strong> ' + fmt(quoted)
-          + '&nbsp;&nbsp;·&nbsp;&nbsp;'
+          + '&nbsp;&nbsp;Â·&nbsp;&nbsp;'
           + '<strong style="color:#B45309;">Effective Payable: ' + fmt(effective) + '</strong>'
           + ' <span style="color:var(--text-muted);font-size:10px;">(adjusted for final delivery)</span>'
           + '</div>';
@@ -8989,14 +8989,14 @@
     if (qtyEl)  { qtyEl.value = remainingQty; qtyEl.max = remainingQty; }
     if (hintEl) hintEl.innerHTML = item
       ? 'Ordered: ' + (item.quantityOrdered || 0)
-        + '&nbsp;&nbsp;·&nbsp;&nbsp;Already received: ' + (item.fulfilledQty || 0)
-        + '&nbsp;&nbsp;·&nbsp;&nbsp;<strong style="color:var(--accent);">Remaining: ' + remainingQty + '</strong>'
+        + '&nbsp;&nbsp;Â·&nbsp;&nbsp;Already received: ' + (item.fulfilledQty || 0)
+        + '&nbsp;&nbsp;Â·&nbsp;&nbsp;<strong style="color:var(--accent);">Remaining: ' + remainingQty + '</strong>'
       : '';
     if (drEl) drEl.value = '';
     if (whEl) whEl.value = 'wh1';
     var finalCb = $('po-receive-final-delivery');
     if (finalCb) { finalCb.checked = false; }
-    // When Final Delivery is checked, relax the max so user can enter 0–remaining
+    // When Final Delivery is checked, relax the max so user can enter 0â€“remaining
     if (finalCb) {
       finalCb.onchange = function() {
         if (qtyEl) qtyEl.max = finalCb.checked ? (item ? (item.quantityOrdered || 9999) : 9999) : remainingQty;
@@ -9031,7 +9031,7 @@
       if (idx >= 0) _allPoData[idx] = r.data;
       filterPoList();
       closeModal('modal-po-receive');
-      showToast('Receipt recorded' + (drNumber ? ' — DR: ' + drNumber : ''), 'success');
+      showToast('Receipt recorded' + (drNumber ? ' â€” DR: ' + drNumber : ''), 'success');
     })
     .catch(function(err){ showToast('Error: ' + (err.message || err), 'error'); });
   };
@@ -9053,12 +9053,12 @@
     .catch(function(err){ showToast('Failed to update status', 'error'); });
   };
 
-  // ── New PO modal ────────────────────────────────────────────────────────
+  // â”€â”€ New PO modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Populate the supplier dropdown in the New PO modal from cache (or API if not yet loaded).
   function _populatePoSupplierDropdown() {
     var sel = $('po-supplier-id');
     if (!sel) return;
-    sel.innerHTML = '<option value="">— No supplier —</option>';
+    sel.innerHTML = '<option value="">â€” No supplier â€”</option>';
     (_poSuppliersCache || []).forEach(function(s) {
       var opt = document.createElement('option');
       opt.value = s.id;
@@ -9076,14 +9076,14 @@
     var shipContact = $('po-ship-contact'); if (shipContact) shipContact.value = '+63 966 846 9993';
     var shipAddr    = $('po-ship-address'); if (shipAddr)    shipAddr.value    = '116 Santan St., Fortune, Marikina City';
     var vatSel      = $('po-vat-type');     if (vatSel)      vatSel.value      = 'EXCLUSIVE';
-    var totEl       = $('po-total-display'); if (totEl)      totEl.textContent = '₱0.00';
+    var totEl       = $('po-total-display'); if (totEl)      totEl.textContent = 'â‚±0.00';
     _poSupplierMappings = {};
 
     // Start with 3 empty item rows
     var itb = $('po-items-tbody');
     if (itb) { itb.innerHTML = ''; addPoItemRow(); addPoItemRow(); addPoItemRow(); }
 
-    // Populate supplier dropdown (session cache — load once)
+    // Populate supplier dropdown (session cache â€” load once)
     if (_poSuppliersCache !== null) {
       _populatePoSupplierDropdown();
     } else {
@@ -9096,7 +9096,7 @@
         .catch(function(err){ console.warn('Failed to load suppliers for PO dropdown:', err); });
     }
 
-    // Pre-load inventory for autocomplete — item codes & product names
+    // Pre-load inventory for autocomplete â€” item codes & product names
     fetch(API_BASE + '/api/products', { headers: authHeaders() })
       .then(function(r){ return r.json(); })
       .then(function(products){
@@ -9111,7 +9111,7 @@
           var name = p.name || '';
           if (!name) return;
           var code = p.itemCode ? p.itemCode.toUpperCase() : null;
-          // Desc map is keyed by product NAME → full info, so items WITHOUT an item
+          // Desc map is keyed by product NAME â†’ full info, so items WITHOUT an item
           // code are still selectable by name (the backend links lines by productId).
           _poDescMap[name.toLowerCase()] = { productId: p.id, itemCode: code, name: name, unitCost: p.unitCost || 0 };
           if (code) {
@@ -9120,7 +9120,7 @@
             if (codeList) {
               var opt = document.createElement('option');
               opt.value = code;
-              opt.label = code + ' — ' + name;
+              opt.label = code + ' â€” ' + name;
               codeList.appendChild(opt);
             }
           }
@@ -9150,7 +9150,7 @@
     _poSupplierMappings = {};
 
     if (!supplierId) {
-      // No supplier selected — blank vendor fields
+      // No supplier selected â€” blank vendor fields
       ['po-vendor-name','po-vendor-contact','po-vendor-address'].forEach(function(id) {
         var el = $(id); if (el) el.value = '';
       });
@@ -9179,7 +9179,7 @@
             };
           });
         }
-        // Re-run code lookup on all rows that already have a code — applies hints + price overrides
+        // Re-run code lookup on all rows that already have a code â€” applies hints + price overrides
         if (tbody) Array.from(tbody.rows).forEach(function(tr) {
           var codeEl = tr.querySelector('.po-item-code');
           if (codeEl && (codeEl.value || '').trim()) lookupPoItemCode(codeEl);
@@ -9195,7 +9195,7 @@
     var tr  = document.createElement('tr');
     tr.innerHTML =
       '<td style="text-align:center;color:var(--text-muted);font-size:12px;">' + idx + '</td>' +
-      // Item Code — required, linked to datalist, triggers auto-fill on change/blur
+      // Item Code â€” required, linked to datalist, triggers auto-fill on change/blur
       // Hint div below shows supplier code when a mapping exists for the selected supplier
       '<td><input type="text" class="form-control form-control-sm po-item-code" ' +
            'list="po-datalist-codes" placeholder="Item code *" ' +
@@ -9203,7 +9203,7 @@
            'oninput="this.value=this.value.toUpperCase()" ' +
            'onchange="lookupPoItemCode(this)" onblur="lookupPoItemCode(this)" />' +
            '<div class="po-supplier-hint" style="font-size:10px;color:var(--text-muted);display:none;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div></td>' +
-      // Description — linked to datalist, triggers reverse auto-fill on change/blur
+      // Description â€” linked to datalist, triggers reverse auto-fill on change/blur
       '<td><input type="text" class="form-control form-control-sm po-item-desc" ' +
            'list="po-datalist-descs" placeholder="Select or type product name" ' +
            'onchange="lookupPoItemDesc(this)" onblur="lookupPoItemDesc(this)" /></td>' +
@@ -9211,7 +9211,7 @@
            'style="text-align:right;min-width:90px;width:100%;" oninput="calculatePoTotal()" /></td>' +
       '<td><input type="number" class="form-control form-control-sm po-item-price" value="0" min="0" step="0.01" ' +
            'style="text-align:right;" oninput="calculatePoTotal()" /></td>' +
-      '<td style="text-align:right;font-weight:600;" class="po-item-lt">₱0.00</td>' +
+      '<td style="text-align:right;font-weight:600;" class="po-item-lt">â‚±0.00</td>' +
       '<td><button class="icon-btn" onclick="removePoItemRow(this)" title="Remove"><i class="ti ti-trash" style="color:#EF4444;"></i></button></td>';
     tbody.appendChild(tr);
   };
@@ -9236,7 +9236,7 @@
     if (!code) return;
     var info = _poItemCodeMap[code];
     if (!info) {
-      // Not in inventory — highlight red, show toast if it looks intentional (non-empty)
+      // Not in inventory â€” highlight red, show toast if it looks intentional (non-empty)
       input.style.outline = '2px solid #EF4444';
       showToast('Item code "' + code + '" is not in the inventory. Select a valid product.', 'error');
       return;
@@ -9252,11 +9252,11 @@
     // Check if the selected supplier has a mapping for this product
     var sm = info.productId ? _poSupplierMappings[info.productId] : null;
     if (sm && sm.supplierItemCode) {
-      // Mapping found — show supplier code hint and prefer mapping unit cost
+      // Mapping found â€” show supplier code hint and prefer mapping unit cost
       if (hintEl) { hintEl.textContent = 'Supplier code: ' + sm.supplierItemCode; hintEl.style.display = ''; }
       if (priceEl) priceEl.value = sm.unitCost != null ? sm.unitCost : (info.unitCost || 0);
     } else {
-      // No mapping (or no supplier selected) — hide hint, use inventory cost
+      // No mapping (or no supplier selected) â€” hide hint, use inventory cost
       if (hintEl) { hintEl.textContent = ''; hintEl.style.display = 'none'; }
       if (priceEl) priceEl.value = info.unitCost || 0;
     }
@@ -9285,11 +9285,11 @@
     if (info.itemCode && codeEl) {
       codeEl.value = info.itemCode;
       codeEl.style.outline = '';
-      // Delegate to lookupPoItemCode — sets description, price, and supplier hint in one place
+      // Delegate to lookupPoItemCode â€” sets description, price, and supplier hint in one place
       lookupPoItemCode(codeEl);
       return;
     }
-    // Product has no item code — fill description + price directly, leave code blank.
+    // Product has no item code â€” fill description + price directly, leave code blank.
     if (codeEl) { codeEl.value = ''; codeEl.style.outline = ''; }
     var descEl  = row.querySelector('.po-item-desc');
     var priceEl = row.querySelector('.po-item-price');
@@ -9317,9 +9317,9 @@
       var lt    = qty * price;
       total    += lt;
       var ltCell = tr.querySelector('.po-item-lt');
-      if (ltCell) ltCell.textContent = '₱' + lt.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+      if (ltCell) ltCell.textContent = 'â‚±' + lt.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
     });
-    if (totEl) totEl.textContent = '₱' + total.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if (totEl) totEl.textContent = 'â‚±' + total.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
   };
 
   window.submitNewPO = function() {
@@ -9399,7 +9399,7 @@
     .catch(function(err){ showToast('Error saving PO: ' + (err.message || err), 'error'); });
   };
 
-  // ── Print PO Document (Letter size, logo only, Unit Cost, PNG export) ─────
+  // â”€â”€ Print PO Document (Letter size, logo only, Unit Cost, PNG export) â”€â”€â”€â”€â”€
   window.printPoDocument = function(id) {
     var po = _allPoData.find(function(p){ return p.id === id; });
     if (!po) { showToast('PO not found', 'error'); return; }
@@ -9426,9 +9426,9 @@
         '</tr>';
     }).join('');
 
-    var vatNote = po.vatType === 'INCLUSIVE' ? 'VAT Inclusive — grand total includes 12% VAT.'
+    var vatNote = po.vatType === 'INCLUSIVE' ? 'VAT Inclusive â€” grand total includes 12% VAT.'
                 : po.vatType === 'EXEMPT'    ? 'VAT Exempt transaction.'
-                :                              'VAT Exclusive — prices do not include VAT.';
+                :                              'VAT Exclusive â€” prices do not include VAT.';
     var subtotal   = Number(po.totalAmount || 0);
     var vatAmount  = po.vatType === 'INCLUSIVE' ? subtotal * 0.12 : 0;
     var grandTotal = subtotal + vatAmount;
@@ -9484,7 +9484,7 @@
       '</style></head><body>' +
       '<div id="po-actions">' +
         '<button class="btn-pdf" onclick="window.print()"><i>&#128438;</i> Print / Save PDF</button>' +
-        '<button id="po-save-png" onclick="savePNG()" disabled title="Loading export library…" style="opacity:0.5;cursor:not-allowed;">&#128247; Save as PNG</button>' +
+        '<button id="po-save-png" onclick="savePNG()" disabled title="Loading export libraryâ€¦" style="opacity:0.5;cursor:not-allowed;">&#128247; Save as PNG</button>' +
       '</div>' +
       '<div class="hdr">' +
         '<img src="' + logoUrl + '" style="height:64px;object-fit:contain;" onerror="this.style.display=\'none\'" />' +
@@ -9564,7 +9564,7 @@
 
   window.loadSuppliers = function() {
     var tbody = $('supplier-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</td></tr>';
     fetch(API_BASE + '/api/suppliers?includeInactive=true', { headers: authHeaders() })
       .then(function(res) { return res.json(); })
       .then(function(data) {
@@ -9604,9 +9604,9 @@
         : '<button class="btn btn-sm btn-secondary" onclick="reactivateSupplier(' + s.id + ')" title="Reactivate"><i class="ti ti-circle-check"></i></button>';
       return '<tr style="' + rowStyle + '">' +
         '<td style="font-weight:600;">' + escapeHtml(s.name) + '</td>' +
-        '<td>' + escapeHtml(s.contactPerson || '—') + '</td>' +
-        '<td>' + escapeHtml(s.contactNumber || '—') + '</td>' +
-        '<td>' + escapeHtml(s.paymentTerms || '—') + '</td>' +
+        '<td>' + escapeHtml(s.contactPerson || 'â€”') + '</td>' +
+        '<td>' + escapeHtml(s.contactNumber || 'â€”') + '</td>' +
+        '<td>' + escapeHtml(s.paymentTerms || 'â€”') + '</td>' +
         '<td>' + badge + '</td>' +
         '<td style="text-align:right;white-space:nowrap;">' +
           '<button class="btn btn-secondary btn-sm" onclick="openSupplierMappingsModal(' + s.id + ')" style="margin-right:4px;" title="Mappings"><i class="ti ti-link"></i></button>' +
@@ -9806,12 +9806,12 @@
       var label = escapeHtml(p.name) + (p.itemCode ? ' (' + escapeHtml(p.itemCode) + ')' : '');
       return '<option value="' + p.id + '">' + label + '</option>';
     });
-    sel.innerHTML = '<option value="">— select product —</option>' + opts.join('');
+    sel.innerHTML = '<option value="">â€” select product â€”</option>' + opts.join('');
   }
 
   function _loadMappingsForSupplier(supplierId) {
     var tbody = $('mapping-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</td></tr>';
     fetch(API_BASE + '/api/suppliers/' + supplierId + '/mappings', { headers: authHeaders() })
       .then(function(r) { return r.json(); })
       .then(function(data) {
@@ -9871,8 +9871,8 @@
 
       return '<tr id="map-row-' + m.id + '">' +
         '<td style="font-weight:500;">'                                            + escapeHtml(m.productName || 'Unknown') + '</td>' +
-        '<td style="font-family:monospace;font-size:12px;">'                       + escapeHtml(m.supplierItemCode || '—') + '</td>' +
-        '<td style="font-size:13px;">'                                             + escapeHtml(m.supplierDescription || '—') + '</td>' +
+        '<td style="font-family:monospace;font-size:12px;">'                       + escapeHtml(m.supplierItemCode || 'â€”') + '</td>' +
+        '<td style="font-size:13px;">'                                             + escapeHtml(m.supplierDescription || 'â€”') + '</td>' +
         '<td style="text-align:right;font-weight:600;">'                           + costFmt + '</td>' +
         '<td style="text-align:center;">'                                          + preferredCell + '</td>' +
         '<td style="text-align:right;white-space:nowrap;">' +
@@ -10034,7 +10034,7 @@
   // ================================================================
   function loadDailyReports() {
     var tb = $('daily-reports-tbody');
-    if (tb) tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    if (tb) tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</td></tr>';
     fetch(API_BASE + '/api/reports/daily-reports-list', { headers: authHeaders() })
       .then(function(r) { return r.json(); })
       .then(function(data) { renderDailyReportsList(data.reports || []); })
@@ -10052,16 +10052,16 @@
       return;
     }
     var fmt = function(v) {
-      return '₱' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return 'â‚±' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
     tb.innerHTML = reports.map(function(r) {
-      var closedAt = r.closedAt ? (formatDate(r.closedAt) + ' ' + formatTime(r.closedAt)) : '—';
+      var closedAt = r.closedAt ? (formatDate(r.closedAt) + ' ' + formatTime(r.closedAt)) : 'â€”';
       var netVal   = r.netSales != null ? r.netSales : r.totalRevenue;
       var safeDate = (r.reportDate || '').replace(/'/g, "\\'");
       return '<tr>' +
-        '<td><strong style="font-size:13px;">' + (r.reportDate || '—') + '</strong></td>' +
+        '<td><strong style="font-size:13px;">' + (r.reportDate || 'â€”') + '</strong></td>' +
         '<td style="font-size:12px;color:var(--text-muted);">' + closedAt + '</td>' +
-        '<td style="font-size:13px;">' + (r.closedByName || '—') + '</td>' +
+        '<td style="font-size:13px;">' + (r.closedByName || 'â€”') + '</td>' +
         '<td style="text-align:center;font-weight:600;">' + (r.totalOrders || 0) + '</td>' +
         '<td style="font-weight:700;">' + fmt(netVal) + '</td>' +
         '<td><button class="btn btn-primary btn-sm" onclick="openDailyReportDetail(\'' + safeDate + '\')"><i class="ti ti-eye" style="margin-right:4px;"></i>View</button></td>' +
@@ -10073,10 +10073,10 @@
 
   /** Build the HTML content used for both the detail modal and the PDF */
   function _buildDailyReportHTML(rep, orders, activityLogs, opts, cashEntries, expenseBreakdown) {
-    var fmt = function(v) { return '₱' + Number(v||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(v) { return 'â‚±' + Number(v||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     var netVal   = rep.netSales != null ? rep.netSales : rep.totalRevenue;
     var grossVal = rep.grossSales != null ? rep.grossSales : rep.totalRevenue;
-    var closedAt = rep.closedAt ? (formatDate(rep.closedAt) + ' at ' + formatTime(rep.closedAt)) : '—';
+    var closedAt = rep.closedAt ? (formatDate(rep.closedAt) + ' at ' + formatTime(rep.closedAt)) : 'â€”';
     var isPdf    = opts && opts.pdf;
     var cardSt   = isPdf ? 'border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;text-align:center;' : 'padding:10px 14px;';
     var sectHead = function(t) { return '<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888;margin:16px 0 8px;border-bottom:1px solid #eee;padding-bottom:4px;">' + t + '</div>'; };
@@ -10089,7 +10089,7 @@
 
     var h = '';
 
-    // ─── SUMMARY ───
+    // â”€â”€â”€ SUMMARY â”€â”€â”€
     h += '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px;">';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Total Orders</div><div style="font-size:20px;font-weight:700;">' + (rep.totalOrders||0) + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Net Revenue</div><div style="font-size:16px;font-weight:700;color:#10B981;">' + fmt(netVal) + '</div></div>';
@@ -10099,7 +10099,7 @@
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Expenses</div><div style="font-size:16px;font-weight:700;color:#EF4444;">' + fmt(rep.totalExpenses) + '</div><div style="font-size:9px;color:#888;">' + (rep.expensesCount||0) + ' entries</div></div>';
     h += '</div>';
 
-    // ─── REVENUE BREAKDOWN ───
+    // â”€â”€â”€ REVENUE BREAKDOWN â”€â”€â”€
     h += sectHead('Revenue Breakdown');
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;">';
     h += '<tr><td style="padding:4px 0;">Direct Transactions</td><td style="text-align:right;font-weight:600;">' + fmt(directRev) + '</td></tr>';
@@ -10107,7 +10107,7 @@
     h += '<tr style="border-top:2px solid #C25A0A;"><td style="padding:6px 0;font-weight:700;">Grand Total</td><td style="text-align:right;font-weight:700;font-size:14px;">' + fmt(grossVal) + '</td></tr>';
     h += '</table>';
 
-    // ─── ACCOUNTING ───
+    // â”€â”€â”€ ACCOUNTING â”€â”€â”€
     h += sectHead('Accounting');
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;">';
     h += '<tr><td style="padding:4px 0;">Gross Sales</td><td style="text-align:right;font-weight:600;">' + fmt(grossVal) + '</td></tr>';
@@ -10122,7 +10122,7 @@
     }
     h += '</table>';
 
-    // ─── EXPENSES BY CATEGORY (detail behind "Total Expenses") ───
+    // â”€â”€â”€ EXPENSES BY CATEGORY (detail behind "Total Expenses") â”€â”€â”€
     if (expenseBreakdown && expenseBreakdown.length) {
       h += sectHead('Expenses by Category');
       h += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;">';
@@ -10137,7 +10137,7 @@
       h += '</tbody></table>';
     }
 
-    // ─── SOURCE BREAKDOWN ───
+    // â”€â”€â”€ SOURCE BREAKDOWN â”€â”€â”€
     h += sectHead('Source Breakdown');
     h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;">';
     ['Walk-in:' + (rep.walkInCount||0), 'Agent:' + (rep.agentCount||0),
@@ -10149,14 +10149,14 @@
     });
     h += '</div>';
 
-    // ─── TOP PRODUCT ───
+    // â”€â”€â”€ TOP PRODUCT â”€â”€â”€
     if (rep.topProduct) {
       h += sectHead('Top Product');
       h += '<div style="font-size:14px;font-weight:700;margin-bottom:10px;">' + escapeHtml(rep.topProduct) +
-        ' <span style="color:#888;font-size:12px;font-weight:400;">× ' + (rep.topProductQty||0) + '</span></div>';
+        ' <span style="color:#888;font-size:12px;font-weight:400;">Ã— ' + (rep.topProductQty||0) + '</span></div>';
     }
 
-    // ─── DIRECT TRANSACTIONS TABLE ───
+    // â”€â”€â”€ DIRECT TRANSACTIONS TABLE â”€â”€â”€
     if (directOrders.length > 0) {
       h += sectHead('Direct Transactions (' + directOrders.length + ')');
       h += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;">';
@@ -10170,7 +10170,7 @@
       h += '</tbody></table>';
     }
 
-    // ─── ECOMMERCE TRANSACTIONS TABLE ───
+    // â”€â”€â”€ ECOMMERCE TRANSACTIONS TABLE â”€â”€â”€
     if (ecomOrders.length > 0) {
       h += sectHead('E-commerce Transactions (' + ecomOrders.length + ')');
       h += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;">';
@@ -10186,7 +10186,7 @@
       h += '</tbody></table>';
     }
 
-    // ─── CASH FLOW (this day's ledger movements) ───
+    // â”€â”€â”€ CASH FLOW (this day's ledger movements) â”€â”€â”€
     if (cashEntries && cashEntries.length > 0) {
       var _cfLabels = {
         OPENING_BALANCE: 'Opening Balance', ADD_CASH: 'Add Cash', CASH_SALE: 'Cash Sale',
@@ -10210,7 +10210,7 @@
       h += '</tbody></table>';
     }
 
-    // ─── ACTIVITY LOG ───
+    // â”€â”€â”€ ACTIVITY LOG â”€â”€â”€
     if (activityLogs && activityLogs.length > 0) {
       h += sectHead('Activity Log (' + activityLogs.length + ')');
       h += '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:10px;">';
@@ -10227,11 +10227,11 @@
       var repToday = new Date().toISOString().slice(0, 10);
       if (rep.reportDate && String(rep.reportDate) < repToday) {
         h += sectHead('Activity Log');
-        h += '<div style="font-size:11px;color:#888;font-style:italic;padding:6px 0;margin-bottom:10px;">No activity log — this date was closed via batch import.</div>';
+        h += '<div style="font-size:11px;color:#888;font-style:italic;padding:6px 0;margin-bottom:10px;">No activity log â€” this date was closed via batch import.</div>';
       }
     }
 
-    // ─── FOOTER ───
+    // â”€â”€â”€ FOOTER â”€â”€â”€
     h += '<div style="font-size:11px;color:#888;border-top:1px solid #ddd;padding-top:8px;margin-top:6px;">' +
       'Closed: ' + closedAt +
       (rep.notes ? ' &nbsp;|&nbsp; Notes: ' + escapeHtml(rep.notes) : '') +
@@ -10283,8 +10283,8 @@
     _drepCurrentDate = date;
     var titleEl = $('drep-modal-title');
     var bodyEl  = $('drep-modal-body');
-    if (titleEl) titleEl.textContent = 'Daily Report — ' + date;
-    if (bodyEl)  bodyEl.innerHTML    = '<div style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</div>';
+    if (titleEl) titleEl.textContent = 'Daily Report â€” ' + date;
+    if (bodyEl)  bodyEl.innerHTML    = '<div style="text-align:center;color:var(--text-muted);padding:20px;">Loadingâ€¦</div>';
     var overlay = $('modal-daily-report-detail');
     if (overlay) overlay.classList.add('open');
 
@@ -10304,7 +10304,7 @@
   /** Generate and open a printable daily report PDF for the given date (defaults to today) */
   window.downloadDailyReportPdf = function(dateStr) {
     var date = dateStr || new Date().toISOString().slice(0,10);
-    showToast('Generating daily report…', 'success');
+    showToast('Generating daily reportâ€¦', 'success');
 
     _fetchDailyReportData(date)
       .then(function(d) {
@@ -10331,7 +10331,7 @@
           '<div id="dr-actions">' +
             '<button class="btn-html" onclick="downloadHTML()" style="background:#1D4ED8;color:#fff;border-color:#1D4ED8;">&#128190; Download HTML</button>' +
             '<button class="btn-pdf" onclick="window.print()">&#128438; Print / Save PDF</button>' +
-            '<button id="dr-save-png" onclick="savePNG()" disabled title="Loading export library…" style="opacity:0.5;cursor:not-allowed;">&#128247; Save as PNG</button>' +
+            '<button id="dr-save-png" onclick="savePNG()" disabled title="Loading export libraryâ€¦" style="opacity:0.5;cursor:not-allowed;">&#128247; Save as PNG</button>' +
           '</div>' +
           '<div class="hdr">' +
             '<img src="' + logoUrl + '" style="height:50px;" onerror="this.style.display=\'none\'" />' +
@@ -10374,7 +10374,7 @@
       .catch(function(err) { showToast('Error generating report: ' + (err.message||err), 'error'); });
   };
 
-  // Called by the Refresh button — loads all report sections with the same month
+  // Called by the Refresh button â€” loads all report sections with the same month
   window.loadAllReports = function () {
     loadInsightsSummary();
     loadAccountingSummary();
@@ -10396,8 +10396,8 @@
     var tb      = $('rep-payables-tbody');
     var summary = $('rep-payables-summary');
     if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</td></tr>';
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;">Loadingâ€¦</td></tr>';
+    var fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     fetch(API_BASE + '/api/payables', { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(records){
@@ -10408,17 +10408,17 @@
           return;
         }
         var total = pending.reduce(function(s,r){ return s + Number(r.totalAmount||0); }, 0);
-        if (summary) summary.textContent = pending.length + ' pending · ' + fmt(total) + ' total';
+        if (summary) summary.textContent = pending.length + ' pending Â· ' + fmt(total) + ' total';
         tb.innerHTML = pending.map(function(r){
           var created = r.createdAt ? new Date(r.createdAt) : null;
-          var days = created ? Math.floor((Date.now() - created.getTime()) / 86400000) : '—';
+          var days = created ? Math.floor((Date.now() - created.getTime()) / 86400000) : 'â€”';
           return '<tr>'
-            + '<td><span class="product-code" style="font-size:11px;">' + escapeHtml(r.receiptNumber||'—') + '</span></td>'
-            + '<td>' + escapeHtml(r.supplierName||'—') + '</td>'
+            + '<td><span class="product-code" style="font-size:11px;">' + escapeHtml(r.receiptNumber||'â€”') + '</span></td>'
+            + '<td>' + escapeHtml(r.supplierName||'â€”') + '</td>'
             + '<td style="text-align:right;font-weight:600;">' + fmt(r.totalAmount) + '</td>'
-            + '<td style="font-size:11px;color:var(--text-muted);">' + (created ? created.toLocaleDateString('en-PH') : '—') + '</td>'
+            + '<td style="font-size:11px;color:var(--text-muted);">' + (created ? created.toLocaleDateString('en-PH') : 'â€”') + '</td>'
             + '<td style="text-align:center;font-weight:600;color:' + (typeof days==='number'&&days>=7?'#EF4444':'#F59E0B') + ';">'
-            + (typeof days==='number' ? days + 'd' : '—') + '</td>'
+            + (typeof days==='number' ? days + 'd' : 'â€”') + '</td>'
             + '</tr>';
         }).join('');
       })
@@ -10429,8 +10429,8 @@
     var tb      = $('rep-collections-tbody');
     var summary = $('rep-collections-summary');
     if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</td></tr>';
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px;">Loadingâ€¦</td></tr>';
+    var fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     fetch(API_BASE + '/api/orders/collections', { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(orders){
@@ -10440,21 +10440,21 @@
           return;
         }
         var total = orders.reduce(function(s,o){ return s + Number(o.total||0); }, 0);
-        if (summary) summary.textContent = orders.length + ' pending · ' + fmt(total) + ' total';
+        if (summary) summary.textContent = orders.length + ' pending Â· ' + fmt(total) + ' total';
         var payMap = { CASH:'Cash', COD:'COD', GCASH:'GCash', PAYMAYA:'PayMaya',
                        BANK_TRANSFER:'Bank Transfer', BANK_DEPOSIT:'Bank Deposit', ONLINE:'Online' };
         tb.innerHTML = orders.map(function(o){
           var created = o.createdAt ? new Date(o.createdAt) : null;
-          var dateStr = created ? created.toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : '—';
-          var days = created ? Math.floor((Date.now() - created.getTime()) / 86400000) : '—';
+          var dateStr = created ? created.toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}) : 'â€”';
+          var days = created ? Math.floor((Date.now() - created.getTime()) / 86400000) : 'â€”';
           return '<tr>'
             + '<td style="font-size:12px;">' + dateStr + '</td>'
-            + '<td><span class="product-code" style="font-size:11px;">' + escapeHtml(ecomOrderRef(o)||o.id||'—') + '</span></td>'
-            + '<td>' + escapeHtml(o.customerName||'—') + '</td>'
-            + '<td>' + (payMap[o.paymentMode] || o.paymentMode || '—') + '</td>'
+            + '<td><span class="product-code" style="font-size:11px;">' + escapeHtml(ecomOrderRef(o)||o.id||'â€”') + '</span></td>'
+            + '<td>' + escapeHtml(o.customerName||'â€”') + '</td>'
+            + '<td>' + (payMap[o.paymentMode] || o.paymentMode || 'â€”') + '</td>'
             + '<td style="text-align:right;font-weight:600;">' + fmt(o.total) + '</td>'
             + '<td style="text-align:center;font-weight:600;color:' + (typeof days==='number'&&days>=3?'#EF4444':'#F59E0B') + ';">'
-            + (typeof days==='number' ? days + 'd' : '—') + '</td>'
+            + (typeof days==='number' ? days + 'd' : 'â€”') + '</td>'
             + '</tr>';
         }).join('');
       })
@@ -10486,16 +10486,16 @@
       if (p === 0) return label;
       const diff = c - p;
       const pct  = ((diff / p) * 100).toFixed(1);
-      const arrow = diff >= 0 ? '▲' : '▼';
+      const arrow = diff >= 0 ? 'â–²' : 'â–¼';
       const color = diff >= 0 ? '#10B981' : '#EF4444';
       return '<span style="color:' + color + ';">' + arrow + ' ' + Math.abs(pct) + '% vs prev month</span>';
     }
 
     // Summary cards
     setText('rep-total-orders',   data.totalOrders  || 0);
-    setText('rep-total-revenue',  '₱' + Number(data.totalRevenue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setText('rep-total-revenue',  'â‚±' + Number(data.totalRevenue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     setText('rep-items-sold',     (data.totalItemsSold || 0).toLocaleString());
-    setText('rep-total-expenses', '₱' + Number(data.totalExpenses || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setText('rep-total-expenses', 'â‚±' + Number(data.totalExpenses || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
     // MoM comparison sub-texts
     const ordersSub   = $('rep-orders-sub');
@@ -10520,13 +10520,13 @@
       if (top.length === 0) {
         ptbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No sales data this month</td></tr>';
       } else {
-        const medals = ['🥇','🥈','🥉','4','5','6','7','8','9','10'];
+        const medals = ['ðŸ¥‡','ðŸ¥ˆ','ðŸ¥‰','4','5','6','7','8','9','10'];
         ptbody.innerHTML = top.map(function (p, i) {
           return '<tr>' +
             '<td style="font-size:16px;text-align:center;">' + (medals[i] || p.rank) + '</td>' +
             '<td style="font-weight:600;">' + escapeHtml(p.name) + '</td>' +
             '<td style="text-align:right;">' + (p.qty || 0).toLocaleString() + '</td>' +
-            '<td style="text-align:right;">' + '₱' + Number(p.revenue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
+            '<td style="text-align:right;">' + 'â‚±' + Number(p.revenue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
             '<td style="text-align:right;color:var(--accent);">' + (p.pct || 0) + '%</td>' +
             '</tr>';
         }).join('');
@@ -10556,7 +10556,7 @@
     renderSalesVsExpChart(chartLabels, salesValues, expenseValues);
 
     // Month-over-month comparison cards
-    var fmtCurr = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmtCurr = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     setText('rep-mom-curr-orders', Number(data.totalOrders||0).toLocaleString());
     setText('rep-mom-curr-rev',    fmtCurr(data.totalRevenue));
     if (data.prevMonth) {
@@ -10574,7 +10574,7 @@
       }
       var pctEl = $('rep-mom-change-pct');
       if (pctEl && changePct != null) {
-        pctEl.textContent = (change >= 0 ? '▲' : '▼') + ' ' + Math.abs(changePct) + '% vs ' + data.prevMonth;
+        pctEl.textContent = (change >= 0 ? 'â–²' : 'â–¼') + ' ' + Math.abs(changePct) + '% vs ' + data.prevMonth;
         pctEl.style.color = change >= 0 ? '#10B981' : '#EF4444';
       }
     }
@@ -10638,7 +10638,7 @@
             padding: 10,
             callbacks: {
               label: function(ctx) {
-                return ctx.dataset.label + ': ₱' + Number(ctx.raw).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+                return ctx.dataset.label + ': â‚±' + Number(ctx.raw).toLocaleString('en-PH', { minimumFractionDigits: 2 });
               }
             }
           }
@@ -10655,7 +10655,7 @@
             ticks: {
               color: tickColor,
               font: { size: 10 },
-              callback: function(v) { return '₱' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v); }
+              callback: function(v) { return 'â‚±' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v); }
             }
           }
         }
@@ -10719,7 +10719,7 @@
             displayColors:   false,
             callbacks: {
               label: function(ctx) {
-                return '₱' + Number(ctx.raw).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+                return 'â‚±' + Number(ctx.raw).toLocaleString('en-PH', { minimumFractionDigits: 2 });
               }
             }
           }
@@ -10736,7 +10736,7 @@
             ticks:  {
               color: tickColor,
               font:  { size: 10 },
-              callback: function(v) { return '₱' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v); }
+              callback: function(v) { return 'â‚±' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v); }
             }
           }
         }
@@ -10767,7 +10767,7 @@
   function renderAccountingSummary(data) {
     const fmt = function (n) {
       const v = parseFloat(n) || 0;
-      return (v < 0 ? '-₱' : '₱') + Math.abs(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return (v < 0 ? '-â‚±' : 'â‚±') + Math.abs(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
     setText('acc-gross-sales',       fmt(data.grossSales));
     setText('acc-refunds-total',     fmt(data.refundsTotal));
@@ -10793,7 +10793,7 @@
       const netColor = net >= 0 ? '#10B981' : '#EF4444';
       return '<tr>'
         + '<td>' + escapeHtml(formatDate(row.date)) + '</td>'
-        + '<td style="text-align:right;color:#10B981;">₱' + gross.toLocaleString('en-PH', { minimumFractionDigits: 2 }) + '</td>'
+        + '<td style="text-align:right;color:#10B981;">â‚±' + gross.toLocaleString('en-PH', { minimumFractionDigits: 2 }) + '</td>'
         + '<td style="text-align:right;color:#EF4444;">' + fmt(refs) + '</td>'
         + '<td style="text-align:right;color:#F59E0B;">' + fmt(adj)  + '</td>'
         + '<td style="text-align:right;font-weight:600;color:' + netColor + ';">' + fmt(net) + '</td>'
@@ -10802,7 +10802,7 @@
   }
 
   // ================================================================
-  // Reports — Source Breakdown
+  // Reports â€” Source Breakdown
   // ================================================================
   function loadSourceBreakdown() {
     const month = ($('rep-month-picker') || {}).value || '';
@@ -10815,14 +10815,14 @@
   function renderSourceBreakdown(data) {
     const list   = data.breakdown || [];
     const tbody  = $('rep-source-tbody');
-    const fmt    = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    const fmt    = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     if (tbody) {
       if (!list.length) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No data</td></tr>';
       } else {
         tbody.innerHTML = list.map(function(r){
           return '<tr>' +
-            '<td style="font-weight:600;">' + escapeHtml(formatSource(r.source) || '—') + '</td>' +
+            '<td style="font-weight:600;">' + escapeHtml(formatSource(r.source) || 'â€”') + '</td>' +
             '<td style="text-align:right;">' + (r.orderCount || 0) + '</td>' +
             '<td style="text-align:right;">' + fmt(r.revenue) + '</td>' +
             '<td style="text-align:right;color:var(--accent);">' + (r.pct || 0) + '%</td>' +
@@ -10858,7 +10858,7 @@
             backgroundColor: tooltipBg, titleColor: tipText, bodyColor: tickColor,
             callbacks: {
               label: function(ctx) {
-                return ctx.label + ': ₱' + Number(ctx.raw).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+                return ctx.label + ': â‚±' + Number(ctx.raw).toLocaleString('en-PH', { minimumFractionDigits: 2 });
               }
             }
           }
@@ -10868,7 +10868,7 @@
   }
 
   // ================================================================
-  // Reports — Top Agents
+  // Reports â€” Top Agents
   // ================================================================
   function loadTopAgents() {
     const month = ($('rep-month-picker') || {}).value || '';
@@ -10877,16 +10877,16 @@
       .then(function(data){
         const list  = data.agents || [];
         const tbody = $('rep-top-agents-tbody');
-        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt   = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
         if (!tbody) return;
         if (!list.length) {
           tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No agent/reseller orders this month</td></tr>';
         } else {
-          const medals = ['🥇','🥈','🥉'];
+          const medals = ['ðŸ¥‡','ðŸ¥ˆ','ðŸ¥‰'];
           tbody.innerHTML = list.map(function(r, i){
             return '<tr>' +
               '<td style="text-align:center;font-size:' + (i < 3 ? '16' : '13') + 'px;">' + (medals[i] || r.rank) + '</td>' +
-              '<td style="font-weight:600;">' + escapeHtml(r.agentName || '—') + '</td>' +
+              '<td style="font-weight:600;">' + escapeHtml(r.agentName || 'â€”') + '</td>' +
               '<td style="font-size:11px;"><span style="background:#FAD16A;color:#2C1A0E;padding:2px 6px;border-radius:4px;">' + escapeHtml(r.source || '') + '</span></td>' +
               '<td style="text-align:right;">' + (r.orderCount || 0) + '</td>' +
               '<td style="text-align:right;font-weight:600;color:var(--accent);">' + fmt(r.revenue) + '</td>' +
@@ -10898,7 +10898,7 @@
   }
 
   // ================================================================
-  // Reports — Top Dates
+  // Reports â€” Top Dates
   // ================================================================
   function loadTopDates() {
     const month = ($('rep-month-picker') || {}).value || '';
@@ -10907,12 +10907,12 @@
       .then(function(data){
         const list  = data.dates || [];
         const tbody = $('rep-top-dates-tbody');
-        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt   = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
         if (!tbody) return;
         if (!list.length) {
           tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No data</td></tr>';
         } else {
-          const medals = ['🥇','🥈','🥉'];
+          const medals = ['ðŸ¥‡','ðŸ¥ˆ','ðŸ¥‰'];
           tbody.innerHTML = list.map(function(r, i){
             return '<tr>' +
               '<td style="text-align:center;font-size:16px;">' + (medals[i] || r.rank) + '</td>' +
@@ -10927,14 +10927,14 @@
   }
 
   // ================================================================
-  // Reports — Pizza Box Summary
+  // Reports â€” Pizza Box Summary
   // ================================================================
   function loadPizzaSummary() {
     const month = ($('rep-month-picker') || {}).value || '';
     fetch(API_BASE + '/api/reports/pizza-summary' + (month ? '?month=' + month : ''), { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(data){
-        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
 
         // Channel grid cells
         var dQtyEl = $('rep-pizza-direct-qty');
@@ -10959,7 +10959,7 @@
         } else {
           tbody.innerHTML = list.map(function(r){
             return '<tr>' +
-              '<td>' + escapeHtml(r.productName || '—') + '</td>' +
+              '<td>' + escapeHtml(r.productName || 'â€”') + '</td>' +
               '<td style="text-align:right;font-weight:600;">' + (r.qty || 0).toLocaleString() + '</td>' +
               '<td style="text-align:right;">' + fmt(r.revenue) + '</td>' +
               '</tr>';
@@ -10970,7 +10970,7 @@
   }
 
   // ================================================================
-  // Reports — Non-Pizza Items Summary
+  // Reports â€” Non-Pizza Items Summary
   // ================================================================
   // Cached data for the modal (populated by loadNonPizzaSummary)
   var _nonPizzaProducts = [];
@@ -10980,7 +10980,7 @@
     fetch(API_BASE + '/api/reports/non-pizza-summary' + (month ? '?month=' + month : ''), { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(data){
-        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
 
         // Cache for modal
         _nonPizzaProducts = data.topProducts || [];
@@ -11004,15 +11004,15 @@
 
   window.openNonPizzaModal = function() {
     const tbody = $('nonpizza-modal-tbody');
-    const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    const fmt   = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     if (tbody) {
       if (!_nonPizzaProducts.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No data — load the monthly report first</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No data â€” load the monthly report first</td></tr>';
       } else {
         tbody.innerHTML = _nonPizzaProducts.map(function(r, i){
           return '<tr>' +
             '<td style="text-align:center;color:var(--text-muted);font-weight:700;">' + (i + 1) + '</td>' +
-            '<td style="font-weight:600;">' + escapeHtml(r.productName || '—') + '</td>' +
+            '<td style="font-weight:600;">' + escapeHtml(r.productName || 'â€”') + '</td>' +
             '<td style="text-align:right;color:#F59E0B;">' + (r.directQty || 0).toLocaleString() + '</td>' +
             '<td style="text-align:right;color:#8B5CF6;">' + (r.ecomQty || 0).toLocaleString() + '</td>' +
             '<td style="text-align:right;font-weight:600;">' + (r.totalQty || 0).toLocaleString() + '</td>' +
@@ -11025,7 +11025,7 @@
   };
 
   // ================================================================
-  // Reports — Daily Order Summary (6-column table)
+  // Reports â€” Daily Order Summary (6-column table)
   // ================================================================
   function loadDailyOrderSummary() {
     const month = ($('rep-month-picker') || {}).value || '';
@@ -11034,7 +11034,7 @@
       .then(function(data){
         const days  = data.days || [];
         const tbody = $('rep-daily-tbody');
-        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt   = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
         if (!tbody) return;
         if (!days.length) {
           tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No orders this month</td></tr>';
@@ -11055,7 +11055,7 @@
   }
 
   // ================================================================
-  // Reports — Hot & Selling Items
+  // Reports â€” Hot & Selling Items
   // ================================================================
   function loadHotSelling() {
     const month = ($('rep-month-picker') || {}).value || '';
@@ -11064,7 +11064,7 @@
       .then(function(data){
         const list  = data.items || [];
         const tbody = $('rep-hot-selling-tbody');
-        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt   = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
         if (!tbody) return;
         if (!list.length) {
           tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No HOT/SELLING tagged items sold this month</td></tr>';
@@ -11073,7 +11073,7 @@
             const tagColor = r.sellingTag === 'HOT' ? '#EF4444' : '#10B981';
             return '<tr>' +
               '<td style="text-align:center;font-weight:700;color:var(--text-muted);">' + (r.rank || '') + '</td>' +
-              '<td style="font-weight:600;">' + escapeHtml(r.productName || '—') + '</td>' +
+              '<td style="font-weight:600;">' + escapeHtml(r.productName || 'â€”') + '</td>' +
               '<td><span style="background:' + tagColor + ';color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;">' + escapeHtml(r.sellingTag || '') + '</span></td>' +
               '<td style="text-align:right;font-weight:600;">' + (r.qty || 0).toLocaleString() + '</td>' +
               '<td style="text-align:right;">' + fmt(r.revenue) + '</td>' +
@@ -11085,7 +11085,7 @@
   }
 
   // ================================================================
-  // Reports — Delivery Fees
+  // Reports â€” Delivery Fees
   // ================================================================
   function loadDeliveryFees() {
     const month = ($('rep-month-picker') || {}).value || '';
@@ -11093,7 +11093,7 @@
       .then(function(res){ return res.json(); })
       .then(function(data){
         const totalEl = $('rep-delivery-fees-total');
-        const fmt     = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt     = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
         if (totalEl) totalEl.textContent = 'Total collected: ' + fmt(data.totalFees) + ' (' + (data.orderCount || 0) + ' orders)';
         const list  = data.orders || [];
         const tbody = $('rep-delivery-fees-tbody');
@@ -11104,7 +11104,7 @@
           tbody.innerHTML = list.map(function(r){
             return '<tr>' +
               '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(r.orderId || '') + '</td>' +
-              '<td>' + escapeHtml(r.customerName || '—') + '</td>' +
+              '<td>' + escapeHtml(r.customerName || 'â€”') + '</td>' +
               '<td>' + escapeHtml(r.source || '') + '</td>' +
               '<td>' + escapeHtml(formatDate(r.date)) + '</td>' +
               '<td style="text-align:right;color:var(--accent);font-weight:600;">' + fmt(r.deliveryFee) + '</td>' +
@@ -11117,7 +11117,7 @@
   }
 
   // ================================================================
-  // Reports — Expense Breakdown
+  // Reports â€” Expense Breakdown
   // ================================================================
   function loadExpenseBreakdown() {
     const month = ($('rep-month-picker') || {}).value || '';
@@ -11125,7 +11125,7 @@
       .then(function(res){ return res.json(); })
       .then(function(data){
         const grandEl = $('rep-expense-grand-total');
-        const fmt     = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt     = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
         if (grandEl) grandEl.textContent = 'Total: ' + fmt(data.grandTotal);
         const list  = data.breakdown || [];
         const tbody = $('rep-expense-tbody');
@@ -11135,7 +11135,7 @@
         } else {
           tbody.innerHTML = list.map(function(r){
             return '<tr>' +
-              '<td style="font-weight:600;">' + escapeHtml(r.description || '—') + '</td>' +
+              '<td style="font-weight:600;">' + escapeHtml(r.description || 'â€”') + '</td>' +
               '<td style="text-align:right;color:#EF4444;font-weight:600;">' + fmt(r.totalAmount) + '</td>' +
               '<td style="text-align:right;color:var(--text-muted);">' + (r.count || 0) + '</td>' +
               '<td style="text-align:right;color:var(--accent);">' + (r.pct || 0) + '%</td>' +
@@ -11147,7 +11147,7 @@
   }
 
   // ================================================================
-  // Reports — E-commerce Breakdown
+  // Reports â€” E-commerce Breakdown
   // ================================================================
   function loadEcommerceBreakdown() {
     const month = ($('rep-month-picker') || {}).value || '';
@@ -11158,14 +11158,14 @@
   }
 
   function renderEcommerceBreakdown(data) {
-    const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    const fmt = function(n){ return 'â‚±' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
     const platforms = data.platforms || [];
 
     setText('rep-ecom-orders',   Number(data.totalOrders||0).toLocaleString());
     setText('rep-ecom-revenue',  fmt(data.totalRevenue));
     setText('rep-ecom-avg',      fmt(data.avgOrder));
     setText('rep-ecom-platforms', String(platforms.length));
-    setText('rep-ecom-total-badge', 'Total: ' + fmt(data.totalRevenue) + ' · ' + platforms.length + ' platforms');
+    setText('rep-ecom-total-badge', 'Total: ' + fmt(data.totalRevenue) + ' Â· ' + platforms.length + ' platforms');
 
     // Platform comparison bars
     const barsEl = $('rep-ecom-platform-bars');
@@ -11179,7 +11179,7 @@
           + '<span style="display:flex;align-items:center;gap:6px;">'
           + '<span style="width:10px;height:10px;border-radius:2px;background:' + col + ';display:inline-block;"></span>'
           + '<strong>' + escapeHtml(p.platform) + '</strong></span>'
-          + '<span style="color:var(--text-muted);">' + (p.orderCount||0) + ' orders · <strong>' + fmt(p.revenue) + '</strong> · ' + pct + '%</span>'
+          + '<span style="color:var(--text-muted);">' + (p.orderCount||0) + ' orders Â· <strong>' + fmt(p.revenue) + '</strong> Â· ' + pct + '%</span>'
           + '</div>'
           + '<div style="background:var(--bg-secondary);border-radius:20px;height:6px;overflow:hidden;">'
           + '<div style="height:100%;border-radius:20px;background:' + col + ';width:' + p.percentage + '%;"></div>'
@@ -11190,18 +11190,18 @@
     // Per-platform detail with top products
     const detailEl = $('rep-ecom-platforms-detail');
     if (detailEl) {
-      const platEmoji    = { SHOPEE: '🛍️', TIKTOK: '🎵', LAZADA: '🛒' };
+      const platEmoji    = { SHOPEE: 'ðŸ›ï¸', TIKTOK: 'ðŸŽµ', LAZADA: 'ðŸ›’' };
       const platBadgeCls = {
         SHOPEE: 'background:#FFF0E6;color:#B55A00;',
         TIKTOK: 'background:#F0F0F0;color:#333;',
         LAZADA: 'background:#EAF0FF;color:#1A4A9E;'
       };
       detailEl.innerHTML = platforms.map(function(p) {
-        const emoji      = platEmoji[p.platform] || '🛒';
+        const emoji      = platEmoji[p.platform] || 'ðŸ›’';
         const badgeStyle = platBadgeCls[p.platform] || 'background:var(--bg-secondary);color:var(--text-primary);';
         const topRows    = (p.topProducts || []).map(function(t, i) {
           return '<tr><td>' + (i + 1) + '</td>'
-            + '<td style="font-weight:500;">' + escapeHtml(t.productName || '—') + '</td>'
+            + '<td style="font-weight:500;">' + escapeHtml(t.productName || 'â€”') + '</td>'
             + '<td style="text-align:right;">' + (t.qtySold || 0).toLocaleString() + ' pcs</td>'
             + '<td style="text-align:right;">' + fmt(t.revenue) + '</td></tr>';
         }).join('');
@@ -11237,12 +11237,12 @@
   }
 
   // ================================================================
-  // Order Ledger — view transaction history for one order
+  // Order Ledger â€” view transaction history for one order
   // ================================================================
   window.viewOrderLedger = function (orderId) {
     $('ledger-order-id-label').textContent = orderId;
-    $('order-ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
-    $('ledger-net').textContent = '—';
+    $('order-ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loadingâ€¦</td></tr>';
+    $('ledger-net').textContent = 'â€”';
     $('modal-order-ledger').classList.add('open');
 
     fetch(API_BASE + '/api/transactions/order/' + encodeURIComponent(orderId), { headers: authHeaders() })
@@ -11250,7 +11250,7 @@
       .then(function (txns) {
         if (!txns.length) {
           $('order-ledger-tbody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No transactions recorded for this order</td></tr>';
-          $('ledger-net').textContent = '₱0.00';
+          $('ledger-net').textContent = 'â‚±0.00';
           return;
         }
         const typeColor = { SALE:'#10B981', REFUND:'#EF4444', VOID:'#EF4444', RETURN:'#EF4444', ADJUSTMENT:'#F59E0B', DISCOUNT:'#F59E0B' };
@@ -11259,17 +11259,17 @@
           const amt = parseFloat(t.amount) || 0;
           net += amt;
           const color = typeColor[t.transactionType] || 'inherit';
-          const amtText = (amt < 0 ? '-₱' : '₱') + Math.abs(amt).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const amtText = (amt < 0 ? '-â‚±' : 'â‚±') + Math.abs(amt).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
           return '<tr>'
             + '<td><code style="font-size:11px;">' + escapeHtml(t.transactionCode) + '</code></td>'
             + '<td><span style="color:' + color + ';font-weight:600;font-size:12px;">' + escapeHtml(t.transactionType) + '</span></td>'
             + '<td style="text-align:right;color:' + color + ';font-weight:600;">' + amtText + '</td>'
-            + '<td>' + (t.effectiveDate ? formatDate(t.effectiveDate) : '—') + '</td>'
-            + '<td style="font-size:12px;color:var(--text-muted);">' + escapeHtml(t.notes || '—') + '</td>'
+            + '<td>' + (t.effectiveDate ? formatDate(t.effectiveDate) : 'â€”') + '</td>'
+            + '<td style="font-size:12px;color:var(--text-muted);">' + escapeHtml(t.notes || 'â€”') + '</td>'
             + '</tr>';
         }).join('');
         const netColor = net >= 0 ? '#10B981' : '#EF4444';
-        const netText  = (net < 0 ? '-₱' : '₱') + Math.abs(net).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const netText  = (net < 0 ? '-â‚±' : 'â‚±') + Math.abs(net).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         $('ledger-net').textContent  = netText;
         $('ledger-net').style.color  = netColor;
       })
@@ -11279,7 +11279,7 @@
   };
 
   // ================================================================
-  // Correct Recorded Item — standalone wrong-input failsafe.
+  // Correct Recorded Item â€” standalone wrong-input failsafe.
   // Order History only. No shared code with return/replacement/void.
   // All element IDs are ci-* and all functions are correctItem-scoped.
   // ================================================================
@@ -11290,7 +11290,7 @@
     $('ci-order-id').value          = orderId;
     $('ci-order-id-label').textContent = orderId;
     $('ci-order-item-id').value     = '';
-    $('ci-recorded-list').innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loading…</div>';
+    $('ci-recorded-list').innerHTML = '<div style="color:var(--text-muted);font-size:12px;">Loadingâ€¦</div>';
     $('ci-replacement-qty').value        = '';
     $('ci-replacement-unit-price').value = '';
     $('ci-warehouse').value         = 'wh1';
@@ -11308,7 +11308,7 @@
       prods = appState.cachedProducts;
     }
     var sel = $('ci-replacement-product');
-    sel.innerHTML = '<option value="">Select replacement product…</option>' +
+    sel.innerHTML = '<option value="">Select replacement productâ€¦</option>' +
       (prods || []).filter(function (p) { return !p.isComponent; })
         .slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); })
         .map(function (p) {
@@ -11337,8 +11337,8 @@
     var single = items.length === 1;
     $('ci-recorded-list').innerHTML = items.map(function (it) {
       var sub = it.subtotal != null ? it.subtotal : (it.quantity || 0) * Number(it.unitPrice || 0);
-      var line = (it.quantity || 0) + ' × ₱' + Number(it.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })
-        + ' = ₱' + Number(sub).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+      var line = (it.quantity || 0) + ' Ã— â‚±' + Number(it.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })
+        + ' = â‚±' + Number(sub).toLocaleString('en-PH', { minimumFractionDigits: 2 });
       return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-light,#e5e7eb);border-radius:6px;margin-bottom:6px;cursor:pointer;">'
         + '<input type="radio" name="ci-recorded-radio" value="' + it.id + '" ' + (single ? 'checked' : '') + ' onchange="onCorrectItemTargetChange()" />'
         + '<span style="flex:1;"><strong>' + escapeHtml(it.productName) + '</strong>'
@@ -11376,7 +11376,7 @@
     if (newQty <= 0 || newUnit <= 0) { prev.style.display = 'none'; return; }
     var newVal = newQty * newUnit;
     var delta = newVal - oldVal;
-    var f = function (v) { return '₱' + Number(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    var f = function (v) { return 'â‚±' + Number(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     prev.style.display = 'block';
     prev.innerHTML =
       '<div style="display:flex;justify-content:space-between;"><span>Recorded value</span><span>' + f(oldVal) + '</span></div>'
@@ -11422,8 +11422,8 @@
       if (!res.ok) { showToast('Correction failed: ' + (data.message || res.status), 'error'); if (btn) btn.disabled = false; return; }
       closeModal('modal-correct-item');
       var delta = Number(data.netAdjustment || 0);
-      var f = function (v) { return '₱' + Number(Math.abs(v)).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
-      showToast('Item corrected — net ' + (delta >= 0 ? '+' : '−') + f(delta) + ' posted to today', 'success');
+      var f = function (v) { return 'â‚±' + Number(Math.abs(v)).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
+      showToast('Item corrected â€” net ' + (delta >= 0 ? '+' : 'âˆ’') + f(delta) + ' posted to today', 'success');
       renderOrderHistory();
     } catch (err) {
       showToast('Error: ' + (err.message || err), 'error');
@@ -11433,7 +11433,7 @@
 
   // ================================================================
   // Order Detail View (Step 11)
-  // GET /api/orders/{id}  — cache-first, live fetch on miss
+  // GET /api/orders/{id}  â€” cache-first, live fetch on miss
   // ================================================================
 
   window.openOrderDetail = async function (orderId) {
@@ -11480,12 +11480,12 @@
 
     // --- Order info grid ---
     var infoHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:13px;margin-bottom:14px;">'
-      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Customer</div><div style="font-weight:600;">' + escapeHtml(order.customerName || '—') + '</div></div>'
+      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Customer</div><div style="font-weight:600;">' + escapeHtml(order.customerName || 'â€”') + '</div></div>'
       + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Status</div><div>' + orderStatusCell(order) + '</div></div>'
-      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Source</div><div>' + formatSource(order.source || '—') + '</div></div>'
-      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Payment</div><div>' + formatPaymentMode(order.paymentMode || '—') + '</div></div>'
-      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Order Type</div><div>' + escapeHtml(order.orderType || '—') + '</div></div>'
-      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Created by</div><div>' + escapeHtml(order.createdByName || '—') + '</div></div>';
+      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Source</div><div>' + formatSource(order.source || 'â€”') + '</div></div>'
+      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Payment</div><div>' + formatPaymentMode(order.paymentMode || 'â€”') + '</div></div>'
+      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Order Type</div><div>' + escapeHtml(order.orderType || 'â€”') + '</div></div>'
+      + '<div><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Created by</div><div>' + escapeHtml(order.createdByName || 'â€”') + '</div></div>';
     if (order.address) {
       infoHtml += '<div style="grid-column:1/-1;"><div style="color:var(--text-muted);font-size:11px;margin-bottom:2px;">Address</div><div>' + escapeHtml(order.address) + '</div></div>';
     }
@@ -11607,7 +11607,7 @@
         + ' style="padding:8px 0;border-bottom:1px solid var(--border);">'
         + '<div style="font-size:12px;font-weight:600;margin-bottom:6px;">'
         + escapeHtml(it.productName || '')
-        + ' <span style="color:var(--text-muted);font-weight:400;">× ' + effQty + ' ordered</span>'
+        + ' <span style="color:var(--text-muted);font-weight:400;">Ã— ' + effQty + ' ordered</span>'
         + '</div>'
         + '<div style="display:flex;gap:8px;align-items:center;">'
         +   '<div style="flex:1;">'
@@ -11661,7 +11661,7 @@
 
       anyReturning = true;
       if (sellable + rejected === total) {
-        indicator.textContent = '✓';
+        indicator.textContent = 'âœ“';
         indicator.style.color = '#10B981';
       } else {
         indicator.textContent = 'Must equal ' + total;
@@ -11703,7 +11703,7 @@
     if (!reason) { showToast('Reason is required', 'error'); return; }
     if (!secKey) { showToast('Admin security key is required', 'error'); return; }
 
-    // Build items array — only rows with totalReturned > 0 are included
+    // Build items array â€” only rows with totalReturned > 0 are included
     var items = [];
     var valid = true;
     document.querySelectorAll('.rtn-item-row').forEach(function(row) {
@@ -11745,9 +11745,9 @@
 
       closeModal('modal-return');
       var toastMsg = refundAmt
-        ? 'Return and ₱' + Number(refundAmt).toLocaleString('en-PH', { minimumFractionDigits: 2 }) + ' refund recorded for order ' + orderId
+        ? 'Return and â‚±' + Number(refundAmt).toLocaleString('en-PH', { minimumFractionDigits: 2 }) + ' refund recorded for order ' + orderId
         : 'Return recorded for order ' + orderId;
-      if (wantsReplacement) toastMsg += ' — create the replacement order from the order detail view';
+      if (wantsReplacement) toastMsg += ' â€” create the replacement order from the order detail view';
       showToast(toastMsg, 'success');
       renderOrderHistory();
     } catch (err) {
@@ -11777,7 +11777,7 @@
       var token = localStorage.getItem('rrbm_token');
       var user;
       try { user = JSON.parse(localStorage.getItem('rrbm_user') || 'null'); } catch (e) { user = null; }
-      if (!token || !user) return;   // not logged in — leave login screen visible
+      if (!token || !user) return;   // not logged in â€” leave login screen visible
 
       var av = $('sidebar-avatar'), un = $('sidebar-name'), ur = $('sidebar-role');
       if (av && user.profileImage) { av.innerHTML = '<img src="' + user.profileImage + '" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;" />'; }
@@ -11800,14 +11800,14 @@
     })();
 
     // ----------------------------------------------------------------
-    // Global Enter key handler — modals + login screen
+    // Global Enter key handler â€” modals + login screen
     // ----------------------------------------------------------------
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter') return;
       // Skip if the target is a textarea or button to avoid double-fire
       if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON') return;
 
-      // Per-modal action map — null means "click first primary/danger/warning btn"
+      // Per-modal action map â€” null means "click first primary/danger/warning btn"
       var actionMap = {
         'modal-addprod-key':    function () { verifyAddProductKey(); },
         'modal-close-daily':    null,
@@ -11840,7 +11840,7 @@
         }
       }
 
-      // Login screen — no modal open, login screen visible
+      // Login screen â€” no modal open, login screen visible
       var loginScreen = $('login-screen');
       if (loginScreen && loginScreen.style.display !== 'none') {
         e.preventDefault();
@@ -11850,13 +11850,13 @@
   });
 
   // ================================================================
-  // Agent Registry — list and performance modal
+  // Agent Registry â€” list and performance modal
   // ================================================================
 
   window.loadAgents = async function (queryParams) {
     var grid = $('agents-grid');
     if (!grid) return;
-    grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">Loading…</div>';
+    grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">Loadingâ€¦</div>';
     try {
       var url = API_BASE + '/api/agents' + (queryParams || '');
       var res = await fetch(url, { headers: authHeaders() });
@@ -11869,8 +11869,8 @@
       grid.innerHTML = agents.map(function (a) {
         var statusBg = a.status === 'ACTIVE' ? '#D1FAE5' : '#F3F4F6';
         var statusFg = a.status === 'ACTIVE' ? '#065F46' : '#6B7280';
-        var pending  = '₱' + Number(a.pendingCommission  || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        var lifetime = '₱' + Number(a.lifetimeNetCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        var pending  = 'â‚±' + Number(a.pendingCommission  || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        var lifetime = 'â‚±' + Number(a.lifetimeNetCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         return '<div class="agent-card" onclick="openAgentPanel(' + a.id + ')">' +
           '<div class="agent-card-top">' +
             '<span class="agent-card-code">' + escapeHtml(a.agentCode || '') + '</span>' +
@@ -11960,7 +11960,7 @@
     if (!panelBody) return;
 
     _currentAgentId = agentId;
-    panelBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</div>';
+    panelBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</div>';
     if (panelTitle) panelTitle.textContent = 'Agent Details';
 
     // Open overlay + panel
@@ -11992,8 +11992,8 @@
 
       var statusBg = a.status === 'ACTIVE' ? '#D1FAE5' : '#F3F4F6';
       var statusFg = a.status === 'ACTIVE' ? '#065F46' : '#6B7280';
-      var pending  = '₱' + Number(a.pendingCommission  || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      var lifetime = '₱' + Number(a.lifetimeNetCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      var pending  = 'â‚±' + Number(a.pendingCommission  || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      var lifetime = 'â‚±' + Number(a.lifetimeNetCommission || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
       var html =
         '<div class="slide-panel-info">' +
@@ -12012,7 +12012,7 @@
           '<button class="slide-panel-tab" onclick="switchAgentTab(\'commission\')">Commission</button>' +
         '</div>' +
         '<div id="agent-tab-content">' +
-          '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading orders…</div>' +
+          '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading ordersâ€¦</div>' +
         '</div>';
 
       panelBody.innerHTML = html;
@@ -12111,14 +12111,14 @@
         periodDropdown += '<optgroup label="' + year + '">';
         grouped[year].forEach(function (p) {
           var selected = (periodId && periodId == p.periodId) ? ' selected' : '';
-          periodDropdown += '<option value="' + p.periodId + '"' + selected + '>' + escapeHtml(p.periodCode || '') + ' (' + (p.startDate || '') + ' — ' + (p.endDate || '') + ')</option>';
+          periodDropdown += '<option value="' + p.periodId + '"' + selected + '>' + escapeHtml(p.periodCode || '') + ' (' + (p.startDate || '') + ' â€” ' + (p.endDate || '') + ')</option>';
         });
         periodDropdown += '</optgroup>';
       });
     }
     periodDropdown += '</select></div>';
 
-    content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading orders…</div>';
+    content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading ordersâ€¦</div>';
     try {
       var url = API_BASE + '/api/agents/' + agentId + '/orders' + (periodId ? '?periodId=' + periodId : '');
       var res = await fetch(url, { headers: authHeaders() });
@@ -12132,21 +12132,21 @@
         return;
       }
 
-      var html = periodDropdown + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">' + summary.totalOrders + ' orders — ₱' + Number(summary.totalRevenue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' revenue</div>';
+      var html = periodDropdown + '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">' + summary.totalOrders + ' orders â€” â‚±' + Number(summary.totalRevenue || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' revenue</div>';
       html += orders.map(function (o) {
         var items = (o.items || []).map(function (it) {
           return '<tr>' +
             '<td>' + escapeHtml(it.productName || '') + '</td>' +
             '<td style="text-align:center;">' + (it.quantity || 0) + '</td>' +
-            '<td style="text-align:right;">₱' + Number(it.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
-            '<td style="text-align:right;">₱' + Number(it.opPerUnit || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
-            '<td style="text-align:right;font-weight:600;">₱' + Number(it.opSubtotal || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
+            '<td style="text-align:right;">â‚±' + Number(it.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
+            '<td style="text-align:right;">â‚±' + Number(it.opPerUnit || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
+            '<td style="text-align:right;font-weight:600;">â‚±' + Number(it.opSubtotal || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
           '</tr>';
         }).join('');
         return '<div style="margin-bottom:12px;border:1px solid var(--border);border-radius:6px;overflow:hidden;">' +
           '<div style="padding:8px 12px;background:var(--bg-secondary);border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;justify-content:space-between;">' +
             '<span><i class="ti ti-receipt" style="margin-right:4px;"></i>#' + escapeHtml(o.orderId || '') +
-              (o.customer ? ' <span style="color:var(--text-muted);font-weight:400;">— ' + escapeHtml(o.customer) + '</span>' : '') + '</span>' +
+              (o.customer ? ' <span style="color:var(--text-muted);font-weight:400;">â€” ' + escapeHtml(o.customer) + '</span>' : '') + '</span>' +
             '<span style="color:var(--text-muted);font-weight:400;">' + (o.date || '') + '</span>' +
           '</div>' +
           '<div style="overflow-x:auto;"><table class="table" style="margin:0;">' +
@@ -12154,7 +12154,7 @@
             '<tbody>' + items + '</tbody>' +
           '</table></div>' +
           '<div style="padding:6px 12px;border-top:1px solid var(--border);font-size:12px;display:flex;justify-content:flex-end;gap:16px;background:var(--bg-secondary);">' +
-            '<span>Total OP: <strong>₱' + Number(o.totalOp || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</strong></span>' +
+            '<span>Total OP: <strong>â‚±' + Number(o.totalOp || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</strong></span>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -12190,7 +12190,7 @@
         periodDropdown += '<optgroup label="' + year + '">';
         grouped[year].forEach(function (p) {
           var selected = (periodId && periodId == p.periodId) ? ' selected' : '';
-          periodDropdown += '<option value="' + p.periodId + '"' + selected + '>' + escapeHtml(p.periodCode || '') + ' (' + (p.startDate || '') + ' — ' + (p.endDate || '') + ')</option>';
+          periodDropdown += '<option value="' + p.periodId + '"' + selected + '>' + escapeHtml(p.periodCode || '') + ' (' + (p.startDate || '') + ' â€” ' + (p.endDate || '') + ')</option>';
         });
         periodDropdown += '</optgroup>';
       });
@@ -12207,7 +12207,7 @@
       '</select></div>' +
       '</div>';
 
-    content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading commission data…</div>';
+    content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading commission dataâ€¦</div>';
     try {
       var res = await fetch(API_BASE + '/api/agents/' + agentId + '/performance', { headers: authHeaders() });
       if (!res.ok) { content.innerHTML = periodDropdown + '<div style="color:red;padding:16px;">Failed to load commission data.</div>'; return; }
@@ -12219,10 +12219,10 @@
         return;
       }
 
-      var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+      var fmt = function (n) { return 'â‚±' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
       var statusBadgeMini = function (s) {
         var m = { OPEN: 'background:#DBEAFE;color:#1E40AF;', CLOSED: 'background:#FEF3C7;color:#92400E;', RELEASED: 'background:#D1FAE5;color:#065F46;' };
-        return '<span style="padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;' + (m[s] || 'background:#F3F4F6;color:#6B7280;') + '">' + (s || '—') + '</span>';
+        return '<span style="padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;' + (m[s] || 'background:#F3F4F6;color:#6B7280;') + '">' + (s || 'â€”') + '</span>';
       };
       var filtered = periodId ? summary.filter(function (r) { return r.periodId == periodId; }) : summary;
       var rows = filtered.map(function (r) {
@@ -12254,12 +12254,12 @@
     }
   };
 
-  // ── Commission period management modal ───────────────────────────
+  // â”€â”€ Commission period management modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   window.openCommissionPeriodModal = async function () {
     var modalBody = $('commission-period-modal-body');
     if (!modalBody) return;
-    modalBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading periods…</div>';
+    modalBody.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading periodsâ€¦</div>';
     openModal('modal-commission-periods');
     await renderPeriodList(modalBody);
   };
@@ -12273,7 +12273,7 @@
 
       var statusBadge = function (s) {
         var map = { OPEN:'background:#DBEAFE;color:#1E40AF;', CLOSED:'background:#FEF3C7;color:#92400E;', RELEASED:'background:#D1FAE5;color:#065F46;' };
-        return '<span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;' + (map[s]||'background:#F3F4F6;color:#6B7280;') + '">' + (s||'—') + '</span>';
+        return '<span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;' + (map[s]||'background:#F3F4F6;color:#6B7280;') + '">' + (s||'â€”') + '</span>';
       };
 
       var rows = periods.length ? periods.map(function (p) {
@@ -12283,7 +12283,7 @@
           ? '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:3px 8px;" onclick="releasePeriod(' + p.id + ')"><i class="ti ti-affiliate"></i> Release</button>' : '';
         return '<tr>' +
           '<td><code style="font-size:11px;">' + escapeHtml(p.periodCode||'') + '</code></td>' +
-          '<td style="font-size:11px;">' + (p.startDate||'—') + ' — ' + (p.endDate||'—') + '</td>' +
+          '<td style="font-size:11px;">' + (p.startDate||'â€”') + ' â€” ' + (p.endDate||'â€”') + '</td>' +
           '<td>' + statusBadge(p.status) + '</td>' +
           '<td style="display:flex;gap:4px;">' + closeBtn + releaseBtn + '</td>' +
           '</tr>';
@@ -12342,7 +12342,7 @@
       if (!res.ok) { showToast(data.message || 'Failed to create period.', 'error'); return; }
       showToast('Period ' + (data.periodCode||'') + ' created.', 'success');
       if (data.backfill && data.backfill.ordersProcessed > 0) {
-        showToast('Backfilled ' + data.backfill.ordersProcessed + ' order(s) from ' + data.backfill.agentsProcessed + ' agent(s) — ' + data.backfill.entriesCreated + ' commission entries created.', 'info');
+        showToast('Backfilled ' + data.backfill.ordersProcessed + ' order(s) from ' + data.backfill.agentsProcessed + ' agent(s) â€” ' + data.backfill.entriesCreated + ' commission entries created.', 'info');
       }
       var container = $('commission-period-modal-body');
       if (container) renderPeriodList(container, false);
@@ -12417,7 +12417,7 @@
       if (fmt === 'pdf') {
         var html = await res.text();
         var w = window.open('', '_blank', 'width=900,height=700');
-        if (!w) { showToast('Pop-up blocked — allow pop-ups and try again', 'error'); return; }
+        if (!w) { showToast('Pop-up blocked â€” allow pop-ups and try again', 'error'); return; }
         w.document.open();
         w.document.write(html);
         w.document.close();
@@ -12491,19 +12491,514 @@
   };
 
   // ================================================================
-  // IMPORT — authorize → template → upload → preview → commit
+  // IMPORT â€” authorize â†’ template â†’ upload â†’ preview â†’ commit
   // ================================================================
 
-  var _importSessionToken = null;
-  var _importSecurityKey  = null;
-  var _importHistoryData  = [];
-  var _importUploadType   = 'sales'; // 'sales' | 'expenses'
-  var _importReviewData   = null;     // upload response data for review modal
+  var _importHistoryData  = [];   // import-history rows (used by loadImportHistory / openImportDetailModal)
+
+  // ================================================================
+  // Add Records (backdated entry) â€” replaces the CSV batch-import input.
+  // Stages orders + expenses client-side, then submits them together to
+  // POST /api/backdated/commit. Import History (below) is retained.
+  // ================================================================
+  var _addRecList = [];   // [{ kind, date, recordingOnly, summary, flags[], payload }]
+
+  window.initAddRecords = function () {
+    var today = new Date().toISOString().split('T')[0];
+    if ($('addrec-default-date') && !$('addrec-default-date').value) $('addrec-default-date').value = today;
+    if ($('addrec-exp-date')     && !$('addrec-exp-date').value)     $('addrec-exp-date').value = today;
+    if ($('addrec-ord-date')     && !$('addrec-ord-date').value)     $('addrec-ord-date').value = today;
+    // Load expense categories into the primary select (reuses the live cache + endpoint).
+    loadExpenseCategories().then(function (cats) {
+      var sel = $('addrec-exp-primary');
+      if (cats && sel && sel.options.length <= 1) {
+        (cats.primaries || []).forEach(function (p) {
+          var opt = document.createElement('option');
+          opt.value = p.code; opt.textContent = p.name;
+          sel.appendChild(opt);
+        });
+      }
+    });
+    // Order tab: ensure the product catalog is cached and seed one item row.
+    loadProducts();
+    if ($('addrec-ord-items') && !$('addrec-ord-items').children.length) addAddRecOrderItem();
+    switchAddRecTab('order');
+    renderAddRecList();
+    loadImportHistory();
+  };
+
+  window.switchAddRecTab = function (which) {
+    var isOrder = which === 'order';
+    if ($('addrec-tab-order'))      $('addrec-tab-order').style.display      = isOrder ? '' : 'none';
+    if ($('addrec-tab-expense'))    $('addrec-tab-expense').style.display    = isOrder ? 'none' : '';
+    if ($('addrec-tabbtn-order'))   $('addrec-tabbtn-order').className   = 'btn btn-sm ' + (isOrder ? 'btn-primary' : 'btn-secondary');
+    if ($('addrec-tabbtn-expense')) $('addrec-tabbtn-expense').className = 'btn btn-sm ' + (isOrder ? 'btn-secondary' : 'btn-primary');
+  };
+
+  window.onAddRecDefaultDateChange = function () {
+    var d = ($('addrec-default-date') || {}).value;
+    if (d && $('addrec-exp-date')) $('addrec-exp-date').value = d;
+    if (d && $('addrec-ord-date')) $('addrec-ord-date').value = d;
+  };
+
+  // Populate the sub-category select from the chosen primary (mirrors onExpensePrimaryChange).
+  window.onAddRecPrimaryChange = function (sel) {
+    var subSel = $('addrec-exp-sub');
+    if (!subSel || !_expCatData) return;
+    var prim = (_expCatData.primaries || []).find(function (p) { return p.code === (sel ? sel.value : ''); });
+    var subs = prim ? (prim.subcategories || []) : [];
+    subSel.innerHTML = '<option value="">Select sub-categoryâ€¦</option>';
+    subs.forEach(function (s) {
+      var opt = document.createElement('option');
+      opt.value = s.id; opt.textContent = s.name;
+      subSel.appendChild(opt);
+    });
+  };
+
+  function _addRecExpenseRowHtml() {
+    return '<div class="addrec-exp-item-row" style="display:grid;grid-template-columns:1fr 140px 36px;gap:8px;margin-bottom:8px;">'
+      + '<input type="text" class="form-control addrec-exp-item-desc" placeholder="Item description">'
+      + '<input type="number" class="form-control addrec-exp-item-amount" placeholder="Amount" min="0" step="0.01">'
+      + '<button class="btn btn-secondary btn-sm" onclick="removeAddRecExpenseRow(this)" title="Remove" style="padding:0 10px;">Ã—</button>'
+      + '</div>';
+  }
+
+  window.addAddRecExpenseRow = function () {
+    var wrap = $('addrec-exp-items');
+    if (!wrap) return;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = _addRecExpenseRowHtml();
+    wrap.appendChild(tmp.firstChild);
+  };
+
+  window.removeAddRecExpenseRow = function (btn) {
+    var rows = document.querySelectorAll('#addrec-exp-items .addrec-exp-item-row');
+    if (rows.length <= 1) { showToast('At least one item is required', 'error'); return; }
+    var row = btn.closest('.addrec-exp-item-row');
+    if (row) row.remove();
+  };
+
+  window.stageAddRecExpense = function () {
+    var date          = ($('addrec-exp-date') || {}).value || '';
+    var method        = ($('addrec-exp-payment-method') || {}).value || '';
+    var subId         = parseInt(($('addrec-exp-sub') || {}).value) || null;
+    var ref           = (($('addrec-exp-reference') || {}).value || '').trim();
+    var notes         = (($('addrec-exp-notes') || {}).value || '').trim();
+    var recordingOnly = !!(($('addrec-exp-recording-only') || {}).checked);
+
+    if (!date)   { showToast('Please select a date', 'error'); return; }
+    if (!method) { showToast('Please select a payment method', 'error'); return; }
+    if (!subId)  { showToast('Please select a category and sub-category', 'error'); return; }
+
+    var items = [], total = 0;
+    document.querySelectorAll('#addrec-exp-items .addrec-exp-item-row').forEach(function (row) {
+      var desc = (row.querySelector('.addrec-exp-item-desc') || {}).value || '';
+      var amt  = parseFloat((row.querySelector('.addrec-exp-item-amount') || {}).value) || 0;
+      if (desc.trim()) { items.push({ itemDescription: desc.trim(), amount: amt, categoryId: subId }); total += amt; }
+    });
+    if (!items.length) { showToast('Add at least one expense item', 'error'); return; }
+
+    var subSel = $('addrec-exp-sub');
+    var subName = (subSel && subSel.selectedIndex >= 0) ? subSel.options[subSel.selectedIndex].textContent : '';
+
+    _addRecList.push({
+      kind: 'expense',
+      date: date,
+      recordingOnly: recordingOnly,
+      summary: (subName ? subName + ' â€” ' : '') + items.length + ' item(s) Â· â‚±'
+               + total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      flags: [method, recordingOnly ? 'Recording-only' : null],
+      payload: { date: date, recordingOnly: recordingOnly, paymentMethod: method,
+                 notes: notes, referenceNumber: ref, items: items }
+    });
+    _resetAddRecExpenseForm();
+    renderAddRecList();
+    showToast('Expense added to list', 'success');
+  };
+
+  function _resetAddRecExpenseForm() {
+    // Keep date / payment method / category for fast repeated entry; clear the rest.
+    if ($('addrec-exp-reference')) $('addrec-exp-reference').value = '';
+    if ($('addrec-exp-notes')) $('addrec-exp-notes').value = '';
+    if ($('addrec-exp-recording-only')) $('addrec-exp-recording-only').checked = false;
+    if ($('addrec-exp-items')) $('addrec-exp-items').innerHTML = _addRecExpenseRowHtml();
+  }
+
+  // â”€â”€ Add Records â€” Order tab (mirrors the live New Order form / addOrder) â”€â”€â”€â”€â”€â”€
+  var _addRecOrderSeq = 0;
+  var _addRecAgents   = [];
+
+  window.onAddRecOrderSourceChange = function () {
+    var v = ($('addrec-ord-source') || {}).value;
+    if ($('addrec-ord-agent-wrap'))    $('addrec-ord-agent-wrap').style.display    = (v === 'AGENT') ? '' : 'none';
+    if ($('addrec-ord-reseller-wrap')) $('addrec-ord-reseller-wrap').style.display = (v === 'RESELLER' || v === 'DISTRIBUTOR') ? '' : 'none';
+    if ($('addrec-ord-fb-wrap'))       $('addrec-ord-fb-wrap').style.display       = (v === 'FACEBOOK_PAGE') ? '' : 'none';
+    if ($('addrec-ord-ecom-wrap'))     $('addrec-ord-ecom-wrap').style.display     = (v === 'ECOMMERCE') ? '' : 'none';
+    if ($('addrec-ord-ecomid-wrap'))   $('addrec-ord-ecomid-wrap').style.display   = (v === 'ECOMMERCE') ? '' : 'none';
+    if (v !== 'ECOMMERCE') {
+      if ($('addrec-ord-ecom-platform')) $('addrec-ord-ecom-platform').value = '';
+      if ($('addrec-ord-ecom-orderid'))  $('addrec-ord-ecom-orderid').value  = '';
+    }
+    if ($('addrec-ord-reseller-label')) $('addrec-ord-reseller-label').textContent = (v === 'DISTRIBUTOR') ? 'Distributor Name' : 'Reseller Name';
+    if (v === 'AGENT') _loadAddRecAgents();
+    // Show/hide per-item Over Price rows.
+    document.querySelectorAll('#addrec-ord-items .addrec-ord-op-row').forEach(function (r) {
+      r.style.display = (v === 'AGENT') ? '' : 'none';
+    });
+  };
+
+  async function _loadAddRecAgents() {
+    var input = $('addrec-ord-agent-input');
+    if (_addRecAgents.length) { _setupAddRecAgentAutocomplete(); return; }
+    if (input) input.placeholder = 'Loading agentsâ€¦';
+    try {
+      var res = await fetch(API_BASE + '/api/orders/agent-options', { headers: authHeaders() });
+      if (!res.ok) { if (input) input.placeholder = 'Failed to load agents'; return; }
+      _addRecAgents = await res.json();
+      if (input) input.placeholder = 'Type to search agentsâ€¦';
+      _setupAddRecAgentAutocomplete();
+    } catch (e) { if (input) input.placeholder = 'Failed to load agents'; }
+  }
+
+  function _setupAddRecAgentAutocomplete() {
+    var input = $('addrec-ord-agent-input'), dropdown = $('addrec-ord-agent-dropdown');
+    if (!input || !dropdown) return;
+    var fresh = input.cloneNode(true);
+    input.parentNode.replaceChild(fresh, input);
+    function show() {
+      var t = this.value.toLowerCase().trim();
+      _renderAddRecAgentDropdown(dropdown, t.length === 0 ? _addRecAgents : _addRecAgents.filter(function (a) {
+        return a.fullName.toLowerCase().includes(t) || a.agentCode.toLowerCase().includes(t);
+      }));
+    }
+    fresh.addEventListener('input', show);
+    fresh.addEventListener('focus', show);
+    document.addEventListener('click', function (e) {
+      if (!fresh.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show');
+    });
+  }
+
+  function _renderAddRecAgentDropdown(dropdown, agents) {
+    if (!dropdown) return;
+    if (!agents || !agents.length) {
+      dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No agents found</div>';
+      dropdown.classList.add('show'); return;
+    }
+    dropdown.innerHTML = agents.map(function (a) {
+      return '<div class="product-dropdown-item" data-id="' + a.id + '" data-name="' + escapeHtml(a.fullName) + '" data-code="' + escapeHtml(a.agentCode) + '">'
+        + '<strong>' + escapeHtml(a.fullName) + '</strong>'
+        + ' <span style="font-size:11px;color:var(--text-muted);">(' + escapeHtml(a.agentCode) + ')</span></div>';
+    }).join('');
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        if ($('addrec-ord-agent-input')) $('addrec-ord-agent-input').value = this.getAttribute('data-name') + ' (' + this.getAttribute('data-code') + ')';
+        if ($('addrec-ord-agent-id'))    $('addrec-ord-agent-id').value    = this.getAttribute('data-id');
+        dropdown.classList.remove('show');
+      });
+    });
+  }
+
+  window.addAddRecOrderItem = function () {
+    var wrap = $('addrec-ord-items'); if (!wrap) return;
+    var n = ++_addRecOrderSeq;
+    var isAgent = ($('addrec-ord-source') || {}).value === 'AGENT';
+    var html = '<div class="addrec-ord-item-row" data-num="' + n + '" style="border:1px solid var(--border-color);border-radius:6px;padding:10px;margin-bottom:8px;">'
+      + '<div style="display:grid;grid-template-columns:1fr 90px 120px 36px;gap:8px;align-items:end;">'
+      + '<div><label class="form-label" style="font-size:11px;">Product <span class="text-danger">*</span></label>'
+      +   '<div class="product-autocomplete-wrapper"><input type="text" class="form-control addrec-ord-prod-input" id="addrec-ord-prod-input-' + n + '" placeholder="Type to search productsâ€¦" autocomplete="off">'
+      +   '<input type="hidden" id="addrec-ord-prod-id-' + n + '" value=""><input type="hidden" id="addrec-ord-prod-wh-' + n + '" value="wh1">'
+      +   '<div class="product-dropdown" id="addrec-ord-prod-dropdown-' + n + '"></div>'
+      +   '<div id="addrec-ord-prod-status-' + n + '" style="display:none;font-size:11px;margin-top:3px;"></div></div></div>'
+      + '<div><label class="form-label" style="font-size:11px;">Qty <span class="text-danger">*</span></label><input type="number" class="form-control" id="addrec-ord-qty-' + n + '" min="1" value="1"></div>'
+      + '<div><label class="form-label" style="font-size:11px;">Unit Price (â‚±) <span class="text-danger">*</span></label><input type="number" class="form-control" id="addrec-ord-price-' + n + '" min="0" step="0.01" value="0"></div>'
+      + '<div><button class="btn btn-secondary btn-sm" onclick="removeAddRecOrderItem(' + n + ')" title="Remove" style="padding:0 10px;">Ã—</button></div>'
+      + '</div>'
+      + '<div class="addrec-ord-op-row" style="display:' + (isAgent ? '' : 'none') + ';grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
+      +   '<div><label class="form-label" style="font-size:11px;">Base Price/Unit (â‚±)</label><input type="number" class="form-control form-control-sm" id="addrec-ord-base-' + n + '" min="0" step="0.01" placeholder="Company price per unit"></div>'
+      +   '<div><label class="form-label" style="font-size:11px;">Over Price/Unit (â‚±)</label><input type="number" class="form-control form-control-sm" id="addrec-ord-op-' + n + '" min="0" step="0.01" placeholder="Commission per unit"></div>'
+      + '</div>'
+      + '</div>';
+    var tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    wrap.appendChild(tmp.firstChild);
+    // Keep grid display when shown (style attr above sets it to '' which falls back to block; force grid when agent)
+    var opRow = document.querySelector('#addrec-ord-items .addrec-ord-item-row[data-num="' + n + '"] .addrec-ord-op-row');
+    if (opRow && isAgent) opRow.style.display = 'grid';
+    _setupAddRecProductAutocomplete(n);
+  };
+
+  window.removeAddRecOrderItem = function (n) {
+    var rows = document.querySelectorAll('#addrec-ord-items .addrec-ord-item-row');
+    if (rows.length <= 1) { showToast('At least one item is required', 'error'); return; }
+    var row = document.querySelector('#addrec-ord-items .addrec-ord-item-row[data-num="' + n + '"]');
+    if (row) row.remove();
+  };
+
+  function _setupAddRecProductAutocomplete(n) {
+    var input = $('addrec-ord-prod-input-' + n), dropdown = $('addrec-ord-prod-dropdown-' + n);
+    if (!input || !dropdown) return;
+    function show() {
+      var t = this.value.toLowerCase().trim();
+      _renderAddRecProductDropdown(dropdown, t.length === 0 ? appState.cachedProducts : (appState.cachedProducts || []).filter(function (p) {
+        return p.name.toLowerCase().includes(t);
+      }), n);
+    }
+    input.addEventListener('input', show);
+    input.addEventListener('focus', show);
+    input.addEventListener('input', function () {
+      var pid = $('addrec-ord-prod-id-' + n); if (pid) pid.value = '';
+      var ps = $('addrec-ord-prod-status-' + n);
+      if (ps) { if (this.value.trim()) { ps.style.display = ''; ps.style.color = '#D97706'; ps.textContent = 'âš  Select from catalog'; } else { ps.style.display = 'none'; ps.textContent = ''; } }
+    });
+    document.addEventListener('click', function (e) { if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show'); });
+  }
+
+  function _renderAddRecProductDropdown(dropdown, products, n) {
+    products = (products || []).filter(function (p) { return !p.isComponent; });
+    if (!products.length) { dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>'; dropdown.classList.add('show'); return; }
+    dropdown.innerHTML = products.map(function (p) {
+      var wh1 = p.stockWh1 || 0, wh2 = p.stockWh2 || 0, wh3 = p.stockWh3 || 0, total = wh1 + wh2 + wh3;
+      var pw = 'wh1'; if (wh2 > wh1 && wh2 >= wh3) pw = 'wh2'; if (wh3 > wh1 && wh3 > wh2) pw = 'wh3';
+      if (p.isSet) pw = '';
+      var label = p.isSet ? ((p.setAvailableQty != null ? p.setAvailableQty : 0) + ' sets') : (total.toLocaleString() + ' pcs');
+      return '<div class="product-dropdown-item" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '" data-price="' + p.unitPrice + '" data-wh="' + pw + '">'
+        + '<div style="flex:1;"><div class="product-name">' + escapeHtml(p.name) + (p.isSet ? ' <span style="font-size:9px;font-weight:700;background:#D4860A;color:#fff;padding:1px 4px;border-radius:2px;">SET</span>' : '') + '</div></div>'
+        + '<div style="text-align:right;"><span class="product-price">â‚±' + parseFloat(p.unitPrice).toFixed(2) + '</span><br><span class="product-stock" style="font-size:10px;color:#888;">' + label + '</span></div></div>';
+    }).join('');
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        if ($('addrec-ord-prod-input-' + n)) $('addrec-ord-prod-input-' + n).value = this.getAttribute('data-name');
+        if ($('addrec-ord-prod-id-' + n))    $('addrec-ord-prod-id-' + n).value    = this.getAttribute('data-id');
+        if ($('addrec-ord-prod-wh-' + n))    $('addrec-ord-prod-wh-' + n).value    = this.getAttribute('data-wh');
+        if ($('addrec-ord-price-' + n))      $('addrec-ord-price-' + n).value      = parseFloat(this.getAttribute('data-price')).toFixed(2);
+        var ps = $('addrec-ord-prod-status-' + n); if (ps) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = 'âœ“ Catalog product'; }
+        dropdown.classList.remove('show');
+      });
+    });
+  }
+
+  window.stageAddRecOrder = function () {
+    var date          = ($('addrec-ord-date') || {}).value || '';
+    var customerName  = (($('addrec-ord-customer') || {}).value || '').trim();
+    var source        = ($('addrec-ord-source') || {}).value || '';
+    var paymentMode   = ($('addrec-ord-payment') || {}).value || '';
+    var paymentStatus = ($('addrec-ord-payment-status') || {}).value;   // PAID | UNPAID | '' (default/COD)
+    var orderType     = ($('addrec-ord-order-type') || {}).value || 'STANDARD';
+    var address       = (($('addrec-ord-address') || {}).value || '').trim();
+    var discount      = parseFloat(($('addrec-ord-discount') || {}).value) || 0;
+    var deliveryFee   = parseFloat(($('addrec-ord-delivery-fee') || {}).value) || 0;
+    var notes         = (($('addrec-ord-notes') || {}).value || '').trim();
+    var recordingOnly = !!(($('addrec-ord-recording-only') || {}).checked);
+    var agentId       = source === 'AGENT' ? (parseInt(($('addrec-ord-agent-id') || {}).value) || null) : null;
+
+    if (!date)         { showToast('Please select a date', 'error'); return; }
+    if (!customerName) { showToast('Please enter customer name', 'error'); return; }
+    if (!source)       { showToast('Please select order source', 'error'); return; }
+    if (!paymentMode)  { showToast('Please select payment mode', 'error'); return; }
+    if (source === 'AGENT' && !agentId) { showToast('Please select an agent', 'error'); return; }
+
+    var ecommercePlatform = null;
+    if (source === 'ECOMMERCE') {
+      ecommercePlatform = ($('addrec-ord-ecom-platform') || {}).value;
+      if (!ecommercePlatform) { showToast('Please select an e-commerce platform', 'error'); return; }
+      var ecomId = (($('addrec-ord-ecom-orderid') || {}).value || '').trim();
+      if (ecomId) notes = 'Order No: ' + ecomId + (notes ? ' | ' + notes : '');
+    }
+
+    var contactName = null;
+    if (source === 'RESELLER' || source === 'DISTRIBUTOR') contactName = (($('addrec-ord-reseller') || {}).value || '').trim();
+
+    var rows = document.querySelectorAll('#addrec-ord-items .addrec-ord-item-row');
+    if (!rows.length) { showToast('Please add at least one item', 'error'); return; }
+
+    var items = [], total = 0, hasError = false;
+    rows.forEach(function (row) {
+      if (hasError) return;
+      var n = row.getAttribute('data-num');
+      var productName = ($('addrec-ord-prod-input-' + n) || {}).value || '';
+      var productId   = ($('addrec-ord-prod-id-' + n) || {}).value || '';
+      var quantity    = parseInt(($('addrec-ord-qty-' + n) || {}).value) || 0;
+      var unitPrice   = parseFloat(($('addrec-ord-price-' + n) || {}).value) || 0;
+      var warehouse   = ($('addrec-ord-prod-wh-' + n) || {}).value || 'wh1';
+      if (!productName.trim()) { showToast('Please select a product for all items', 'error'); hasError = true; return; }
+      if (!productId)          { showToast('Select "' + productName + '" from the product catalog', 'error'); hasError = true; return; }
+      if (quantity <= 0)       { showToast('Quantity must be at least 1 for ' + productName, 'error'); hasError = true; return; }
+      if (unitPrice <= 0)      { showToast('Unit price must be greater than 0 for ' + productName, 'error'); hasError = true; return; }
+      var item = { productId: parseInt(productId), productName: productName.trim(), quantity: quantity, unitPrice: unitPrice, warehouse: warehouse };
+      if (source === 'AGENT') {
+        var bp = parseFloat(($('addrec-ord-base-' + n) || {}).value);
+        var op = parseFloat(($('addrec-ord-op-' + n) || {}).value);
+        if (!isNaN(bp) && bp > 0) item.basePrice = bp;
+        if (!isNaN(op) && op > 0) item.opPerUnit = op;
+      }
+      items.push(item);
+      total += quantity * unitPrice;
+    });
+    if (hasError) return;
+
+    var payload = {
+      date: date, recordingOnly: recordingOnly, paymentStatus: paymentStatus,
+      customerName: customerName, source: source,
+      agentId: agentId, agentName: contactName || null,
+      fbPage: source === 'FACEBOOK_PAGE' ? (($('addrec-ord-fb') || {}).value || '').trim() : null,
+      ecommercePlatform: ecommercePlatform,
+      paymentMode: paymentMode, orderType: orderType,
+      address: address || null,
+      discount: discount, deliveryFee: deliveryFee, notes: notes, items: items
+    };
+
+    var net = total - discount + deliveryFee;
+    var statusLabel = paymentStatus === 'UNPAID' ? 'Unpaid â†’ Collection' : (paymentStatus === 'PAID' ? 'Paid' : 'COD/Default');
+    _addRecList.push({
+      kind: 'order',
+      date: date,
+      recordingOnly: recordingOnly,
+      summary: customerName + ' â€” ' + items.length + ' item(s) Â· â‚±'
+               + net.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+               + ' Â· ' + source,
+      flags: [paymentMode, statusLabel, recordingOnly ? 'Recording-only' : null],
+      payload: payload
+    });
+    _resetAddRecOrderForm();
+    renderAddRecList();
+    showToast('Order added to list', 'success');
+  };
+
+  function _resetAddRecOrderForm() {
+    // Keep date + source (fast repeated entry for the same day); clear the rest.
+    ['addrec-ord-customer','addrec-ord-address','addrec-ord-notes','addrec-ord-fb',
+     'addrec-ord-reseller','addrec-ord-ecom-orderid','addrec-ord-agent-input','addrec-ord-agent-id']
+      .forEach(function (id) { if ($(id)) $(id).value = ''; });
+    if ($('addrec-ord-discount')) $('addrec-ord-discount').value = '0';
+    if ($('addrec-ord-delivery-fee')) $('addrec-ord-delivery-fee').value = '0';
+    if ($('addrec-ord-recording-only')) $('addrec-ord-recording-only').checked = false;
+    if ($('addrec-ord-ecom-platform')) $('addrec-ord-ecom-platform').value = '';
+    var wrap = $('addrec-ord-items');
+    if (wrap) { wrap.innerHTML = ''; _addRecOrderSeq = 0; addAddRecOrderItem(); }
+  }
+
+  window.removeAddRec = function (idx) {
+    _addRecList.splice(idx, 1);
+    renderAddRecList();
+  };
+
+  function renderAddRecList() {
+    var tb = $('addrec-list-tbody');
+    if (!tb) return;
+    if (!_addRecList.length) {
+      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:20px;">No records staged yet. Add an order or expense above.</td></tr>';
+    } else {
+      tb.innerHTML = _addRecList.map(function (r, i) {
+        var flags = (r.flags || []).filter(Boolean).map(function (f) {
+          return '<span style="display:inline-block;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:1px 8px;font-size:10.5px;margin-right:4px;">' + escapeHtml(f) + '</span>';
+        }).join('');
+        var typeBadge = r.kind === 'order'
+          ? '<span style="color:#10B981;font-weight:600;">Order</span>'
+          : '<span style="color:#0EA5E9;font-weight:600;">Expense</span>';
+        return '<tr>'
+          + '<td>' + escapeHtml(r.date) + '</td>'
+          + '<td>' + typeBadge + '</td>'
+          + '<td>' + escapeHtml(r.summary) + '</td>'
+          + '<td>' + flags + '</td>'
+          + '<td style="text-align:center;"><button class="btn btn-secondary btn-sm" onclick="removeAddRec(' + i + ')" title="Remove" style="padding:0 10px;">Ã—</button></td>'
+          + '</tr>';
+      }).join('');
+    }
+    if ($('addrec-count')) $('addrec-count').textContent = _addRecList.length;
+    if ($('addrec-submit-btn')) $('addrec-submit-btn').disabled = _addRecList.length === 0;
+  }
+
+  window.submitBackdated = async function () {
+    if (!_addRecList.length) return;
+    var key = ($('addrec-security-key') || {}).value || '';
+    if (!key.trim()) { showToast('Admin Security Key is required', 'error'); return; }
+
+    // Build arrays in list order so backend per-row error indices line up.
+    var orders   = _addRecList.filter(function (r) { return r.kind === 'order'; }).map(function (r) { return r.payload; });
+    var expenses = _addRecList.filter(function (r) { return r.kind === 'expense'; }).map(function (r) { return r.payload; });
+
+    var btn = $('addrec-submit-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Submittingâ€¦'; }
+    try {
+      var res = await fetch(API_BASE + '/api/backdated/commit', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ adminSecurityKey: key, orders: orders, expenses: expenses })
+      });
+      var data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (res.status === 403) { showToast('Invalid admin security key', 'error'); return; }
+      if (!res.ok) { showToast('Submit failed: ' + (data.error || res.status), 'error'); return; }
+
+      renderBackdatedResult(data);
+
+      // Drop committed rows; keep only rows the server flagged as errors so they can be fixed.
+      var errKeys = {};
+      (data.errors || []).forEach(function (e) { errKeys[e.type + ':' + e.index] = true; });
+      var oSeq = 0, eSeq = 0;
+      _addRecList = _addRecList.filter(function (r) {
+        return r.kind === 'order' ? !!errKeys['order:' + (oSeq++)] : !!errKeys['expense:' + (eSeq++)];
+      });
+      renderAddRecList();
+      loadImportHistory();
+      showToast('Committed ' + (data.committed || 0) + ' record(s)'
+                + ((data.errors && data.errors.length) ? ', ' + data.errors.length + ' error(s)' : ''),
+                (data.errors && data.errors.length) ? 'error' : 'success');
+    } catch (e) {
+      showToast('Connection error', 'error');
+    } finally {
+      if (btn) { btn.disabled = _addRecList.length === 0; btn.innerHTML = '<i class="ti ti-send"></i> Submit All'; }
+    }
+  };
+
+  function renderBackdatedResult(data) {
+    var card = $('addrec-result-card'), body = $('addrec-result-body');
+    if (!card || !body) return;
+    var orders = data.committedOrders || [], expenses = data.committedExpenses || [];
+    var collections = data.collections || [], errors = data.errors || [], amended = data.amendedReports || [];
+
+    var html = ''
+      + '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;">'
+      +   _addRecStat(orders.length, 'Orders', '#10B981')
+      +   _addRecStat(expenses.length, 'Expenses', '#0EA5E9')
+      +   _addRecStat(collections.length, 'To Collections', '#F59E0B')
+      +   _addRecStat(errors.length, 'Errors', errors.length ? '#DC2626' : '#6B7280')
+      + '</div>';
+
+    if (amended.length) {
+      html += '<div style="margin-bottom:12px;font-size:12.5px;">'
+        + '<i class="ti ti-history" style="color:#8B5CF6;"></i> <strong>Amended reports</strong> (recomputed closed days): '
+        + amended.map(function (d) { return '<span style="display:inline-block;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:1px 8px;margin:2px;">' + escapeHtml(d) + '</span>'; }).join('')
+        + '</div>';
+    }
+    if (collections.length) {
+      html += '<div style="margin-bottom:12px;font-size:12.5px;">'
+        + '<i class="ti ti-cash" style="color:#F59E0B;"></i> <strong>Recorded for collection</strong> (settle later on the Collections page): '
+        + collections.map(function (c) { return escapeHtml((c.customer || c.orderId) + ' (â‚±' + Number(c.total || 0).toLocaleString('en-PH') + ')'); }).join(', ')
+        + '</div>';
+    }
+    if (errors.length) {
+      html += '<div style="margin-top:10px;font-size:12.5px;color:#DC2626;font-weight:600;margin-bottom:6px;"><i class="ti ti-alert-triangle"></i> Errors â€” these rows were kept in the list so you can fix them:</div>'
+        + '<div class="table-scroll" style="max-height:180px;overflow-y:auto;"><table class="table" style="font-size:12px;"><thead><tr><th>Type</th><th>Row #</th><th>Reason</th></tr></thead><tbody>'
+        + errors.map(function (e) { return '<tr><td>' + escapeHtml(e.type) + '</td><td>' + (e.index + 1) + '</td><td>' + escapeHtml(e.reason || '') + '</td></tr>'; }).join('')
+        + '</tbody></table></div>';
+    }
+    body.innerHTML = html;
+    card.style.display = '';
+  }
+
+  function _addRecStat(n, label, color) {
+    return '<div style="padding:12px 16px;flex:1;min-width:120px;text-align:center;background:var(--bg-secondary);border-radius:var(--radius-sm);">'
+      + '<div style="font-size:24px;font-weight:700;color:' + color + ';">' + n + '</div>'
+      + '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + label + '</div></div>';
+  }
 
   window.loadImportHistory = async function () {
     var tb = $('import-history-tbody');
     if (!tb) return;
-    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</td></tr>';
     var token = localStorage.getItem('rrbm_token');
     if (!token) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Please login first</td></tr>'; return; }
     try {
@@ -12514,12 +13009,12 @@
       if (!rows.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:24px;">No import history yet</td></tr>'; return; }
       tb.innerHTML = rows.map(function (r, idx) {
         return '<tr>'
-          + '<td>' + (r.importDate || '—') + '</td>'
-          + '<td>' + escapeHtml(r.importedBy || '—') + '</td>'
+          + '<td>' + (r.importDate || 'â€”') + '</td>'
+          + '<td>' + escapeHtml(r.importedBy || 'â€”') + '</td>'
           + '<td style="text-align:right;">' + (r.ordersCount || 0) + '</td>'
           + '<td style="text-align:right;">' + (r.expensesCount || 0) + '</td>'
-          + '<td style="text-align:right;">₱' + Number(r.totalOrderValue || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
-          + '<td style="text-align:right;">₱' + Number(r.totalExpenseAmount || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
+          + '<td style="text-align:right;">â‚±' + Number(r.totalOrderValue || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
+          + '<td style="text-align:right;">â‚±' + Number(r.totalExpenseAmount || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
           + '<td style="text-align:center;"><button class="btn btn-secondary btn-sm" onclick="openImportDetailModal(' + idx + ')"><i class="ti ti-eye"></i> View</button></td>'
           + '</tr>';
       }).join('');
@@ -12533,19 +13028,19 @@
     if (!r) return;
     var bodyEl = $('import-detail-modal-body');
     if (!bodyEl) return;
-    var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); };
+    var fmt = function (n) { return 'â‚±' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); };
     bodyEl.innerHTML =
       '<div style="margin-bottom:16px;">' +
         '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Import Date</div>' +
-        '<div style="font-size:15px;font-weight:600;">' + escapeHtml(r.importDate || '—') + '</div>' +
+        '<div style="font-size:15px;font-weight:600;">' + escapeHtml(r.importDate || 'â€”') + '</div>' +
       '</div>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">' +
-        '<div class="card" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">Imported By</div><div style="font-weight:600;">' + escapeHtml(r.importedBy || '—') + '</div></div>' +
+        '<div class="card" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">Imported By</div><div style="font-weight:600;">' + escapeHtml(r.importedBy || 'â€”') + '</div></div>' +
         '<div class="card" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">Orders</div><div style="font-weight:600;">' + (r.ordersCount || 0) + '</div></div>' +
         '<div class="card" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">Expenses</div><div style="font-weight:600;">' + (r.expensesCount || 0) + '</div></div>' +
         '<div class="card" style="padding:12px;"><div style="font-size:11px;color:var(--text-muted);">Total Order Value</div><div style="font-weight:600;">' + fmt(r.totalOrderValue) + '</div></div>' +
       '</div>' +
-      '<div id="import-detail-lists"><div style="text-align:center;color:var(--text-muted);padding:16px;">Loading details…</div></div>';
+      '<div id="import-detail-lists"><div style="text-align:center;color:var(--text-muted);padding:16px;">Loading detailsâ€¦</div></div>';
     openModal('modal-import-detail');
     var token = localStorage.getItem('rrbm_token');
     if (!token || !r.importDate) { $('import-detail-lists').innerHTML = ''; return; }
@@ -12581,7 +13076,7 @@
           '</tr></thead><tbody>' +
           data.expenses.map(function (e) {
             var lateTag = e.lateImported
-              ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span>'
+              ? '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">âš  Late recorded</span>'
               : '';
             return '<tr>' +
               '<td>' + escapeHtml(e.date || '') + '</td>' +
@@ -12600,1433 +13095,6 @@
       $('import-detail-lists').innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Could not load batch details.</div>';
     }
   };
-
-  window.authorizeImport = async function () {
-    var keyEl = $('import-security-key');
-    var errEl = $('import-auth-error');
-    if (!keyEl || !keyEl.value.trim()) { if (errEl) { errEl.textContent = 'Security key is required.'; errEl.style.display = 'block'; } return; }
-    var token = localStorage.getItem('rrbm_token');
-    if (!token) return;
-    if (errEl) errEl.style.display = 'none';
-    try {
-      var res = await fetch(API_BASE + '/api/import/authorize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({ adminSecurityKey: keyEl.value.trim() })
-      });
-      if (res.ok) {
-        _importSecurityKey = keyEl.value.trim();
-        var stepsEl = $('import-steps-authorized');
-        if (stepsEl) stepsEl.style.display = 'block';
-        $('import-step-authorize').style.opacity = '0.5';
-        $('import-step-authorize').style.pointerEvents = 'none';
-      } else {
-        var body = await res.json().catch(function () { return {}; });
-        if (errEl) { errEl.textContent = body.error || body.message || 'Authorization failed.'; errEl.style.display = 'block'; }
-      }
-    } catch (e) {
-      if (errEl) { errEl.textContent = 'Connection error.'; errEl.style.display = 'block'; }
-    }
-  };
-
-  window.selectImportType = function (type) {
-    _importUploadType = type;
-    var salesBtn    = $('import-type-sales-btn');
-    var expensesBtn = $('import-type-expenses-btn');
-    if (salesBtn)    { salesBtn.className    = type === 'sales'    ? 'btn btn-primary btn-sm'   : 'btn btn-secondary btn-sm'; }
-    if (expensesBtn) { expensesBtn.className = type === 'expenses' ? 'btn btn-primary btn-sm'   : 'btn btn-secondary btn-sm'; }
-    // Reset preview when type changes
-    var previewEl = $('import-preview-section');
-    if (previewEl) previewEl.style.display = 'none';
-    _importSessionToken = null;
-  };
-
-  window.downloadCombinedTemplate = function () {
-    if (typeof XLSX === 'undefined') { showToast('Excel library not loaded yet. Please refresh the page.', 'error'); return; }
-    var wb = XLSX.utils.book_new();
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Sheet 1: Instructions (opens first in Excel)
-    // ═══════════════════════════════════════════════════════════════════════
-    var instr = [
-      ['RRBM DAILY IMPORT — COMBINED TEMPLATE'],
-      [''],
-      ['This file has two data sheets: Sales and Expenses. Fill in what you need, then upload this single file.'],
-      ['The system detects both sheets automatically.'],
-      [''],
-      ['━━━ SALES COLUMN GUIDE ━━━'],
-      ['Column','What to Enter','Rules & Tips'],
-      ['Date','The actual order date (not today)','Any format works: 2026-06-07, 6/7/2026, June 7 2026. Must be a real date.'],
-      ['Receipt#','Your manual receipt or order number','All rows with the same Receipt# become one order. Never leave blank.'],
-      ['Time','Time of the order (optional)','Format: HH:MM. Leave blank if unknown.'],
-      ['Customer','Customer full name (optional)','Leave blank for walk-in customers with no name on record.'],
-      ['Source','Order channel','Valid: WALK_IN · AGENT · ECOMMERCE · FACEBOOK_PAGE · RESELLER · DISTRIBUTOR. Leave blank to auto-detect.'],
-      ['Agent','Agent full registered name','Required when Source = AGENT. Must match exactly as registered.'],
-      ['Payment Method','How the customer paid','Required. Valid: CASH · BANK_TRANSFER · GCASH · PAYMAYA · COD. For COD, also fill Payment Status.'],
-      ['Platform','E-commerce platform','Required when Source = ECOMMERCE. Valid: SHOPEE · TIKTOK · LAZADA.'],
-      ['Product Code','6-char system product code (e.g. PPB006)','Use the PRODUCT CODE, not the supplier/item code. Must exist in the product catalog.'],
-      ['Qty','Number of units','Positive whole number only (e.g. 1, 2, 10). No decimals.'],
-      ['Unit Price','Price per unit','Decimal number only (e.g. 150.00). No symbol, no commas.'],
-      ['Base Price','Company price per unit (AGENT orders only)','For AGENT orders only. The business price before agent overprice. Leave blank for non-agent orders.'],
-      ['OP per Unit','Over price per unit — agent commission','For AGENT orders only. Commission = OP per Unit × Qty. Leave blank for non-agent orders.'],
-      ['Payment Status','PAID or UNPAID (COD only)','Leave blank for non-COD orders. PAID → active + commission. UNPAID → collections queue.'],
-      [''],
-      ['━━━ EXPENSES COLUMN GUIDE ━━━'],
-      ['Column','What to Enter','Rules & Tips'],
-      ['Date','The date the expense was incurred','Any format works. Must be a real date.'],
-      ['Category','Category code or plain keyword','Use a code (e.g. UTILITY) or plain words like "gas", "water", "rent" — auto-detected.'],
-      ['Sub-Category','Sub-category name (optional)','Must match exactly as listed in the system if filled.'],
-      ['Amount','Expense amount','Numbers only — no symbol, no commas.'],
-      ['Notes','Short description (optional)','Free text.'],
-      ['Payment Method','How the expense was paid','Required. Valid: CASH · BANK_TRANSFER · GCASH · PAYMAYA · COD.'],
-      ['Reference','OR / receipt number (optional)','Used for duplicate detection.'],
-      [''],
-      ['BEFORE YOU START'],
-      ['✔ Keep the file as .xlsx — do not save as .csv or any other format.'],
-      ['✔ Do NOT edit or remove the header rows in the Sales or Expenses sheets.'],
-      ['✔ DELETE the example rows before uploading your real data.'],
-      ['✘ Do not merge cells, add extra columns, or change column order.'],
-      ['✘ Do not use formulas in cells — enter plain values only.'],
-      ['✘ Do not use supplier item codes — only product codes from the system catalog.'],
-    ];
-    var instrWs = XLSX.utils.aoa_to_sheet(instr);
-    instrWs['!ref'] = 'A1:C' + instr.length;
-    XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Sheet 2: Sales data
-    // ═══════════════════════════════════════════════════════════════════════
-    var sHeaders = ['Date','Receipt#','Time','Customer','Source','Agent','Payment Method','Platform','Product Code','Qty','Unit Price','Base Price','OP per Unit','Payment Status'];
-    var sEx1a = ['2026-06-07','R001','09:00','Juan de la Cruz','WALK_IN','','CASH','','PPB006','2','150.00','','',''];
-    var sEx1b = ['2026-06-07','R001','','','','','','','PPB007','1','200.00','','',''];
-    var sEx2  = ['2026-06-07','R002','10:30','Maria Santos','AGENT','Agent Name Here','COD','','PPB006','3','150.00','100.00','50.00','UNPAID'];
-    var sEx3  = ['2026-06-07','R003','11:00','','ECOMMERCE','','BANK_TRANSFER','SHOPEE','PPB007','1','200.00','','',''];
-    var sEx4  = ['2026-06-07','R004','12:00','Pedro Reyes','WALK_IN','','CASH','','PPB006','2','150.00','','','PAID'];
-    var sEx5  = ['2026-06-07','R005','12:30','Ana Cruz','AGENT','Another Agent','COD','','PPB007','4','200.00','','',''];
-    var sData = [sHeaders, sEx1a, sEx1b, sEx2, sEx3, sEx4, sEx5];
-    var salesWs = XLSX.utils.aoa_to_sheet(sData);
-    salesWs['!ref'] = 'A1:N' + sData.length;
-    XLSX.utils.book_append_sheet(wb, salesWs, 'Sales');
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Sheet 3: Expenses data
-    // ═══════════════════════════════════════════════════════════════════════
-    var eHeaders = ['Date','Category','Sub-Category','Amount','Notes','Payment Method','Reference'];
-    var eEx1 = ['2026-06-07','UTILITY','Water Utility Bill','850.00','June water bill','CASH',''];
-    var eEx2 = ['2026-06-07','gas','','500.00','Fuel for delivery van','CASH',''];
-    var eEx3 = ['2026-06-07','OPERATIONS','Shipping Fee','1200.00','','BANK_TRANSFER','REF-2026-001'];
-    var eData = [eHeaders, eEx1, eEx2, eEx3];
-    var expWs = XLSX.utils.aoa_to_sheet(eData);
-    expWs['!ref'] = 'A1:G' + eData.length;
-    XLSX.utils.book_append_sheet(wb, expWs, 'Expenses');
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Sheet 4: Sales Reference
-    // ═══════════════════════════════════════════════════════════════════════
-    var sRef = [
-      ['SALES — Column Reference'],
-      ['Column','Valid Values','Notes'],
-      ['Date','Any common date format','YYYY-MM-DD, M/D/YYYY, etc.'],
-      ['Receipt#','Any text','Rows with same Receipt# grouped into one order'],
-      ['Time','HH:MM or blank','Optional'],
-      ['Customer','Any text','Optional'],
-      ['Source','WALK_IN · AGENT · ECOMMERCE · FACEBOOK_PAGE · RESELLER · DISTRIBUTOR','Leave blank to auto-detect from Agent column'],
-      ['Agent','Agent full name or blank','Required only when Source = AGENT'],
-      ['Payment Method','CASH · BANK_TRANSFER · GCASH · PAYMAYA · COD','Required'],
-      ['Platform','SHOPEE · TIKTOK · LAZADA','Required only when Source = ECOMMERCE'],
-      ['Product Code','6-char code e.g. PPB006','Must exist in the product catalog'],
-      ['Qty','Positive integer','e.g. 1, 2, 10'],
-      ['Unit Price','Decimal number','e.g. 150.00 — what the customer pays'],
-      ['Base Price','Decimal number','e.g. 100.00 — company price before agent overprice; AGENT orders only'],
-      ['OP per Unit','Decimal or blank','e.g. 50.00 — agent commission per unit; AGENT orders only. Commission = OP per Unit × Qty'],
-      ['Payment Status','PAID · UNPAID · blank','For COD only. PAID → active. UNPAID → collections.'],
-      [''],
-      ['EXPENSES — Column Reference'],
-      ['Column','Valid Values','Notes'],
-      ['Date','Any common date format','YYYY-MM-DD, M/D/YYYY, etc.'],
-      ['Category','Code or plain text','UTILITY / OPERATIONS / FACILITY / INVENTORY / PERSONNEL / SUPPLY / SERVICES / MISC — or plain words like "gas", "water", "rent"'],
-      ['Sub-Category','Sub-category name or blank','Must match exactly if filled'],
-      ['Amount','Decimal number','e.g. 1200.00 — numbers only, no symbol'],
-      ['Notes','Free text','Optional'],
-      ['Payment Method','CASH · BANK_TRANSFER · GCASH · PAYMAYA · COD','Required'],
-      ['Reference','OR / receipt number','Used for duplicate detection'],
-      [''],
-      ['EXPENSE — Natural Language Keywords'],
-      ['Keyword','Maps To Category','Sub-category'],
-      ['gas / fuel / petrol','OPERATIONS','Gas Allowance / Fuel Reimbursement'],
-      ['water','UTILITY','Water Utility Bill'],
-      ['electric / meralco','UTILITY','Electric Bill'],
-      ['internet / wifi / pldt / converge','UTILITY','Internet Bill (ISP)'],
-      ['rent / lease','FACILITY','Monthly Office Rent'],
-      ['maintenance / repair','FACILITY','Building Maintenance'],
-      ['salary / wage','PERSONNEL','Employee Salary'],
-      ['food / meal','PERSONNEL','Daily Food Expense'],
-      ['delivery','OPERATIONS','Delivery Budget'],
-      ['packaging / tape','INVENTORY','Packaging Tapes'],
-      ['box / carton','INVENTORY','Boxes/Cartons'],
-      ['supplies','SUPPLY','Office Supplies'],
-    ];
-    var sRefWs = XLSX.utils.aoa_to_sheet(sRef);
-    sRefWs['!ref'] = 'A1:C' + sRef.length;
-    XLSX.utils.book_append_sheet(wb, sRefWs, 'Reference');
-
-    XLSX.writeFile(wb, 'rrbm_import_template.xlsx');
-  };
-
-  window.uploadImportCsv = function () {
-    var fileEl = $('import-file-input');
-    var errEl  = $('import-upload-error');
-    if (!fileEl || !fileEl.files.length) {
-      if (errEl) { errEl.textContent = 'Please select an Excel file (.xlsx).'; errEl.style.display = 'block'; }
-      return;
-    }
-    if (typeof XLSX === 'undefined') {
-      if (errEl) { errEl.textContent = 'Excel library not loaded. Please refresh the page.'; errEl.style.display = 'block'; }
-      return;
-    }
-    if (errEl) errEl.style.display = 'none';
-    var token = localStorage.getItem('rrbm_token');
-    if (!token) return;
-
-    var file     = fileEl.files[0];
-    var endpoint = API_BASE + '/api/import/upload/sales';
-
-    var reader = new FileReader();
-    reader.onerror = function () {
-      if (errEl) { errEl.textContent = 'Failed to read file.'; errEl.style.display = 'block'; }
-    };
-    reader.onload = async function (e) {
-      try {
-        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
-
-        // ── Detect dual-sheet (Sales + Expenses) vs single-sheet ──
-        var sheetNames = wb.SheetNames.filter(function (n) {
-          var lower = n.toLowerCase();
-          return lower !== 'instructions' && lower !== 'reference';
-        });
-
-        var hasSalesSheet    = sheetNames.some(function (n) { return n.toLowerCase() === 'sales'; });
-        var hasExpensesSheet = sheetNames.some(function (n) { return n.toLowerCase() === 'expenses'; });
-
-        if (hasSalesSheet && hasExpensesSheet) {
-          // ── Dual-sheet: send to /upload/combined ──
-          var salesSheetName = sheetNames.find(function (n) { return n.toLowerCase() === 'sales'; });
-          var expSheetName   = sheetNames.find(function (n) { return n.toLowerCase() === 'expenses'; });
-
-          var salesRows    = rowsFromSheet(wb.Sheets[salesSheetName]);
-          var expensesRows = rowsFromSheet(wb.Sheets[expSheetName]);
-
-          if (salesRows.length < 2) {
-            if (errEl) { errEl.textContent = 'Sales sheet appears empty — no data rows found after the header.'; errEl.style.display = 'block'; }
-            return;
-          }
-          if (expensesRows.length < 2) {
-            if (errEl) { errEl.textContent = 'Expenses sheet appears empty — no data rows found after the header.'; errEl.style.display = 'block'; }
-            return;
-          }
-
-          var salesCsv    = rowsToCsv(salesRows);
-          var expensesCsv = rowsToCsv(expensesRows);
-
-          var fd = new FormData();
-          fd.append('salesFile',    new Blob([salesCsv],    { type: 'text/csv;charset=utf-8' }), 'sales.csv');
-          fd.append('expensesFile', new Blob([expensesCsv], { type: 'text/csv;charset=utf-8' }), 'expenses.csv');
-          fd.append('adminSecurityKey', _importSecurityKey || '');
-
-          var combinedEndpoint = API_BASE + '/api/import/upload/combined';
-          var res = await fetch(combinedEndpoint, { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
-          if (!res.ok) {
-            var body = await res.json().catch(function () { return {}; });
-            if (errEl) { errEl.textContent = body.error || body.message || 'Upload failed.'; errEl.style.display = 'block'; }
-            return;
-          }
-          var data = await res.json();
-          _importSessionToken = data.sessionToken;
-          renderImportPreview(data, 'combined');
-          var previewEl = $('import-preview-section');
-          if (previewEl) previewEl.style.display = 'block';
-          var issuesEl = $('import-issues-section');
-          if (issuesEl) issuesEl.style.display = 'none';
-          var commitBtn = document.getElementById('import-commit-btn');
-          if (commitBtn) commitBtn.disabled = true;
-          validateImport();
-        } else {
-          // ── Single-sheet: existing behavior based on upload type ──
-          var ws = wb.Sheets[wb.SheetNames[0]];
-          var rows = rowsFromSheet(ws);
-
-          if (rows.length < 2) {
-            if (errEl) { errEl.textContent = 'File appears empty — no data rows found after the header.'; errEl.style.display = 'block'; }
-            return;
-          }
-
-          var csvStr = rowsToCsv(rows);
-          endpoint = _importUploadType === 'expenses'
-            ? API_BASE + '/api/import/upload/expenses'
-            : API_BASE + '/api/import/upload/sales';
-
-          var fd = new FormData();
-          fd.append('file', new Blob([csvStr], { type: 'text/csv;charset=utf-8' }), 'upload.csv');
-          fd.append('adminSecurityKey', _importSecurityKey || '');
-
-          var res = await fetch(endpoint, { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
-          if (!res.ok) {
-            var body = await res.json().catch(function () { return {}; });
-            if (errEl) { errEl.textContent = body.error || body.message || 'Upload failed.'; errEl.style.display = 'block'; }
-            return;
-          }
-          var data = await res.json();
-          _importSessionToken = data.sessionToken;
-          renderImportPreview(data, _importUploadType);
-          var previewEl = $('import-preview-section');
-          if (previewEl) previewEl.style.display = 'block';
-          var issuesEl = $('import-issues-section');
-          if (issuesEl) issuesEl.style.display = 'none';
-          var commitBtn = document.getElementById('import-commit-btn');
-          if (commitBtn) commitBtn.disabled = true;
-          validateImport();
-        }
-      } catch (err) {
-        if (errEl) { errEl.textContent = 'Error reading Excel file: ' + err.message; errEl.style.display = 'block'; }
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  /** Extract rows from a SheetJS worksheet, dropping empty rows. */
-  function rowsFromSheet(ws) {
-    var rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, dateNF: 'yyyy-mm-dd' });
-    return rows.filter(function (row) {
-      return Array.isArray(row) && row.some(function (c) { return c != null && c.toString().trim() !== ''; });
-    });
-  }
-
-  /** Convert rows array (array of arrays) to CSV string with proper quoting. */
-  function rowsToCsv(rows) {
-    return rows.map(function (row) {
-      return row.map(function (cell) {
-        var s = (cell == null) ? '' : cell.toString();
-        if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) {
-          s = '"' + s.replace(/"/g, '""') + '"';
-        }
-        return s;
-      }).join(',');
-    }).join('\r\n');
-  }
-
-  function renderImportPreview(data, uploadType) {
-    var valid    = data.valid       || [];
-    var needsFix = data.needsFix    || [];
-    var dups     = data.duplicates  || [];
-    var summary  = data.summary     || {};
-
-    _importReviewData = data;
-    _importReviewData._uploadType = uploadType;
-
-    var orderCount   = 0;
-    var expenseCount = 0;
-    valid.forEach(function (r) {
-      if (r.type === 'expense' || uploadType === 'expenses') expenseCount++;
-      else orderCount++;
-    });
-
-    $('import-preview-order-count').textContent   = orderCount;
-    $('import-preview-expense-count').textContent  = expenseCount;
-    $('import-preview-fix-count').textContent      = summary.needsFixCount  !== undefined ? summary.needsFixCount  : needsFix.length;
-    $('import-preview-dup-count').textContent      = summary.duplicateCount !== undefined ? summary.duplicateCount : dups.length;
-
-    // ── Warn if any COD order is missing Payment Status ────────────────
-    var codMissingPs = valid.filter(function (r) {
-      return r.paymentMethod === 'COD' && (!r.paymentStatus || r.paymentStatus === '');
-    });
-    var warningEl = $('import-ps-warning');
-    if (codMissingPs.length > 0) {
-      var summaryHtml = codMissingPs.length === 1
-        ? '1 COD order is missing a Payment Status.'
-        : codMissingPs.length + ' COD orders are missing a Payment Status.';
-      var rowsHtml = codMissingPs.map(function (r) {
-        return '<div style="font-size:11px;padding:2px 0;">· ' + escapeHtml(r.receiptNum || '—') + ' — ' + escapeHtml(r.customer || 'unknown') + '</div>';
-      }).join('');
-      if (warningEl) {
-        warningEl.innerHTML = '<i class="ti ti-alert-triangle"></i> ' + summaryHtml
-          + ' These will default to <strong>PAID (ACTIVE)</strong> and will <strong>NOT</strong> appear in Collections.'
-          + ' Set the Payment Status column to <strong>UNPAID</strong> for COD cash-on-delivery orders.'
-          + rowsHtml;
-        warningEl.style.display = 'block';
-      }
-    } else {
-      if (warningEl) { warningEl.innerHTML = ''; warningEl.style.display = 'none'; }
-    }
-
-    // ── Needs Fix table ────────────────────────────────────────────────
-    function issueRowHtml(r) {
-      var ref = r.receiptNum || r.referenceNumber || '—';
-      var issues = Array.isArray(r.errors) ? r.errors.join('; ') : (r.reason || '');
-      return '<tr>'
-        + '<td><code style="font-size:11px;">' + escapeHtml(ref) + '</code></td>'
-        + '<td>' + escapeHtml(r.date || (r.rowIndex ? 'Row ' + r.rowIndex : '—')) + '</td>'
-        + '<td colspan="2" style="font-size:11px;color:#EF4444;white-space:normal;">' + escapeHtml(issues) + '</td>'
-        + '</tr>';
-    }
-
-    var ftb = $('import-fix-tbody');
-    ftb.innerHTML = needsFix.length
-      ? needsFix.map(issueRowHtml).join('')
-      : '<tr><td colspan="4" style="color:#999;text-align:center;">None</td></tr>';
-
-    // ── Duplicates table ───────────────────────────────────────────────
-    var dtb = $('import-dup-tbody');
-    dtb.innerHTML = dups.length
-      ? dups.map(issueRowHtml).join('')
-      : '<tr><td colspan="4" style="color:#999;text-align:center;">None</td></tr>';
-
-    // ── Enable the review button ───────────────────────────────────────
-    var reviewBtn = document.querySelector('#import-preview-section .btn-primary[onclick*="openReviewModal"]');
-    if (reviewBtn) {
-      reviewBtn.disabled = valid.length === 0;
-    }
-  }
-
-  // ── Review Modal ────────────────────────────────────────────────────
-
-  var _reviewPage  = 1;
-  var _reviewPerPage = 10;
-  var _reviewOverrides = { orders: {}, expenses: {} };
-  var _reviewGreenItems = []; // [{ key, green }] flat list for green gate
-
-  // ── Override helpers ──────────────────────────────────────────────────
-
-  function _getOrderOv(receiptNum) {
-    if (!_reviewOverrides.orders[receiptNum]) {
-      _reviewOverrides.orders[receiptNum] = { include: true, items: {} };
-    }
-    return _reviewOverrides.orders[receiptNum];
-  }
-
-  function _getItemOv(receiptNum, rowIndex, createIfMissing) {
-    var ov = _getOrderOv(receiptNum);
-    if (!ov.items[rowIndex]) {
-      if (createIfMissing !== false) ov.items[rowIndex] = {};
-      else return undefined;
-    }
-    return ov.items[rowIndex];
-  }
-
-  function _getExpenseOv(refNum) {
-    if (!_reviewOverrides.expenses[refNum]) {
-      _reviewOverrides.expenses[refNum] = { include: true };
-    }
-    return _reviewOverrides.expenses[refNum];
-  }
-
-  function _setOrderField(receiptNum, field, value) {
-    var ov = _getOrderOv(receiptNum);
-    ov[field] = value;
-  }
-
-  function _setExpenseField(refNum, field, value) {
-    var ov = _getExpenseOv(refNum);
-    ov[field] = value;
-  }
-
-  // ── Green gate ───────────────────────────────────────────────────────
-
-  function _recalcGreenGate() {
-    var allGreen = true;
-    var total = 0;
-    var green = 0;
-    _reviewGreenItems.forEach(function (ri) {
-      if (!ri._include) return;
-      total++;
-      if (ri._green) green++;
-      else allGreen = false;
-    });
-    if (total === 0) {
-      allGreen = false;
-    }
-    _updateGreenGateUI(allGreen, green, total);
-  }
-
-  function _updateGreenGateUI(allGreen, green, total) {
-    var bar = $('review-green-bar');
-    var text = $('review-green-text');
-    var commitBtn = $('review-commit-btn');
-    if (!bar || !text || !commitBtn) return;
-    if (total === 0) {
-      bar.style.background = '#FEF3C7';
-      bar.style.borderBottomColor = '#F59E0B';
-      bar.style.color = '#92400E';
-      text.textContent = 'All items excluded — nothing to commit';
-      commitBtn.disabled = true;
-      return;
-    }
-    if (allGreen) {
-      bar.style.background = '#D1FAE5';
-      bar.style.borderBottomColor = '#6EE7B7';
-      bar.style.color = '#065F46';
-      text.innerHTML = '<i class="ti ti-circle-check"></i> All items verified \u2014 ready to commit';
-      commitBtn.disabled = false;
-    } else {
-      var needs = total - green;
-      bar.style.background = '#FEF3C7';
-      bar.style.borderBottomColor = '#F59E0B';
-      bar.style.color = '#92400E';
-      text.innerHTML = '<i class="ti ti-alert-triangle"></i> ' + needs + ' item(s) need product/category match';
-      commitBtn.disabled = true;
-    }
-  }
-
-  // ── Open review modal ────────────────────────────────────────────────
-
-  window.openReviewModal = function () {
-    var data = _importReviewData;
-    if (!data) { showToast('No data to review. Please upload a file first.', 'error'); return; }
-    var valid = data.valid || [];
-    if (!valid.length) { showToast('No valid items to review.', 'error'); return; }
-
-    _reviewPage = 1;
-    _reviewOverrides = { orders: {}, expenses: {} };
-    _reviewGreenItems = [];
-
-    var isExpenseUpload = (data._uploadType === 'expenses');
-
-    valid.forEach(function (item) {
-      var isExpense = isExpenseUpload || item.type === 'expense';
-      if (isExpense) {
-        _reviewGreenItems.push({
-          _key: item.referenceNumber || item.date + '_' + item.amount,
-          _green: item.categoryId != null,
-          _include: true,
-          _receiptNum: null,
-          _rowIndex: null
-        });
-      } else {
-        (item.items || []).forEach(function (itm, ri) {
-          _reviewGreenItems.push({
-            _key: item.receiptNum + '_i' + ri,
-            _green: itm.productId != null,
-            _include: true,
-            _receiptNum: item.receiptNum,
-            _rowIndex: ri
-          });
-        });
-      }
-    });
-
-    // Ensure expense categories are loaded for FUZZY dropdown rendering
-    loadExpenseCategories().then(function () {
-      _renderReviewPage();
-      _setupReviewCardEvents();
-      openModal('modal-import-review');
-      _recalcGreenGate();
-    });
-  };
-
-  // ── Render current page ──────────────────────────────────────────────
-
-  function _renderReviewPage() {
-    var data = _importReviewData;
-    if (!data) return;
-    var valid   = data.valid || [];
-    var total   = valid.length;
-    var pages   = Math.max(1, Math.ceil(total / _reviewPerPage));
-    if (_reviewPage > pages) _reviewPage = pages;
-    if (_reviewPage < 1)     _reviewPage = 1;
-
-    var start = (_reviewPage - 1) * _reviewPerPage;
-    var end   = Math.min(start + _reviewPerPage, total);
-    var pageItems = valid.slice(start, end);
-
-    var container = $('review-card-container');
-    if (!container) return;
-
-    var hintBar = $('review-hint-bar');
-    if (hintBar) {
-      hintBar.innerHTML = '<span>Showing ' + (start + 1) + '\u2013' + end + ' of ' + total + ' items</span>'
-        + '<span style="font-size:10px;">Base Price and OP per Unit are editable for all items</span>';
-    }
-
-    var html = '';
-
-    var isExpenseUpload = (data._uploadType === 'expenses');
-
-    pageItems.forEach(function (item, idx) {
-      var absIdx = start + idx;
-      var isOrder = !isExpenseUpload && item.type !== 'expense';
-      html += _renderReviewCard(item, absIdx, isOrder);
-    });
-
-    container.innerHTML = html;
-
-    // Pagination controls
-    var prevBtn = $('review-page-prev');
-    var nextBtn = $('review-page-next');
-    var infoEl  = $('review-page-info');
-    if (prevBtn) prevBtn.disabled = _reviewPage <= 1;
-    if (nextBtn) nextBtn.disabled = _reviewPage >= pages;
-    if (!isFinite(pages)) pages = 1;
-    if (!isFinite(_reviewPage)) _reviewPage = 1;
-    if (infoEl)  infoEl.textContent = 'Page ' + _reviewPage + ' of ' + pages;
-
-    // Recalculate green gate
-    _recalcGreenGate();
-  }
-
-  // ── Render a single review card ──────────────────────────────────────
-
-  function _renderReviewCard(item, absIdx, isOrder) {
-    var fmt = function (n) {
-      return n != null ? '\u20B1' + Number(n).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '\u2014';
-    };
-    var esc = escapeHtml;
-    var sd = function (v) { return v == null || v === '' || (typeof v === 'number' && isNaN(v)) ? '\u2014' : esc(String(v)); };
-
-    if (!isOrder) {
-      // ═══════════════════════════════════════════════════════════════
-      // EXPENSE REVIEW CARD
-      // ═══════════════════════════════════════════════════════════════
-      var expenseOv = _getExpenseOv(item.referenceNumber || item.date + '_' + item.amount);
-
-      var matchBadge = item.matchConfidence === 'EXACT'
-        ? '<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#D1FAE5;color:#065F46;"><i class="ti ti-circle-check" style="font-size:9px;"></i> EXACT</span>'
-        : item.matchConfidence === 'FUZZY'
-          ? '<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;"><i class="ti ti-alert-triangle" style="font-size:9px;"></i> FUZZY</span>'
-          : '<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;background:#FEE2E2;color:#991B1B;"><i class="ti ti-circle-x" style="font-size:9px;"></i> NO MATCH</span>';
-
-      var excluded = expenseOv.include === false;
-      var expPm  = expenseOv.paymentMethod !== undefined ? expenseOv.paymentMethod : item.paymentMethod;
-      var expAmt = expenseOv.amount !== undefined ? expenseOv.amount : item.amount;
-      var expNotes = expenseOv.notes !== undefined ? expenseOv.notes : item.notes;
-
-      // Category display: cascading dropdowns for FUZZY, static text for EXACT
-      var catHtml;
-      if (item.matchConfidence === 'FUZZY' && _expCatData) {
-        var catPath = _findCatPath(item.categoryId);
-        var key = esc(item.referenceNumber || item.date + '_' + item.amount);
-        catHtml = '<div class="rc-cat-edit">'
-          + '<select class="form-control form-select review-editor-input" data-field="exp-cat-primary" data-key="' + key + '">'
-          + _expCatPrimaryOpts(catPath.primaryCode) + '</select>'
-          + '<select class="form-control form-select review-editor-input" data-field="exp-cat-sub" data-key="' + key + '">'
-          + _expCatSubOpts(catPath.primaryCode, catPath.subId) + '</select>'
-          + '</div>';
-      } else {
-        catHtml = '<span>' + esc(item.category || 'Uncategorized') + (item.inferred ? ' <span style="font-size:10px;color:#D97706;font-style:italic;">inferred</span>' : '') + '</span>';
-      }
-
-      return '<div class="review-card' + (excluded ? ' excluded' : '') + '" data-abs-idx="' + absIdx + '">'
-        // Title: Category + match badge
-        + '<div class="rc-title" style="display:flex;align-items:center;justify-content:space-between;">'
-        +   catHtml
-        +   matchBadge
-        + '</div>'
-        // Description: date
-        + '<div class="rc-desc">' + esc(item.date || '') + '</div>'
-        // Metadata: amount, payment method, amount input, notes
-        + '<div class="rc-meta">'
-        +   '<div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">' + fmt(expAmt) + '</div>'
-        +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">'
-        +     '<div><label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:1px;">Payment Method</label>'
-        +       '<select class="form-control form-select" style="font-size:11px;padding:3px 5px;" data-field="exp-paymethod" data-key="' + esc(item.referenceNumber || item.date + '_' + item.amount) + '">'
-        +         _paymentOpts(expPm)
-        +       '</select></div>'
-        +     '<div><label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:1px;">Amount</label>'
-      +   '<input type="number" class="form-control" style="font-size:11px;padding:3px 5px;" value="' + sd(expAmt) + '" step="0.01" min="0" data-field="exp-amount" data-key="' + esc(item.referenceNumber || item.date + '_' + item.amount) + '">'
-        +       '</div>'
-        +   '</div>'
-        +   '<div><label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:1px;">Notes</label>'
-        +     '<input type="text" class="form-control" style="font-size:11px;padding:3px 5px;" value="' + esc(expNotes || '') + '" data-field="exp-notes" data-key="' + esc(item.referenceNumber || item.date + '_' + item.amount) + '">'
-        +     '</div>'
-        + '</div>'
-        // Actions
-        + '<div class="rc-actions">'
-        +   '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;user-select:none;" title="Exclude from commit">'
-        +     '<input type="checkbox" class="review-exclude-cb" data-type="expense" data-key="' + esc(item.referenceNumber || item.date + '_' + item.amount) + '" ' + (excluded ? 'checked' : '') + '> Exclude this expense'
-        +   '</label>'
-        + '</div>'
-        + '</div>';
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // ORDER REVIEW CARD
-    // ═══════════════════════════════════════════════════════════════════
-    var orderOv = _getOrderOv(item.receiptNum);
-    var excluded = orderOv.include === false;
-
-    var sourceColors = { AGENT: '#7C3AED', ECOMMERCE: '#8B5CF6', WALK_IN: '#10B981', RESELLER: '#F59E0B', DISTRIBUTOR: '#F59E0B', FACEBOOK_PAGE: '#3B82F6' };
-    var sourceColor = sourceColors[item.source] || '#6B7280';
-
-    var items = item.items || [];
-
-    var itemsHtml = items.map(function (itm, ri) {
-      var iov = _getItemOv(item.receiptNum, ri, false) || {};
-      var overridePid = iov.productId;
-      var effectivePid = overridePid !== undefined ? overridePid : itm.productId;
-      var effectiveGreen = effectivePid != null;
-      var effectiveName = iov.productName || itm.productName || itm.itemCode || 'Unknown';
-
-      var matchIcon = effectiveGreen
-        ? '<span style="display:inline-flex;align-items:center;gap:2px;padding:0 6px;border-radius:8px;font-size:9px;font-weight:600;background:#D1FAE5;color:#065F46;"><i class="ti ti-circle-check" style="font-size:8px;"></i></span>'
-        : '<span style="display:inline-flex;align-items:center;gap:2px;padding:0 6px;border-radius:8px;font-size:9px;font-weight:600;background:#FEE2E2;color:#991B1B;"><i class="ti ti-circle-x" style="font-size:8px;"></i></span>';
-
-      var prodDisplay = '<div class="product-autocomplete-wrapper" style="flex:1;">'
-        + '<input type="text" class="form-control review-prod-input review-editor-input" style="font-size:11px;padding:3px 5px;width:100%;" placeholder="Search product\u2026" autocomplete="off"'
-        +   ' data-rn="' + esc(item.receiptNum) + '" data-ri="' + ri + '" value="' + esc(effectiveName) + '"' + (excluded ? ' disabled' : '') + '>'
-        + '<input type="hidden" class="review-prod-hidden" data-rn="' + esc(item.receiptNum) + '" data-ri="' + ri + '" value="' + (effectivePid || '') + '">'
-        + '<div class="product-dropdown" style="position:absolute;z-index:1000;"></div>'
-        + '</div>';
-
-      var qty = iov.qty !== undefined ? iov.qty : itm.qty;
-      var unitPrice = iov.unitPrice !== undefined ? iov.unitPrice : itm.unitPrice;
-      var basePrice = iov.basePrice !== undefined ? iov.basePrice : itm.basePrice;
-      var opPerUnit = iov.opPerUnit !== undefined ? iov.opPerUnit : itm.opPerUnit;
-
-      var itemExcluded = iov._include === false;
-
-      return '<div class="rc-item-row' + (itemExcluded ? ' excluded' : '') + '">'
-        // Line 1: exclude X button + number + product + match icon
-        + '<div style="display:flex;align-items:center;gap:4px;width:100%;">'
-        +   '<button type="button" class="rc-item-exclude-btn' + (itemExcluded ? ' active' : '') + '" data-rn="' + esc(item.receiptNum) + '" data-ri="' + ri + '" title="Exclude this item"><i class="ti ti-x"></i></button>'
-        +   '<span style="color:var(--text-muted);flex-shrink:0;width:14px;text-align:center;font-size:10px;">' + (ri + 1) + '</span>'
-        +   '<div style="min-width:0;flex:1;">' + prodDisplay + '</div>'
-        +   matchIcon
-        + '</div>'
-        // Line 2: compact labelled fields
-        + '<div class="rc-item-fields">'
-        +   '<span style="font-size:9px;color:var(--text-muted);">Qty</span>'
-      +   '<input type="number" class="form-control review-item-num review-editor-input" value="' + sd(qty) + '" min="0" step="1"'
-      +     ' data-field="qty" data-rn="' + esc(item.receiptNum) + '" data-ri="' + ri + '"' + (excluded ? ' disabled' : '') + '>'
-      +   '<span style="font-size:9px;color:var(--text-muted);">Prc</span>'
-      +   '<input type="number" class="form-control review-item-num review-editor-input" value="' + sd(unitPrice) + '" min="0" step="0.01"'
-      +     ' data-field="unitPrice" data-rn="' + esc(item.receiptNum) + '" data-ri="' + ri + '"' + (excluded ? ' disabled' : '') + '>'
-      +   '<span style="font-size:9px;color:var(--text-muted);">Base</span>'
-      +   '<input type="number" class="form-control review-item-num review-editor-input" value="' + sd(basePrice) + '" min="0" step="0.01" placeholder="0"'
-      +     ' data-field="basePrice" data-rn="' + esc(item.receiptNum) + '" data-ri="' + ri + '"' + (excluded ? ' disabled' : '') + '>'
-      +   '<span style="font-size:9px;color:var(--text-muted);">OP</span>'
-      +   '<input type="number" class="form-control review-item-num review-editor-input" value="' + sd(opPerUnit) + '" min="0" step="0.01" placeholder="0"'
-      +     ' data-field="opPerUnit" data-rn="' + esc(item.receiptNum) + '" data-ri="' + ri + '"' + (excluded ? ' disabled' : '') + '>'
-        + '</div>'
-        + '</div>';
-    }).join('');
-
-      var ovPm   = orderOv.paymentMethod;
-      var ovPs   = orderOv.paymentStatus;
-      var ovEp   = orderOv.ecommercePlatform;
-      var ovAgentId = orderOv.agentId;
-      var ovAgentName = orderOv.agentName;
-      var effectivePm   = ovPm   !== undefined ? ovPm   : item.paymentMethod;
-      var effectivePs   = ovPs   !== undefined ? ovPs   : item.paymentStatus;
-      var effectiveEp   = ovEp   !== undefined ? ovEp   : item.ecommercePlatform;
-      var effectiveAgent = ovAgentName || item.agent || '';
-
-    return '<div class="review-card' + (excluded ? ' excluded' : '') + '" data-abs-idx="' + absIdx + '">'
-      // Title: receipt number + source badge + total
-      + '<div class="rc-title" style="display:flex;align-items:center;justify-content:space-between;">'
-      +   '<div style="display:flex;align-items:center;gap:6px;">'
-      +     '<code style="font-size:12px;">' + esc(item.receiptNum || '') + '</code>'
-      +     '<span style="display:inline-block;padding:0 6px;border-radius:8px;font-size:9px;font-weight:600;background:' + sourceColor + '22;color:' + sourceColor + ';">' + esc(item.source || '—') + '</span>'
-      +   '</div>'
-      +   '<span style="font-size:14px;font-weight:700;">' + fmt(item.computedTotal) + '</span>'
-      + '</div>'
-      // Description: customer + date
-      + '<div class="rc-desc" style="display:flex;justify-content:space-between;">'
-      +   '<span>' + sd(item.customer) + '</span>'
-      +   '<span>' + sd(item.date) + '</span>'
-      + '</div>'
-      // Metadata: editors + items
-      + '<div class="rc-meta">'
-      // Order-level editors (2x2 grid via CSS class)
-      +   '<div class="rc-editors">'
-      +     '<div><label style="font-size:9px;color:var(--text-muted);display:block;margin-bottom:1px;">Agent</label>'
-      +       '<div class="product-autocomplete-wrapper">'
-      +         '<input type="text" class="form-control review-agent-input review-editor-input" style="font-size:10px;padding:3px 5px;" placeholder="Search agent\u2026" autocomplete="off"'
-      +           ' data-rn="' + esc(item.receiptNum) + '" value="' + esc(effectiveAgent) + '"' + (excluded ? ' disabled' : '') + '>'
-      +         '<input type="hidden" class="review-agent-hidden" data-rn="' + esc(item.receiptNum) + '" value="' + (ovAgentId || '') + '">'
-      +         '<div class="product-dropdown" style="position:absolute;z-index:1000;"></div>'
-      +       '</div></div>'
-      +     '<div><label style="font-size:9px;color:var(--text-muted);display:block;margin-bottom:1px;">Payment</label>'
-      +       '<select class="form-control form-select review-editor-input" style="font-size:10px;padding:3px 5px;" data-field="paymentMethod" data-rn="' + esc(item.receiptNum) + '"' + (excluded ? ' disabled' : '') + '>'
-      +         _paymentOpts(effectivePm)
-      +       '</select></div>'
-      +     '<div><label style="font-size:9px;color:var(--text-muted);display:block;margin-bottom:1px;">Status</label>'
-      +       '<select class="form-control form-select review-editor-input" style="font-size:10px;padding:3px 5px;" data-field="paymentStatus" data-rn="' + esc(item.receiptNum) + '"' + (excluded ? ' disabled' : '') + '>'
-      +         '<option value="">—</option>'
-      +         '<option value="PAID" ' + (effectivePs === 'PAID' ? 'selected' : '') + '>PAID</option>'
-      +         '<option value="UNPAID" ' + (effectivePs === 'UNPAID' ? 'selected' : '') + '>UNPAID</option>'
-      +       '</select></div>'
-      +     '<div><label style="font-size:9px;color:var(--text-muted);display:block;margin-bottom:1px;">Platform</label>'
-      +       '<select class="form-control form-select review-editor-input" style="font-size:10px;padding:3px 5px;" data-field="ecommercePlatform" data-rn="' + esc(item.receiptNum) + '"' + (excluded ? ' disabled' : '') + '>'
-      +         '<option value="">—</option>'
-      +         '<option value="SHOPEE" ' + (effectiveEp === 'SHOPEE' ? 'selected' : '') + '>SHOPEE</option>'
-      +         '<option value="TIKTOK" ' + (effectiveEp === 'TIKTOK' ? 'selected' : '') + '>TIKTOK</option>'
-      +         '<option value="LAZADA" ' + (effectiveEp === 'LAZADA' ? 'selected' : '') + '>LAZADA</option>'
-      +       '</select></div>'
-      +   '</div>'
-      // Items header (only if there are items)
-      +   ((items.length
-        ? '<div style="font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:2px 0;margin-top:4px;">Items</div>'
-        : '') + '<div class="rc-items-scroll">' + itemsHtml + '</div>')
-      + '</div>'
-      // Actions
-      + '<div class="rc-actions">'
-      +   '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;user-select:none;" title="Exclude entire order from commit">'
-      +     '<input type="checkbox" class="review-exclude-cb" data-type="order" data-key="' + esc(item.receiptNum) + '" ' + (excluded ? 'checked' : '') + '> Exclude this order'
-      +   '</label>'
-      + '</div>'
-      + '</div>';
-  }
-
-  // ── Payment method dropdown options ──────────────────────────────────
-
-  function _paymentOpts(selected) {
-    var methods = ['CASH','BANK_TRANSFER','GCASH','PAYMAYA','COD'];
-    return '<option value="">—</option>'
-      + methods.map(function (m) {
-        return '<option value="' + m + '" ' + (selected === m ? 'selected' : '') + '>' + m + '</option>';
-      }).join('');
-  }
-
-  // ── Expense category dropdown helpers for review modal ──────────────
-
-  function _expCatPrimaryOpts(selectedCode) {
-    if (!_expCatData) return '<option value="">—</option>';
-    var opts = '<option value="">Select category…</option>';
-    (_expCatData.primaries || []).forEach(function (p) {
-      opts += '<option value="' + p.code + '" ' + (selectedCode === p.code ? 'selected' : '') + '>' + p.name + '</option>';
-    });
-    return opts;
-  }
-
-  function _expCatSubOpts(primaryCode, selectedSubId) {
-    if (!_expCatData || !primaryCode) return '<option value="">Select sub-category…</option>';
-    var prim = (_expCatData.primaries || []).find(function (p) { return p.code === primaryCode; });
-    var subs = prim ? (prim.subcategories || []) : [];
-    var opts = '<option value="">Select sub-category…</option>';
-    subs.forEach(function (s) {
-      opts += '<option value="' + s.id + '" ' + (selectedSubId != null && String(selectedSubId) === String(s.id) ? 'selected' : '') + '>' + s.name + '</option>';
-    });
-    return opts;
-  }
-
-  function _findCatPath(categoryId) {
-    if (!_expCatData || categoryId == null) return { primaryCode: '', subId: null };
-    var primaries = _expCatData.primaries || [];
-    for (var i = 0; i < primaries.length; i++) {
-      var subs = primaries[i].subcategories || [];
-      for (var j = 0; j < subs.length; j++) {
-        if (String(subs[j].id) === String(categoryId)) {
-          return { primaryCode: primaries[i].code, subId: subs[j].id };
-        }
-      }
-    }
-    return { primaryCode: '', subId: null };
-  }
-
-  // ── Event delegation for review card inputs ─────────────────────────
-
-  function _setupReviewCardEvents() {
-    var container = $('review-card-container');
-    if (!container) return;
-
-    // Exclude toggle
-    container.querySelectorAll('.review-exclude-cb').forEach(function (cb) {
-      cb.addEventListener('change', function () {
-        var type = this.getAttribute('data-type');
-        var key = this.getAttribute('data-key');
-        var excluded = this.checked;
-        if (type === 'order') {
-          _getOrderOv(key).include = !excluded;
-          // Toggle card opacity
-          _reviewGreenItems.forEach(function (ri) {
-            if (ri._receiptNum === key) ri._include = !excluded;
-          });
-        } else {
-          _getExpenseOv(key).include = !excluded;
-          _reviewGreenItems.forEach(function (ri) {
-            if (ri._key === key) ri._include = !excluded;
-          });
-        }
-        // Dim/undim the card and toggle editor disabled state
-        var card = this.closest('.review-card');
-        if (card) {
-          card.classList.toggle('excluded', excluded);
-          card.querySelectorAll('.review-editor-input').forEach(function (inp) {
-            inp.disabled = excluded;
-          });
-        }
-        _recalcGreenGate();
-      });
-    });
-
-    // Per-item exclude toggle
-    container.querySelectorAll('.rc-item-exclude-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var rn = this.getAttribute('data-rn');
-        var ri = parseInt(this.getAttribute('data-ri'));
-        var iov = _getItemOv(rn, ri);
-        var isCurrentlyExcluded = iov._include === false;
-        var newExcluded = !isCurrentlyExcluded;
-        iov._include = !newExcluded;
-        _reviewGreenItems.forEach(function (gi) {
-          if (gi._receiptNum === rn && gi._rowIndex === ri) gi._include = !newExcluded;
-        });
-        this.classList.toggle('active', newExcluded);
-        var row = this.closest('.rc-item-row');
-        if (row) row.classList.toggle('excluded', newExcluded);
-        _recalcGreenGate();
-      });
-    });
-
-    // Order-level dropdowns
-    container.querySelectorAll('select[data-field]:not([data-field="exp-paymethod"])').forEach(function (sel) {
-      sel.addEventListener('change', function () {
-        var rn = this.getAttribute('data-rn');
-        var field = this.getAttribute('data-field');
-        _setOrderField(rn, field, this.value || null);
-      });
-    });
-
-    // Expense payment method
-    container.querySelectorAll('select[data-field="exp-paymethod"]').forEach(function (sel) {
-      sel.addEventListener('change', function () {
-        var key = this.getAttribute('data-key');
-        _setExpenseField(key, 'paymentMethod', this.value || null);
-      });
-    });
-
-    // Expense amount
-    container.querySelectorAll('input[data-field="exp-amount"]').forEach(function (inp) {
-      inp.addEventListener('change', function () {
-        var key = this.getAttribute('data-key');
-        _setExpenseField(key, 'amount', parseFloat(this.value) || null);
-      });
-    });
-
-    // Expense notes
-    container.querySelectorAll('input[data-field="exp-notes"]').forEach(function (inp) {
-      inp.addEventListener('change', function () {
-        var key = this.getAttribute('data-key');
-        _setExpenseField(key, 'notes', this.value || null);
-      });
-    });
-
-    // Expense category — primary dropdown → populate sub-category
-    container.querySelectorAll('select[data-field="exp-cat-primary"]').forEach(function (sel) {
-      sel.addEventListener('change', function () {
-        var key = this.getAttribute('data-key');
-        var subSel = this.parentElement.querySelector('select[data-field="exp-cat-sub"]');
-        if (subSel) {
-          subSel.innerHTML = _expCatSubOpts(this.value, '');
-        }
-        _setExpenseField(key, 'categoryId', null);
-        _reviewGreenItems.forEach(function (gi) {
-          if (gi._key === key) gi._green = false;
-        });
-        _recalcGreenGate();
-      });
-    });
-
-    // Expense category — sub-category dropdown → store categoryId override
-    container.querySelectorAll('select[data-field="exp-cat-sub"]').forEach(function (sel) {
-      sel.addEventListener('change', function () {
-        var key = this.getAttribute('data-key');
-        var subId = this.value ? parseInt(this.value) : null;
-        _setExpenseField(key, 'categoryId', subId);
-        _reviewGreenItems.forEach(function (gi) {
-          if (gi._key === key) gi._green = subId != null;
-        });
-        _recalcGreenGate();
-      });
-    });
-
-    // Item numeric fields (qty, unitPrice, basePrice, opPerUnit)
-    container.querySelectorAll('.review-item-num').forEach(function (inp) {
-      inp.addEventListener('change', function () {
-        var rn = this.getAttribute('data-rn');
-        var ri = parseInt(this.getAttribute('data-ri'));
-        var field = this.getAttribute('data-field');
-        var val = this.value !== '' ? parseFloat(this.value) : null;
-        _getItemOv(rn, ri)[field] = val;
-      });
-    });
-
-    // Item product autocomplete (setup for each item)
-    container.querySelectorAll('.review-prod-input').forEach(function (input) {
-      _setupReviewProductAutocomplete(input);
-    });
-
-    // Agent autocomplete (setup for each order card)
-    container.querySelectorAll('.review-agent-input').forEach(function (input) {
-      _setupReviewAgentAutocomplete(input);
-    });
-  }
-
-  // ── Product autocomplete for review card items ─────────────────────
-
-  function _setupReviewProductAutocomplete(input) {
-    var wrapper = input.closest('.product-autocomplete-wrapper');
-    if (!wrapper) return;
-    var dropdown = wrapper.querySelector('.product-dropdown');
-    var hidden = wrapper.querySelector('.review-prod-hidden');
-    var rn = input.getAttribute('data-rn');
-    var ri = parseInt(input.getAttribute('data-ri'));
-
-    if (!dropdown || !hidden) return;
-
-    // Lazy-load product cache if empty
-    if (!appState.cachedProducts || !appState.cachedProducts.length) {
-      loadProducts();
-    }
-
-    var showDropdown = function (filter) {
-      var prods = appState.cachedProducts || [];
-      var t = (filter || '').toLowerCase().trim();
-      var filtered = t.length === 0 ? prods : prods.filter(function (p) {
-        return p.name.toLowerCase().includes(t) || (p.productCode && p.productCode.toLowerCase().includes(t));
-      });
-      if (filtered.length === 0) {
-        dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>';
-      } else {
-        dropdown.innerHTML = filtered.map(function (p) {
-          var total = (p.stockWh1 || 0) + (p.stockWh2 || 0) + (p.stockWh3 || 0);
-          return '<div class="product-dropdown-item" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '" data-price="' + p.unitPrice + '">'
-            + '<strong>' + escapeHtml(p.name) + '</strong>'
-            + ' <span style="font-size:10px;color:var(--text-muted);">[' + escapeHtml(p.productCode || '') + '] \u00b7 ' + total + ' pcs</span>'
-            + ' <span style="font-size:10px;font-weight:600;color:#10B981;">\u20B1' + Number(p.unitPrice).toFixed(2) + '</span>'
-            + '</div>';
-        }).join('');
-      }
-      dropdown.classList.add('show');
-    };
-
-    input.addEventListener('input', function () {
-      showDropdown(this.value);
-      // Clear hidden when user types
-      hidden.value = '';
-      // Update green status
-      _updateItemGreen(rn, ri, false);
-    });
-
-    input.addEventListener('focus', function () {
-      showDropdown(this.value);
-    });
-
-    dropdown.addEventListener('click', function (e) {
-      var item = e.target.closest('.product-dropdown-item[data-id]');
-      if (!item) return;
-      var pid = item.getAttribute('data-id');
-      var pname = item.getAttribute('data-name');
-      input.value = pname;
-      hidden.value = pid;
-      dropdown.classList.remove('show');
-      // Persist override
-      _getItemOv(rn, ri).productId = parseInt(pid);
-      _getItemOv(rn, ri).productName = pname;
-      // Update green status
-      _updateItemGreen(rn, ri, true);
-    });
-
-    document.addEventListener('click', function (e) {
-      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.classList.remove('show');
-      }
-    });
-  }
-
-  // ── Agent autocomplete for review card order-level ─────────────────
-
-  function _setupReviewAgentAutocomplete(input) {
-    var wrapper = input.closest('.product-autocomplete-wrapper');
-    if (!wrapper) return;
-    var dropdown = wrapper.querySelector('.product-dropdown');
-    var hidden = wrapper.querySelector('.review-agent-hidden');
-    var rn = input.getAttribute('data-rn');
-
-    if (!dropdown || !hidden) return;
-
-    var showDropdown = function (filter) {
-      var agents = _cachedAgents || [];
-      var t = (filter || '').toLowerCase().trim();
-      var filtered = t.length === 0 ? agents : agents.filter(function (a) {
-        return a.fullName.toLowerCase().includes(t) || a.agentCode.toLowerCase().includes(t);
-      });
-      if (filtered.length === 0) {
-        dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No agents found</div>';
-      } else {
-        dropdown.innerHTML = filtered.map(function (a) {
-          return '<div class="product-dropdown-item" data-id="' + a.id + '" data-name="' + escapeHtml(a.fullName) + '">'
-            + '<strong>' + escapeHtml(a.fullName) + '</strong>'
-            + ' <span style="font-size:10px;color:var(--text-muted);">(' + escapeHtml(a.agentCode || '') + ') ' + escapeHtml(a.territory || '') + '</span>'
-            + '</div>';
-        }).join('');
-      }
-      dropdown.classList.add('show');
-    };
-
-    input.addEventListener('input', function () {
-      showDropdown(this.value);
-      hidden.value = '';
-      _setOrderField(rn, 'agentId', null);
-    });
-
-    input.addEventListener('focus', function () {
-      showDropdown(this.value);
-    });
-
-    dropdown.addEventListener('click', function (e) {
-      var item = e.target.closest('.product-dropdown-item[data-id]');
-      if (!item) return;
-      var aid = item.getAttribute('data-id');
-      var aname = item.getAttribute('data-name');
-      input.value = aname;
-      hidden.value = aid;
-      dropdown.classList.remove('show');
-      _setOrderField(rn, 'agentId', parseInt(aid));
-      _setOrderField(rn, 'agentName', aname);
-    });
-
-    document.addEventListener('click', function (e) {
-      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.classList.remove('show');
-      }
-    });
-  }
-
-  // ── Update a single item's green status ────────────────────────────
-
-  function _updateItemGreen(receiptNum, rowIndex, green) {
-    _reviewGreenItems.forEach(function (ri) {
-      if (ri._receiptNum === receiptNum && ri._rowIndex === rowIndex) {
-        ri._green = green;
-      }
-    });
-    _recalcGreenGate();
-  }
-
-  // ── Pagination ──────────────────────────────────────────────────────
-
-  window.reviewPagePrev = function () {
-    if (_reviewPage > 1) { _reviewPage--; _renderReviewPage(); _setupReviewCardEvents(); }
-  };
-
-  window.reviewPageNext = function () {
-    var data = _importReviewData;
-    if (!data) return;
-    var total = (data.valid || []).length;
-    var pages = Math.max(1, Math.ceil(total / _reviewPerPage));
-    if (_reviewPage < pages) { _reviewPage++; _renderReviewPage(); _setupReviewCardEvents(); }
-  };
-
-  function renderImportIssues(data) {
-    var issues       = data.stockIssues       || [];
-    var closedDates  = data.reportClosedDates || [];
-    var section = $('import-issues-section');
-    var tbody   = $('import-issues-tbody');
-    var count   = $('import-issues-count');
-    var commitBtn = document.getElementById('import-commit-btn');
-    if (!section || !tbody) return;
-
-    var allIssues = [];
-    issues.forEach(function (i) {
-      allIssues.push({
-        receiptNum: i.receiptNum || '—',
-        product:    i.productName || i.productCode || '—',
-        message:    i.message || ''
-      });
-    });
-    closedDates.forEach(function (d) {
-      allIssues.push({
-        receiptNum: '—',
-        product:    '—',
-        message: 'Date ' + d + ' already has a daily report — orders will be marked as late recorded'
-      });
-    });
-
-    if (allIssues.length) {
-      section.style.display = 'block';
-      count.textContent = allIssues.length;
-      tbody.innerHTML = allIssues.map(function (i) {
-        return '<tr>'
-          + '<td><code style="font-size:11px;">' + escapeHtml(i.receiptNum) + '</code></td>'
-          + '<td>' + escapeHtml(i.product) + '</td>'
-          + '<td style="font-size:11px;color:#DC2626;white-space:normal;">' + escapeHtml(i.message) + '</td>'
-          + '</tr>';
-      }).join('');
-    } else {
-      section.style.display = 'none';
-    }
-    if (commitBtn) commitBtn.disabled = !data.allClear;
-  }
-
-  window.validateImport = async function () {
-    if (!_importSessionToken) { showToast('No active upload session. Please upload a file first.', 'error'); return; }
-    var token = localStorage.getItem('rrbm_token');
-    if (!token) return;
-    try {
-      var res = await fetch(API_BASE + '/api/import/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({ sessionToken: _importSessionToken })
-      });
-      var data = await res.json().catch(function () { return {}; });
-      if (res.ok) {
-        renderImportIssues(data);
-        if (data.allClear) {
-          showToast('Validation passed — all clear!', 'success');
-        } else {
-          showToast(data.stockIssues.length + ' stock issue(s) found. Fix the file and re-upload.', 'warning');
-        }
-      } else {
-        showToast(data.error || data.message || 'Validation failed.', 'error');
-      }
-    } catch (e) { showToast('Connection error.', 'error'); }
-  };
-
-  window.commitImport = async function () {
-    if (!_importSessionToken) { showToast('No active upload session. Please upload a file first.', 'error'); return; }
-    var token = localStorage.getItem('rrbm_token');
-    if (!token) return;
-
-    // Build overrides payload from review state
-    var ordersArr = [];
-    Object.keys(_reviewOverrides.orders).forEach(function (rn) {
-      var ov = _reviewOverrides.orders[rn];
-      if (ov.include !== false && !Object.keys(ov.items).length && !ov.paymentMethod && !ov.paymentStatus && !ov.ecommercePlatform && !ov.agentId) return;
-      var orderOverride = {
-        receiptNum: rn,
-        include: ov.include !== false,
-        paymentMethod: ov.paymentMethod || undefined,
-        paymentStatus: ov.paymentStatus || undefined,
-        ecommercePlatform: ov.ecommercePlatform || undefined,
-        agentId: ov.agentId || undefined,
-        items: []
-      };
-      Object.keys(ov.items).forEach(function (ri) {
-        var iov = ov.items[ri];
-        var itemOverride = { rowIndex: parseInt(ri) };
-        if (iov.qty != null) itemOverride.qty = iov.qty;
-        if (iov.unitPrice != null) itemOverride.unitPrice = iov.unitPrice;
-        if (iov.basePrice != null) itemOverride.basePrice = iov.basePrice;
-        if (iov.opPerUnit != null) itemOverride.opPerUnit = iov.opPerUnit;
-        if (iov.productId != null) itemOverride.productId = iov.productId;
-        orderOverride.items.push(itemOverride);
-      });
-      ordersArr.push(orderOverride);
-    });
-
-    var expensesArr = [];
-    Object.keys(_reviewOverrides.expenses).forEach(function (refNum) {
-      var ov = _reviewOverrides.expenses[refNum];
-      if (ov.include !== false && !ov.amount && !ov.notes && !ov.paymentMethod && !ov.categoryId) return;
-      var expenseOverride = {
-        referenceNumber: refNum,
-        include: ov.include !== false
-      };
-      if (ov.paymentMethod !== undefined) expenseOverride.paymentMethod = ov.paymentMethod;
-      if (ov.amount !== undefined) expenseOverride.amount = ov.amount;
-      if (ov.notes !== undefined) expenseOverride.notes = ov.notes;
-      if (ov.categoryId !== undefined) expenseOverride.categoryId = ov.categoryId;
-      expensesArr.push(expenseOverride);
-    });
-
-    var payload = {
-      sessionToken: _importSessionToken,
-      adminSecurityKey: _importSecurityKey || ''
-    };
-    if (ordersArr.length) payload.overrides = { orders: ordersArr };
-    if (expensesArr.length) {
-      if (!payload.overrides) payload.overrides = {};
-      payload.overrides.expenses = expensesArr;
-    }
-
-    try {
-      showToast('Committing import\u2026', 'info');
-      var res = await fetch(API_BASE + '/api/import/commit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify(payload)
-      });
-      var data = await res.json().catch(function () { return {}; });
-      if (res.ok) {
-        _importSessionToken = null;
-        _importReviewData = null;
-        closeModal('modal-import-review');
-        // Collect unique dates from committed orders for manual close
-        var orderDates = (data.committedOrders || []).map(function (o) { return o.date; }).filter(Boolean);
-        var uniqueDates = [...new Set(orderDates)];
-        data._closeDates = uniqueDates;
-        showImportResultModal(data);
-        loadImportHistory();
-      } else {
-        showToast(data.error || data.message || 'Commit failed.', 'error');
-      }
-    } catch (e) { showToast('Connection error.', 'error'); }
-  };
-
-  window.closeImportReports = async function () {
-    var datesEl = $('import-close-dates');
-    if (!datesEl) return;
-    var dates = datesEl.getAttribute('data-dates');
-    if (!dates) return;
-    var token = localStorage.getItem('rrbm_token');
-    if (!token) return;
-    try {
-      var res = await fetch(API_BASE + '/api/import/close', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify({ dates: JSON.parse(dates), adminSecurityKey: _importSecurityKey || '' })
-      });
-      var result = await res.json().catch(function () { return {}; });
-      if (res.ok) {
-        var reports = result.closedReports || [];
-        var ok = reports.filter(function (r) { return r.status === 'created'; }).length;
-        var fail = reports.filter(function (r) { return r.status === 'failed'; }).length;
-        showToast('Reports closed: ' + ok + ' created' + (fail ? ', ' + fail + ' failed' : ''), fail > 0 ? 'error' : 'success');
-        loadImportHistory();
-      } else {
-        showToast(result.error || 'Close failed.', 'error');
-      }
-    } catch (e) { showToast('Connection error.', 'error'); }
-  };
-
-  function showImportResultModal(data) {
-    var orders   = data.committedOrders   || [];
-    var expenses = data.committedExpenses || [];
-    var errors   = data.errors            || [];
-    var skipped  = data.skipped           || 0;
-    var fmt = function (n) { return n != null ? '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'; };
-
-    // Build committed orders rows
-    var orderRows = orders.length ? orders.map(function (o) {
-      var lateTag = o.lateImported
-        ? ' <span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span>'
-        : '';
-      return '<tr>'
-        + '<td><code style="font-size:11px;">' + escapeHtml(o.receiptNum || '—') + '</code></td>'
-        + '<td><code style="font-size:11px;">' + escapeHtml(o.orderId    || '—') + '</code></td>'
-        + '<td>' + escapeHtml(o.date     || '—') + '</td>'
-        + '<td>' + escapeHtml(o.customer || '—') + '</td>'
-        + '<td style="text-align:right;">' + fmt(o.total) + '</td>'
-        + '<td>' + lateTag + '</td>'
-        + '</tr>';
-    }).join('') : '<tr><td colspan="6" style="color:#999;text-align:center;padding:10px;">None</td></tr>';
-
-    // Build committed expenses rows
-    var expenseRows = expenses.length ? expenses.map(function (e) {
-      var lateTag = e.lateImported
-        ? ' <span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#FEF3C7;color:#92400E;">⚠ Late recorded</span>'
-        : '';
-      return '<tr>'
-        + '<td>' + escapeHtml(e.date || '—') + '</td>'
-        + '<td style="text-align:right;">' + fmt(e.amount) + '</td>'
-        + '<td>' + lateTag + '</td>'
-        + '</tr>';
-    }).join('') : '<tr><td colspan="3" style="color:#999;text-align:center;padding:10px;">None</td></tr>';
-
-    // Build error rows (only shown if errors exist)
-    var errorSection = '';
-    if (errors.length) {
-      var errorRows = errors.map(function (e) {
-        var ref = e.receiptNum || e.date || '—';
-        return '<tr>'
-          + '<td style="color:#EF4444;font-weight:600;">' + escapeHtml(e.section || '—') + '</td>'
-          + '<td><code style="font-size:11px;">' + escapeHtml(ref) + '</code></td>'
-          + '<td style="font-size:11px;color:#EF4444;white-space:normal;">' + escapeHtml(e.error || 'Unknown error') + '</td>'
-          + '</tr>';
-      }).join('');
-      errorSection = '<div style="margin-top:16px;">'
-        + '<div style="font-weight:600;color:#EF4444;margin-bottom:6px;"><i class="ti ti-alert-triangle"></i> Failed (' + errors.length + ')</div>'
-        + '<div style="max-height:200px;overflow-y:auto;border:1px solid #FCA5A5;border-radius:6px;">'
-        + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-        + '<thead><tr style="background:#FEF2F2;">'
-        + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #FCA5A5;">Section</th>'
-        + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #FCA5A5;">Receipt / Date</th>'
-        + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #FCA5A5;">Reason</th>'
-        + '</tr></thead>'
-        + '<tbody>' + errorRows + '</tbody>'
-        + '</table></div></div>';
-    }
-
-    var skippedNote = skipped > 0 ? '<span style="color:#6B7280;font-size:12px;"> &nbsp;·&nbsp; ' + skipped + ' skipped</span>' : '';
-
-    var modalHtml = '<div id="import-result-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;">'
-      + '<div style="background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.25);width:100%;max-width:720px;max-height:90vh;display:flex;flex-direction:column;">'
-      // Header
-      + '<div style="padding:16px 20px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;">'
-      + '<div style="font-weight:700;font-size:16px;color:#111827;"><i class="ti ti-circle-check" style="color:#10B981;margin-right:6px;"></i>Import Complete</div>'
-      + '<button onclick="document.getElementById(\'import-result-overlay\').remove();" style="background:none;border:none;cursor:pointer;font-size:20px;color:#6B7280;line-height:1;">✕</button>'
-      + '</div>'
-      // Body
-      + '<div style="padding:20px;overflow-y:auto;flex:1;">'
-      // Committed orders
-      + '<div style="font-weight:600;color:#059669;margin-bottom:6px;"><i class="ti ti-check"></i> Committed — Orders (' + orders.length + ')' + skippedNote + '</div>'
-      + '<div style="max-height:200px;overflow-y:auto;border:1px solid #D1FAE5;border-radius:6px;margin-bottom:12px;">'
-      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-      + '<thead><tr style="background:#ECFDF5;">'
-      + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #A7F3D0;">Receipt#</th>'
-      + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #A7F3D0;">Order ID</th>'
-      + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #A7F3D0;">Date</th>'
-      + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #A7F3D0;">Customer</th>'
-      + '<th style="padding:6px 8px;text-align:right;border-bottom:1px solid #A7F3D0;">Total</th>'
-      + '<th style="padding:6px 8px;border-bottom:1px solid #A7F3D0;">Note</th>'
-      + '</tr></thead>'
-      + '<tbody>' + orderRows + '</tbody>'
-      + '</table></div>'
-      // Committed expenses
-      + '<div style="font-weight:600;color:#059669;margin-bottom:6px;"><i class="ti ti-check"></i> Committed — Expenses (' + expenses.length + ')</div>'
-      + '<div style="max-height:120px;overflow-y:auto;border:1px solid #D1FAE5;border-radius:6px;">'
-      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-      + '<thead><tr style="background:#ECFDF5;">'
-      + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #A7F3D0;">Date</th>'
-      + '<th style="padding:6px 8px;text-align:right;border-bottom:1px solid #A7F3D0;">Amount</th>'
-      + '<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #A7F3D0;">Notes</th>'
-      + '</tr></thead>'
-      + '<tbody>' + expenseRows + '</tbody>'
-      + '</table></div>'
-      + errorSection
-      + (data._closeDates && data._closeDates.length
-          ? '<div style="margin-top:12px;padding:10px 14px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;font-size:12px;color:#1E40AF;">'
-            + '<i class="ti ti-info-circle"></i> '
-            + 'Daily reports for ' + data._closeDates.length + ' date(s) need to be closed. '
-            + 'Click <strong>"Close Daily Reports"</strong> below to generate them.'
-          + '</div>'
-          : '')
-      + '</div>'
-      // Footer
-      + '<div style="padding:12px 20px;border-top:1px solid #E5E7EB;display:flex;justify-content:space-between;align-items:center;">'
-      + '<div style="font-size:12px;color:#6B7280;">'
-      + '  <button id="import-close-btn" class="btn btn-secondary btn-sm" onclick="closeImportReports()" style="display:none;">'
-      + '    <i class="ti ti-report-analytics"></i> Close Daily Reports'
-      + '  </button>'
-      + '</div>'
-      + '<button onclick="document.getElementById(\'import-result-overlay\').remove();" class="btn btn-primary" style="min-width:80px;">Close</button>'
-      + '</div>'
-      + '</div></div>';
-
-    var overlay = document.createElement('div');
-    overlay.innerHTML = modalHtml;
-    document.body.appendChild(overlay.firstChild);
-
-    // Close on backdrop click
-    document.getElementById('import-result-overlay').addEventListener('click', function (ev) {
-      if (ev.target === this) this.remove();
-    });
-
-    // ── Show Close Reports button if there are dates to close ────────
-    var closeDates = data._closeDates;
-    if (closeDates && closeDates.length) {
-      var closeBtn = document.getElementById('import-close-btn');
-      if (closeBtn) {
-        closeBtn.style.display = 'inline-flex';
-        // Also store dates in a hidden element for the close handler
-        var hiddenDates = document.createElement('input');
-        hiddenDates.type = 'hidden';
-        hiddenDates.id = 'import-close-dates';
-        hiddenDates.setAttribute('data-dates', JSON.stringify(closeDates));
-        document.getElementById('import-result-overlay').appendChild(hiddenDates);
-      }
-    }
-  }
-
   // ================================================================
   // Transaction Ledger
   // ================================================================
@@ -14044,7 +13112,7 @@
 
     var tbody = $('ledger-tbody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loadingâ€¦</td></tr>';
 
     var params = '?start=' + start + '&end=' + end + (type ? '&type=' + encodeURIComponent(type) : '');
     try {
@@ -14060,7 +13128,7 @@
         var summaryBody = $('ledger-summary-body');
         if (summaryCard && summaryBody) {
           summaryCard.style.display = '';
-          var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+          var fmt = function (n) { return 'â‚±' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
           var netColor = Number(rpt.netSales || 0) >= 0 ? '#10B981' : '#EF4444';
           var voidRet = Number(rpt.voidTotal || 0) + Number(rpt.returnTotal || 0);
           summaryBody.innerHTML =
@@ -14098,7 +13166,7 @@
           '<td style="white-space:nowrap;">' + escapeHtml(t.effectiveDate || '') + '</td>' +
           '<td><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;' +
                'background:' + col + '22;color:' + col + ';">' + escapeHtml(t.transactionType || '') + '</span></td>' +
-          '<td style="text-align:right;font-weight:600;' + amtStyle + '">₱' +
+          '<td style="text-align:right;font-weight:600;' + amtStyle + '">â‚±' +
                Number(t.amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</td>' +
           '<td style="font-size:12px;">' + escapeHtml(ref) + '</td>' +
           '<td style="font-size:12px;color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;' +

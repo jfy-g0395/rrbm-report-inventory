@@ -1,1 +1,1 @@
-{"version":"0.0.1","configurations":[{"name":"frontend","runtimeExecutable":"npx","runtimeArgs":["--yes","serve","-l","5500","rrbm_frontend/rrbm-frontend"],"port":5500}]}
+{"version":"0.0.1","configurations":[{"name":"frontend","runtimeExecutable":"npx","runtimeArgs":["--yes","serve","-l","5500","rrbm_frontend/rrbm-frontend"],"port":5500},{"name":"frontend-docker","runtimeExecutable":"docker","runtimeArgs":["run","--rm","--name","rrbm_fe_preview","-p","5500:80","-v","C:/rrbm/rrbm_frontend/rrbm-frontend:/usr/share/nginx/html:ro","nginx:alpine"],"port":5500}]}

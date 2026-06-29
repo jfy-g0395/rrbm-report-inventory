@@ -16,7 +16,6 @@ import rrbm_backend.dto.ReturnOrderRequest;
 import rrbm_backend.dto.VoidOrderRequest;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -101,81 +100,12 @@ public class OrderController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("message", "Invalid or missing authentication token"));
 
-            // M-21: Server-side payload validation — frontend checks exist but a direct
-            // API call bypasses them entirely.
-            String cname = request.getCustomerName();
-            if (cname == null || cname.trim().isEmpty())
-                return ResponseEntity.badRequest().body(Map.of("message", "Customer name is required"));
-            if (request.getItems() == null || request.getItems().isEmpty())
-                return ResponseEntity.badRequest().body(Map.of("message", "Order must have at least one item"));
-            for (CreateOrderRequest.OrderItemRequest it : request.getItems()) {
-                if (it.getQuantity() == null || it.getQuantity() <= 0)
-                    return ResponseEntity.badRequest().body(Map.of("message", "Item quantity must be at least 1"));
-                if (it.getUnitPrice() == null || it.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0)
-                    return ResponseEntity.badRequest().body(Map.of("message",
-                        "Item unit price must be greater than 0 for: "
-                            + (it.getProductName() != null ? it.getProductName() : "unknown")));
-                if (it.getProductId() == null)
-                    return ResponseEntity.badRequest().body(Map.of("message",
-                        "Item \"" + (it.getProductName() != null ? it.getProductName() : "unknown")
-                        + "\" must be selected from the product catalog"));
-                if (!productRepository.existsById(it.getProductId()))
-                    return ResponseEntity.badRequest().body(Map.of("message",
-                        "Product \"" + (it.getProductName() != null ? it.getProductName() : "ID " + it.getProductId())
-                        + "\" no longer exists in the catalog"));
-            }
+            // M-21: Server-side payload validation + entity build + agent linking + per-item
+            // commission setup are all done by the shared builder so this live path and the
+            // backdated "Add Records" path produce identical orders. Validation failures throw
+            // RuntimeException (caught below → 400) with the same messages as before.
+            Order order = orderService.buildOrderFromRequest(request, userId);
 
-            // Build Order entity from request
-            Order order = new Order();
-            order.setCustomerName(request.getCustomerName());
-            order.setSource(request.getSource());
-            order.setAgentName(request.getAgentName());
-            order.setFbPage(request.getFbPage());
-            order.setEcommercePlatform(request.getEcommercePlatform());
-            order.setPaymentMode(request.getPaymentMode() != null ? request.getPaymentMode() : "CASH");
-            order.setOrderType(request.getOrderType() != null ? request.getOrderType() : "STANDARD");
-            order.setAddress(request.getAddress());
-            order.setDiscount(request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO);
-            order.setDeliveryFee(request.getDeliveryFee() != null ? request.getDeliveryFee() : BigDecimal.ZERO);
-            order.setNotes(request.getNotes());
-
-            // A2: Agent linking — look up registered agent if agentId is supplied
-            final Agent linkedAgent;
-            if (request.getAgentId() != null) {
-                Agent found = agentRepository.findById(request.getAgentId()).orElse(null);
-                if (found == null || "INACTIVE".equals(found.getStatus())) {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Agent not found"));
-                }
-                order.setAgentId(found.getId());
-                order.setAgentName(found.getFullName());
-                linkedAgent = found;
-            } else {
-                linkedAgent = null;
-            }
-
-            // Build OrderItems
-            request.getItems().forEach(itemReq -> {
-                OrderItem item = new OrderItem();
-                item.setProductId(itemReq.getProductId());
-                item.setProductName(itemReq.getProductName());
-                item.setQuantity(itemReq.getQuantity());
-                item.setUnitPrice(itemReq.getUnitPrice());
-                item.setWarehouse(itemReq.getWarehouse());
-                if (linkedAgent != null
-                        && itemReq.getBasePrice() != null
-                        && itemReq.getOpPerUnit() != null) {
-                    item.setBasePrice(itemReq.getBasePrice());
-                    item.setOpPerUnit(itemReq.getOpPerUnit());
-                    // Commission = opPerUnit × quantity (flat-amount model, U15)
-                    item.setOpAmount(
-                        itemReq.getOpPerUnit()
-                               .multiply(new BigDecimal(itemReq.getQuantity()))
-                               .setScale(2, RoundingMode.HALF_UP)
-                    );
-                }
-                order.addItem(item);
-            });
-            
             // Create order
             Order savedOrder = orderService.createOrder(order, userId);
 

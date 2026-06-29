@@ -281,6 +281,102 @@ public class DailyReportService {
         // Idempotent: skip silently if already closed
         if (reportRepo.findByReportDate(date).isPresent()) return;
 
+        DailyReport report = new DailyReport();
+        populateSnapshot(report, date);
+        report.setClosedBy(userId);
+        report.setClosedAt(OffsetDateTime.now());
+        report.setCreatedAt(OffsetDateTime.now());
+        reportRepo.save(report);
+
+        activityLogService.log(userId, userName, "CLOSE_DAILY_SALES",
+                "Auto-closed daily report for " + date + " via batch import"
+                + " — Net: ₱" + report.getNetSales() + " | Gross: ₱" + report.getGrossSales()
+                + " | Expenses: ₱" + report.getTotalExpenses(),
+                "DAILY_REPORT", report.getId().toString());
+    }
+
+    /**
+     * Recompute an <b>already-closed</b> daily report from the ledger and stamp it "amended" (V85).
+     *
+     * <p>Used after a backdated "Add Records" commit so late records actually appear in a day that
+     * was already snapshotted. Overwrites the snapshot fields via {@link #populateSnapshot} but
+     * <b>preserves</b> the original {@code closedBy}/{@code closedAt}/{@code createdAt}, and sets
+     * {@code amended=true} / {@code amendedAt=now} / {@code amendedBy=userId}.
+     *
+     * <p>Idempotent and safe: if no report exists for {@code date} (the day was never closed, so it
+     * computes live), this is a no-op. Returns {@code true} iff a report was recomputed.
+     */
+    @Transactional
+    public boolean recomputeForDate(Long userId, String userName, LocalDate date) {
+        Optional<DailyReport> existing = reportRepo.findByReportDate(date);
+        if (existing.isEmpty()) return false;   // never closed → nothing frozen to refresh
+
+        DailyReport report = existing.get();
+        populateSnapshot(report, date);          // overwrite snapshot; createdAt/closedBy/closedAt untouched
+        report.setAmended(true);
+        report.setAmendedAt(OffsetDateTime.now());
+        report.setAmendedBy(userId);
+        reportRepo.save(report);
+
+        activityLogService.log(userId, userName, "AMEND_DAILY_REPORT",
+                "Recomputed daily report for " + date + " after backdated entry"
+                + " — Net: ₱" + report.getNetSales() + " | Gross: ₱" + report.getGrossSales()
+                + " | Expenses: ₱" + report.getTotalExpenses(),
+                "DAILY_REPORT", report.getId().toString());
+        return true;
+    }
+
+    /**
+     * Recompute the closed daily reports affected by a backdated commit and return the dates amended.
+     *
+     * <p>Two effects are covered:
+     * <ul>
+     *   <li><b>Own-date refresh:</b> every {@code affectedDate} whose report is already closed —
+     *       its sales / expense / unfulfilled totals changed.</li>
+     *   <li><b>Cash cascade:</b> {@code cashOnHand} is a running as-of balance, so a cash-affecting
+     *       (non-recording-only) entry backdated before today shifts the frozen cash snapshot of
+     *       every <i>later</i> closed day too. So additionally recompute all closed reports from
+     *       {@code earliestCashAffectingDate} through today. Recording-only entries move no cash, so
+     *       they only need their own date.</li>
+     * </ul>
+     *
+     * @param earliestCashAffectingDate earliest date carrying a non-recording-only entry, or
+     *                                  {@code null} if the whole commit was recording-only
+     */
+    @Transactional
+    public List<LocalDate> recomputeAffected(Long userId, String userName,
+                                             java.util.Collection<LocalDate> affectedDates,
+                                             LocalDate earliestCashAffectingDate) {
+        java.util.TreeSet<LocalDate> targets = new java.util.TreeSet<>();
+
+        // Own-date refresh (covers recording-only sales/expense total changes too).
+        for (LocalDate d : affectedDates) {
+            if (reportRepo.findByReportDate(d).isPresent()) targets.add(d);
+        }
+
+        // Cash cascade: from the earliest cash-affecting date through today.
+        if (earliestCashAffectingDate != null) {
+            LocalDate today = LocalDate.now();
+            if (!earliestCashAffectingDate.isAfter(today)) {
+                reportRepo.findByReportDateBetweenOrderByReportDateDesc(earliestCashAffectingDate, today)
+                        .forEach(r -> targets.add(r.getReportDate()));
+            }
+        }
+
+        List<LocalDate> amended = new java.util.ArrayList<>();
+        for (LocalDate d : targets) {
+            if (recomputeForDate(userId, userName, d)) amended.add(d);
+        }
+        return amended;
+    }
+
+    /**
+     * Populate a {@link DailyReport}'s snapshot fields from the ledger + operational queries for
+     * {@code date}. Shared by {@link #closeForImportDate} (new report) and {@link #recomputeForDate}
+     * (existing report). Sets only snapshot data — never closedBy/closedAt/createdAt/amended, so each
+     * caller controls the audit/close metadata. {@code closeDailySales} is intentionally left as-is.
+     */
+    private void populateSnapshot(DailyReport report, LocalDate date) {
         String datePrefix = String.format("%02d%02d%02d",
                 date.getDayOfMonth(), date.getMonthValue(), date.getYear() % 100);
 
@@ -341,8 +437,7 @@ public class DailyReportService {
         BigDecimal netSales         = grossSales.add(refundsTotal).add(adjustmentsTotal);
         long       totalTxns        = transactionService.countTransactionsForDate(date);
 
-        // ── Build snapshot ────────────────────────────────────────────────────
-        DailyReport report = new DailyReport();
+        // ── Build snapshot (overwrites the passed report's snapshot fields) ────
         report.setReportDate(date);
         report.setTotalOrders(((Number) stats[0]).intValue());
         report.setTotalCancelled(((Number) stats[1]).intValue());
@@ -380,17 +475,5 @@ public class DailyReportService {
         // correct for backdated / late / out-of-order / import closes, and makes
         // it genuinely unaffected by later days. Cash on hand persists in cash_ledger.
         report.setCashOnHand(cashLedgerService.getCashOnHandAsOf(date));
-
-        report.setClosedBy(userId);
-        report.setClosedAt(OffsetDateTime.now());
-        report.setCreatedAt(OffsetDateTime.now());
-
-        reportRepo.save(report);
-
-        activityLogService.log(userId, userName, "CLOSE_DAILY_SALES",
-                "Auto-closed daily report for " + date + " via batch import"
-                + " — Net: ₱" + netSales + " | Gross: ₱" + grossSales
-                + " | Expenses: ₱" + report.getTotalExpenses(),
-                "DAILY_REPORT", report.getId().toString());
     }
 }

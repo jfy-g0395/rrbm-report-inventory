@@ -218,6 +218,7 @@ public class ImportController {
     private final InventoryService               inventoryService;
     private final ProductSetComponentRepository   productSetComponentRepository;
     private final ImportCommitLogRepository       importCommitLogRepository;
+    private final CashLedgerService               cashLedgerService;
     private final BCryptPasswordEncoder          passwordEncoder = new BCryptPasswordEncoder();
 
     public ImportController(UserRepository userRepository,
@@ -235,7 +236,8 @@ public class ImportController {
                             TransactionService transactionService,
                             InventoryService inventoryService,
                             ProductSetComponentRepository productSetComponentRepository,
-                            ImportCommitLogRepository importCommitLogRepository) {
+                            ImportCommitLogRepository importCommitLogRepository,
+                            CashLedgerService cashLedgerService) {
         this.userRepository        = userRepository;
         this.jwtUtil               = jwtUtil;
         this.agentRepository       = agentRepository;
@@ -252,6 +254,7 @@ public class ImportController {
         this.inventoryService               = inventoryService;
         this.productSetComponentRepository  = productSetComponentRepository;
         this.importCommitLogRepository      = importCommitLogRepository;
+        this.cashLedgerService              = cashLedgerService;
     }
 
     private Long userIdFromHeader(String authHeader) {
@@ -1035,6 +1038,13 @@ public class ImportController {
         List<String>              skippedExpenseRefs  = new ArrayList<>();
         Long userId = user.getId();
 
+        // "Recording only" toggle (V84): when true, this batch is an old historical
+        // back-record — write orders/expenses/commissions/sales-ledger for the report,
+        // but do NOT deduct inventory stock or move cash-on-hand (the present-day actuals
+        // are already correct). When false (recent gap-fill), behave like a live entry:
+        // deduct inventory (existing behavior) AND move cash-on-hand.
+        boolean recordingOnly = Boolean.TRUE.equals(body.get("recordingOnly"));
+
         // ── Commit Sales → Orders (backdated to row date) ─────────────────────
         for (ParsedSaleRow saleRow : session.validSales()) {
             Map<String, Object> override = orderOverrides.get(saleRow.receiptNum());
@@ -1050,6 +1060,7 @@ public class ImportController {
                 Order order = buildOrderFromRow(saleRow, override);
                 order.setImported(true);
                 order.setImportRef(saleRow.receiptNum());
+                order.setRecordingOnly(recordingOnly);
 
                 if (reportClosed) {
                     order.setLateImported(true);
@@ -1057,8 +1068,9 @@ public class ImportController {
                     order.setNotes(note);
                 }
 
-                // createOrderAtDate: uses targetDate as the order-ID prefix and createdAt
-                Order savedOrder = orderService.createOrderAtDate(order, userId, targetDate);
+                // createOrderAtDate: uses targetDate as the order-ID prefix and createdAt.
+                // affectStock = !recordingOnly so a record-only batch leaves live stock intact.
+                Order savedOrder = orderService.createOrderAtDate(order, userId, targetDate, !recordingOnly);
 
                 // ── Payment-status routing (applies to ALL payment modes) ────
                 String ps = (override != null && override.containsKey("paymentStatus"))
@@ -1097,6 +1109,18 @@ public class ImportController {
                              savedOrder.getId(), e.getMessage());
                 }
 
+                // Cash-on-hand: only when NOT recording-only (recent gap-fill) and the
+                // order was paid in cash. Idempotent in CashLedgerService. Recording-only
+                // batches and non-cash payment modes leave the drawer untouched.
+                if (!recordingOnly && "CASH".equalsIgnoreCase(savedOrder.getPaymentMode())) {
+                    try {
+                        cashLedgerService.recordOrderCashSale(savedOrder, userId, user.getFullName(), targetDate);
+                    } catch (Exception e) {
+                        log.warn("Failed to record cash-on-hand for imported order {}: {}",
+                                 savedOrder.getId(), e.getMessage());
+                    }
+                }
+
                 committed++;
 
                 Map<String, Object> summary = new LinkedHashMap<>();
@@ -1128,7 +1152,8 @@ public class ImportController {
                         .filter(Objects::nonNull)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
                 activityLogService.log(userId, user.getFullName(), "BATCH_IMPORT_SALES",
-                        "Imported " + nonLateCount + " sales order(s) via batch — Total: ₱" + salesTotal,
+                        "Imported " + nonLateCount + " sales order(s) via batch — Total: ₱" + salesTotal
+                                + (recordingOnly ? " (recording only — no stock/cash impact)" : ""),
                         "IMPORT", sessionToken);
             }
         }
@@ -1144,6 +1169,7 @@ public class ImportController {
                 boolean reportClosed = dailyReportRepository.findByReportDate(expDate).isPresent();
 
                 Expense expense = buildExpenseFromRow(expRow, user, override);
+                expense.setRecordingOnly(recordingOnly);
 
                 // Build summary values (use overridden amount if present)
                 BigDecimal finalAmount = (override != null && override.containsKey("amount"))
@@ -1162,6 +1188,19 @@ public class ImportController {
                 }
 
                 expenseRepository.save(expense);
+
+                // Cash-on-hand: only when NOT recording-only. reconcileExpenseCash writes a
+                // cash-out only for CASH expenses (non-cash methods reconcile to 0). Recording-only
+                // batches skip this entirely, leaving the drawer untouched.
+                if (!recordingOnly) {
+                    try {
+                        cashLedgerService.reconcileExpenseCash(expense, userId, user.getFullName());
+                    } catch (Exception e) {
+                        log.warn("Failed to reconcile cash-on-hand for imported expense #{}: {}",
+                                 expense.getId(), e.getMessage());
+                    }
+                }
+
                 committed++;
 
                 Map<String, Object> expSummary = new LinkedHashMap<>();
@@ -1182,6 +1221,7 @@ public class ImportController {
 
         // ── Persist commit log ────────────────────────────────────────────────
         Map<String, Object> resultSnapshot = new LinkedHashMap<>();
+        resultSnapshot.put("recordingOnly", recordingOnly);
         resultSnapshot.put("committedOrders", committedOrders);
         resultSnapshot.put("committedExpenses", committedExpenses);
         resultSnapshot.put("skippedOrders", skippedReceipts);
@@ -1210,7 +1250,8 @@ public class ImportController {
                 "skipped",           skipped,
                 "errors",            errors,
                 "committedOrders",   committedOrders,
-                "committedExpenses", committedExpenses));
+                "committedExpenses", committedExpenses,
+                "recordingOnly",     recordingOnly));
     }
 
     // ── POST /api/import/upload/combined ──────────────────────────────────────
