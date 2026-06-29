@@ -218,14 +218,21 @@ Built session-by-session; each is independently shippable and testable, dependen
 
 ---
 
-## 11. S4b — DONE (logged 2026-06-29)
+## 11. S4b — DONE + DEPLOYED (logged 2026-06-29)
 
-**All sessions complete: S1–S3 (backend) ✅, S4a + S4b (frontend) ✅. The Add Records page is feature-complete and verified client-side.**
+**All sessions complete and shipped to prod: S1–S3 (backend) ✅, S4a + S4b (frontend) ✅, dead-code cleanup ✅.**
 
-**Remaining (optional cleanup, not blocking):**
-- `task_79a11e75` — remove the dead CSV batch-import JS from `app.js` (`authorizeImport`, `uploadImportCsv`, `commitImport`, `downloadCombinedTemplate`, `openReviewModal`, preview/review helpers). KEEP `loadImportHistory`/`openImportDetailModal`, the Add Records functions, and the separate CSV-import block (~lines 3200–3274 region).
+**Deployed 2026-06-29** — commit `f96e63b` built + recreated via `docker compose up -d --build`:
+- DB: `V85` (daily_reports `amended`/`amended_at`/`amended_by`) applied successfully on live data; `V84` (recording_only) already live from a prior deploy. All new columns confirmed present.
+- Backend healthy (`/actuator/health` UP); `POST /api/backdated/commit` mapped + auth-gated (401 without token).
+- Frontend serves the "Add Records" page; orphaned review modal gone.
+- DB volume persisted — no data loss.
+
+**Cleanup ✅ (`task_79a11e75` done):** removed ~1,433 lines of dead combined-import JS from `app.js` (`authorizeImport`, `selectImportType`, `downloadCombinedTemplate`, `uploadImportCsv`, `rowsFromSheet`, `rowsToCsv`, `renderImportPreview`, `openReviewModal`, `reviewPagePrev/Next`, `renderImportIssues`, `validateImport`, `commitImport`, `closeImportReports`, `showImportResultModal`) + 4 dead module vars; removed the orphaned `modal-import-review` HTML and its review-card CSS. KEPT `loadImportHistory`/`openImportDetailModal` (+ `_importHistoryData`), the Add Records functions, and the separate e-commerce CSV-import modal (`openImportModal`…`submitCsvImport`). Verified: `node --check` clean, no dangling refs, live preview shows all 10 dead fns gone / 8 kept fns present / no console errors.
+
+**Still pending (not blocking):**
+- **End-to-end prod smoke test** — the flow has been IT-tested (throwaway Postgres) and verified client-side, but a real **Submit All against the live backend** has never been fired. Recommended: log in, stage one small backdated order for an already-closed date, Submit All, confirm the daily report flips to `amended` and Collections routing behaves — catch any prod-only surprise on one controlled record.
 - `task_5cbb138d` — fix pre-existing DailyCloseIT `product_code` seed overflow (unrelated to this feature).
-- **End-to-end prod smoke test** still pending: the whole flow has only been verified client-side (preview `API_BASE`→prod, so Submit All was never fired against the server). When deploying, do a real Submit All against a backdated closed date and confirm the daily report is amended + Collections routing works.
 
 ### Original S4b spec (now implemented) — kept for reference
 
