@@ -4,8 +4,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -145,6 +148,155 @@ public class DeliveryStockService {
         payable.setStatus("PENDING");
         payable.setCreatedBy(log.getEncodedByName());
         payableRepository.save(payable);
+    }
+
+    // ── Edit: apply ONLY the net change between old and new item sets ─────────────
+
+    /**
+     * Apply only the <b>difference</b> between a delivery's old and new item sets, keyed by
+     * (productId, warehouse). Lines that are unchanged are left completely untouched — no stock
+     * movement, no PO churn — so editing one line can never disturb a sibling line that has been
+     * sold since the delivery was received. This replaces the old "reverse everything then
+     * re-apply everything" edit path, whose zero-floor clamp silently corrupted untouched lines
+     * that had been partly sold (see DR 208390 incident).
+     *
+     * <p>For each changed key: a positive delta adds stock (RESTOCK) and advances PO fulfilment;
+     * a negative delta removes stock (CORRECTION_OUT, floored at 0) and rolls back PO fulfilment.
+     * The delivery's PENDING payable is updated in place to the new item total (never cancelled
+     * and re-created, so a partial payment history is preserved).
+     */
+    @Transactional
+    public void applyItemEdit(DeliveryLog log, List<DeliveryLogItem> oldItems,
+                              List<DeliveryLogItem> newItems, Long userId) {
+        // Net received-qty delta per (productId|warehouse).
+        Map<String, Integer> delta = new LinkedHashMap<>();
+        Map<String, Long>    keyProduct = new HashMap<>();
+        Map<String, String>  keyWarehouse = new HashMap<>();
+        for (DeliveryLogItem it : oldItems) {
+            if (it.getProductId() == null) continue;
+            String wh = it.getWarehouse() == null ? "wh1" : it.getWarehouse();
+            String k = it.getProductId() + "|" + wh;
+            delta.merge(k, -receivedOf(it), Integer::sum);
+            keyProduct.put(k, it.getProductId());
+            keyWarehouse.put(k, wh);
+        }
+        for (DeliveryLogItem it : newItems) {
+            if (it.getProductId() == null) continue;
+            String wh = it.getWarehouse() == null ? "wh1" : it.getWarehouse();
+            String k = it.getProductId() + "|" + wh;
+            delta.merge(k, receivedOf(it), Integer::sum);
+            keyProduct.put(k, it.getProductId());
+            keyWarehouse.put(k, wh);
+        }
+
+        Set<Long> touchedPoIds = new HashSet<>();
+        PurchaseOrder linkedPo = (log.getPoNumber() != null && !log.getPoNumber().isBlank())
+                ? purchaseOrderRepository.findByPoNumber(log.getPoNumber()).orElse(null) : null;
+
+        for (Map.Entry<String, Integer> e : delta.entrySet()) {
+            int d = e.getValue();
+            if (d == 0) continue;   // unchanged line — never touch its stock or PO
+            Product product = productRepository.findById(keyProduct.get(e.getKey())).orElse(null);
+            if (product == null) continue;
+            String wh = keyWarehouse.get(e.getKey());
+
+            // ── stock ──
+            int cur = stockOf(product, wh);
+            setStockOf(product, wh, d > 0 ? cur + d : Math.max(0, cur + d));
+            productRepository.save(product);
+            inventoryService.logMovement(product.getId(), d > 0 ? "RESTOCK" : "CORRECTION_OUT", wh, d,
+                    log.getReceiptNumber(),
+                    "Delivery edit — receipt " + log.getReceiptNumber()
+                            + " (" + (d > 0 ? "+" + d : String.valueOf(d)) + " " + product.getName() + ")",
+                    userId);
+
+            // ── PO fulfilment ──
+            if (d > 0) {
+                PoItem poItem = linkedPo != null ? matchOpenPoItem(linkedPo, product) : fifoMatchOpenPoItem(product);
+                if (poItem != null) {
+                    int nf = (poItem.getFulfilledQty() != null ? poItem.getFulfilledQty() : 0) + d;
+                    poItem.setFulfilledQty(nf);
+                    poItem.setDrNumber(log.getReceiptNumber());
+                    if (nf >= (poItem.getQuantityOrdered() != null ? poItem.getQuantityOrdered() : 1)) {
+                        poItem.setIsFulfilled(true);
+                    }
+                    poItemRepository.save(poItem);
+                    touchedPoIds.add(poItem.getPurchaseOrder().getId());
+                }
+            } else {
+                PoItem poItem = findFulfilledPoItem(log, linkedPo, product);
+                if (poItem != null) {
+                    reversePoItem(poItem, -d);   // -d is the positive magnitude removed
+                    poItemRepository.save(poItem);
+                    touchedPoIds.add(poItem.getPurchaseOrder().getId());
+                }
+            }
+        }
+        for (Long poId : touchedPoIds) {
+            purchaseOrderRepository.findByIdWithItems(poId).ifPresent(this::recalcPoStatus);
+        }
+
+        // ── payable: update the existing (non-cancelled) one in place to the new total ──
+        BigDecimal newTotal = BigDecimal.ZERO;
+        for (DeliveryLogItem it : newItems) {
+            BigDecimal uc = it.getUnitCost() != null ? it.getUnitCost() : BigDecimal.ZERO;
+            newTotal = newTotal.add(uc.multiply(BigDecimal.valueOf(receivedOf(it))));
+        }
+        Payable active = payableRepository.findByDeliveryLogId(log.getId()).stream()
+                .filter(p -> !"CANCELLED".equalsIgnoreCase(p.getStatus()))
+                .findFirst().orElse(null);
+        if (active != null) {
+            active.setTotalAmount(newTotal);
+            payableRepository.save(active);
+        } else {
+            Payable p = new Payable();
+            p.setDeliveryLogId(log.getId());
+            p.setReceiptNumber(log.getReceiptNumber());
+            p.setSupplierName(log.getSupplierName());
+            p.setTotalAmount(newTotal);
+            p.setStatus("PENDING");
+            p.setCreatedBy(log.getEncodedByName());
+            payableRepository.save(p);
+        }
+    }
+
+    private int stockOf(Product p, String wh) {
+        switch (wh) {
+            case "wh2": return p.getStockWh2();
+            case "wh3": return p.getStockWh3();
+            default:    return p.getStockWh1();
+        }
+    }
+
+    private void setStockOf(Product p, String wh, int val) {
+        switch (wh) {
+            case "wh2": p.setStockWh2(val); break;
+            case "wh3": p.setStockWh3(val); break;
+            default:    p.setStockWh1(val); break;
+        }
+    }
+
+    /** The PO line this delivery advanced for a product (matched within the linked PO, else by DR stamp). */
+    private PoItem findFulfilledPoItem(DeliveryLog log, PurchaseOrder linkedPo, Product product) {
+        if (linkedPo != null) {
+            PoItem m = findPoItemForProduct(linkedPo.getItems(), product);
+            if (m != null) return m;
+        }
+        for (PoItem pi : poItemRepository.findByDrNumberOrderByIdAsc(log.getReceiptNumber())) {
+            if (productMatchesPoItem(product, pi)) return pi;
+        }
+        return null;
+    }
+
+    private PoItem findPoItemForProduct(List<PoItem> poItems, Product prod) {
+        return poItems.stream().filter(pi -> productMatchesPoItem(prod, pi)).findFirst().orElse(null);
+    }
+
+    private boolean productMatchesPoItem(Product prod, PoItem pi) {
+        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()
+                && (prod.getItemCode().equalsIgnoreCase(pi.getItemCode())
+                 || prod.getItemCode().equalsIgnoreCase(pi.getSupplierItemCode()))) return true;
+        return prod.getName() != null && prod.getName().equalsIgnoreCase(pi.getItemDescription());
     }
 
     // ── Reverse: subtract stock, roll back PO fulfillment, cancel payable ────────

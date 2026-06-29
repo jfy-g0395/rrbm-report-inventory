@@ -184,11 +184,23 @@ public class DeliveryReportController {
             String newSig = itemsSignature(newItems);
 
             if (!oldSig.equals(newSig)) {
-                String oldDesc = describeItems(log.getItems());
-                String newDesc = describeItems(newItems);
-                // Reverse old effects, swap the item set, then re-apply.
-                deliveryStockService.reverseEffects(log, userId);
+                // Detached copies of the current lines so we can compute the per-line delta
+                // after the persisted item set is swapped.
+                List<DeliveryLogItem> oldSnapshot = new ArrayList<>();
+                for (DeliveryLogItem it : log.getItems()) {
+                    DeliveryLogItem c = new DeliveryLogItem();
+                    c.setProductId(it.getProductId());
+                    c.setProductName(it.getProductName());
+                    c.setQuantity(it.getQuantity());
+                    c.setReceivedQty(it.getReceivedQty());
+                    c.setUnitCost(it.getUnitCost());
+                    c.setWarehouse(it.getWarehouse());
+                    oldSnapshot.add(c);
+                }
 
+                // Swap the persisted item set, then apply ONLY the net change per line.
+                // Unchanged lines are never touched — this replaces the old reverse-everything /
+                // re-apply-everything path that corrupted sold-down siblings (DR 208390 incident).
                 log.getItems().clear();
                 log.getItems().addAll(newItems);
                 int totalReceived = newItems.stream().mapToInt(DeliveryLogItem::getReceivedQty).sum();
@@ -196,8 +208,8 @@ public class DeliveryReportController {
                 log.setTotalQuantity(totalReceived);
                 repo.save(log);
 
-                deliveryStockService.applyEffects(log, userId);
-                changes.add("Items: " + oldDesc + " → " + newDesc);
+                deliveryStockService.applyItemEdit(log, oldSnapshot, newItems, userId);
+                appendItemChanges(changes, oldSnapshot, newItems);
             }
         }
 
@@ -236,13 +248,55 @@ public class DeliveryReportController {
                 .collect(Collectors.joining("|"));
     }
 
-    /** Compact, stable description of a line-item list for change-log diffs. */
-    private String describeItems(List<DeliveryLogItem> items) {
-        return "[" + items.stream()
-                .map(i -> (i.getProductName() == null ? "?" : i.getProductName())
-                        + " x" + (i.getReceivedQty() > 0 ? i.getReceivedQty() : i.getQuantity())
-                        + ("wh1".equals(i.getWarehouse()) || i.getWarehouse() == null ? "" : "@" + i.getWarehouse()))
-                .collect(Collectors.joining(", ")) + "]";
+    /**
+     * Append a concise, human-readable per-line diff to the change log — only the lines that
+     * actually changed (added / removed / qty changed / cost changed), keyed by (productId,
+     * warehouse). Replaces the old "[full old list] → [full new list]" dump.
+     */
+    private void appendItemChanges(List<String> changes,
+                                   List<DeliveryLogItem> oldItems, List<DeliveryLogItem> newItems) {
+        Map<String, int[]>        qty  = new LinkedHashMap<>();   // key -> [oldQty, newQty]
+        Map<String, BigDecimal[]> cost = new HashMap<>();         // key -> [oldCost, newCost]
+        Map<String, String>       name = new LinkedHashMap<>();
+        Map<String, String>       wh   = new HashMap<>();
+        for (DeliveryLogItem it : oldItems) {
+            String w = it.getWarehouse() == null ? "wh1" : it.getWarehouse();
+            String k = it.getProductId() + "|" + w;
+            qty.computeIfAbsent(k, x -> new int[2])[0] += rcv(it);
+            cost.computeIfAbsent(k, x -> new BigDecimal[2])[0] = it.getUnitCost();
+            name.putIfAbsent(k, it.getProductName());
+            wh.put(k, w);
+        }
+        for (DeliveryLogItem it : newItems) {
+            String w = it.getWarehouse() == null ? "wh1" : it.getWarehouse();
+            String k = it.getProductId() + "|" + w;
+            qty.computeIfAbsent(k, x -> new int[2])[1] += rcv(it);
+            cost.computeIfAbsent(k, x -> new BigDecimal[2])[1] = it.getUnitCost();
+            name.put(k, it.getProductName());
+            wh.put(k, w);
+        }
+        for (String k : qty.keySet()) {
+            int o = qty.get(k)[0], n = qty.get(k)[1];
+            String nm = name.get(k) == null ? "item" : name.get(k);
+            String tag = "wh1".equals(wh.get(k)) ? "" : " @" + wh.get(k);
+            if (o > 0 && n == 0) {
+                changes.add("Removed " + nm + " (" + o + tag + ")");
+            } else if (o == 0 && n > 0) {
+                changes.add("Added " + nm + " (" + n + tag + ")");
+            } else if (o != n) {
+                changes.add(nm + " qty " + o + " → " + n + tag);
+            } else {
+                BigDecimal[] c = cost.get(k);
+                if (c != null && c[0] != null && c[1] != null && c[0].compareTo(c[1]) != 0) {
+                    changes.add(nm + " cost ₱" + c[0].stripTrailingZeros().toPlainString()
+                            + " → ₱" + c[1].stripTrailingZeros().toPlainString() + tag);
+                }
+            }
+        }
+    }
+
+    private int rcv(DeliveryLogItem it) {
+        return it.getReceivedQty() > 0 ? it.getReceivedQty() : it.getQuantity();
     }
 
     private String blankToNull(Object val) {
