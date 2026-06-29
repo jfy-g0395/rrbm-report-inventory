@@ -2200,6 +2200,29 @@
   // ================================================================
   // DELIVERY RECEIPT â€” searchable product dropdown, form state
   // ================================================================
+  /** Build <option>s for a per-line PO selector from the cached open POs. */
+  function _deliveryPoOptionsHtml() {
+    var opts = '<option value="">— No PO —</option>';
+    Object.keys(_deliveryPoCache || {}).forEach(function (poNum) {
+      var po = _deliveryPoCache[poNum];
+      opts += '<option value="' + escapeHtml(poNum) + '">'
+        + escapeHtml(poNum) + (po && po.vendorName ? ' — ' + escapeHtml(po.vendorName) : '')
+        + '</option>';
+    });
+    return opts;
+  }
+
+  /** Resolve the exact open PO-item id for a manual row tagged with a PO + product. */
+  function _resolvePoItemIdForRow(poNumber, productId) {
+    var po = _deliveryPoCache[poNumber];
+    if (!po || !po.items) return null;
+    var match = po.items.find(function (it) { return !it.isFulfilled && it.productId === productId; });
+    if (!match) {
+      match = po.items.find(function (it) { return !it.isFulfilled && _resolveProductIdForPoItem(it) === productId; });
+    }
+    return match ? match.id : null;
+  }
+
   function addDeliveryLineRow() {
     appState.deliveryLineCounter = (appState.deliveryLineCounter || 0) + 1;
     const n = appState.deliveryLineCounter;
@@ -2215,15 +2238,17 @@
       + '<input type="hidden" class="delivery-product-id" id="d-prod-id-' + n + '" value="">'
       + '<div class="product-dropdown" id="d-prod-dd-' + n + '"></div>'
       + '</div></div>'
+      + '<div class="col-md-2"><label class="form-label">PO (optional)</label>'
+      + '<select class="form-select delivery-po-line" id="delivery-po-line-' + n + '" title="Tag this line to a specific Purchase Order — lets one DR fulfil items across multiple POs">' + _deliveryPoOptionsHtml() + '</select></div>'
       + '<div class="col-md-1"><label class="form-label">Qty <span class="text-danger">*</span></label>'
       + '<input type="number" class="form-control delivery-qty" id="delivery-qty-' + n + '" min="1" value="1" /></div>'
       + '<div class="col-md-2"><label class="form-label">Total Received</label>'
       + '<input type="number" class="form-control delivery-received" id="delivery-received-' + n + '" min="0" value="0" placeholder="0" /></div>'
       + '<div class="col-md-1"><label class="form-label">Rejected</label>'
       + '<input type="number" class="form-control delivery-rejected" id="delivery-rejected-' + n + '" min="0" value="0" placeholder="0" /></div>'
-      + '<div class="col-md-2"><label class="form-label">Unit Cost (â‚±)</label>'
-      + '<input type="number" class="form-control delivery-unit-cost" id="delivery-unit-cost-' + n + '" min="0" step="0.01" placeholder="Invoice cost" /></div>'
-      + '<div class="col-md-2"><label class="form-label">Warehouse</label>'
+      + '<div class="col-md-1"><label class="form-label">Unit Cost</label>'
+      + '<input type="number" class="form-control delivery-unit-cost" id="delivery-unit-cost-' + n + '" min="0" step="0.01" placeholder="₱" /></div>'
+      + '<div class="col-md-1"><label class="form-label">WH</label>'
       + '<select class="form-select delivery-wh" id="delivery-wh-' + n + '"><option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">Balagtas</option></select></div>'
       + '<div class="col-md-1 text-end"><label class="form-label">&nbsp;</label>'
       + '<button type="button" class="btn btn-outline-danger btn-sm d-block" onclick="removeDeliveryLine(\'delivery-row-' + n + '\')"><i class="ti ti-trash"></i></button></div>'
@@ -2529,7 +2554,16 @@
         if (received === 0 && rejected === 0) continue;
       }
 
-      items.push({ productId: parseInt(prodIdEl.value, 10), quantity: qty || received || 1, received: received, rejected: rejected, warehouse: whEl ? whEl.value : 'wh1', unitCost: unitCost });
+      // Per-line PO tag (manual rows only): resolve the exact PO item so one DR can
+      // fulfil lines across multiple POs, including the same product on two POs.
+      const poLineEl = row.querySelector('.delivery-po-line');
+      let linePoNumber = null, linePoItemId = null;
+      if (poLineEl && poLineEl.value) {
+        linePoNumber = poLineEl.value;
+        linePoItemId = _resolvePoItemIdForRow(linePoNumber, parseInt(prodIdEl.value, 10));
+      }
+
+      items.push({ productId: parseInt(prodIdEl.value, 10), quantity: qty || received || 1, received: received, rejected: rejected, warehouse: whEl ? whEl.value : 'wh1', unitCost: unitCost, poItemId: linePoItemId, poNumber: linePoNumber });
     }
 
     // PO-backed: warn if some lines were excluded, block if all excluded

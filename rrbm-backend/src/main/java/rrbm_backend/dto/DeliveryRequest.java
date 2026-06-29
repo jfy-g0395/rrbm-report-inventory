@@ -30,5 +30,7 @@ public class DeliveryRequest {
         private Integer rejected;     // units rejected/returned
         private String warehouse;     // "wh1", "wh2", or "wh3"
         private BigDecimal unitCost;  // actual invoice cost — overrides stored product cost for payable calc
+        private Long poItemId;        // optional — the exact PO line this row fulfils (per-line PO tagging)
+        private String poNumber;      // optional — fallback when only the PO (not the exact line) is known
     }
 }

@@ -22,6 +22,10 @@ public class DeliveryLogItem {
     @Column(name = "rejected_qty") private int rejectedQty = 0;
     @Column(name = "unit_cost") private BigDecimal unitCost = BigDecimal.ZERO;
     @Column(name = "warehouse") private String warehouse = "wh1";
+    // Per-line PO tag (multi-PO delivery): the exact PO line this row fulfils, or the
+    // PO number as a fallback. Null for legacy / untagged lines (auto-match still applies).
+    @Column(name = "po_item_id") private Long poItemId;
+    @Column(name = "po_number") private String poNumber;
 
     public Long getId() { return id; }
     public DeliveryLog getDeliveryLog() { return deliveryLog; }
@@ -40,4 +44,8 @@ public class DeliveryLogItem {
     public void setUnitCost(BigDecimal unitCost) { this.unitCost = unitCost; }
     public String getWarehouse() { return warehouse; }
     public void setWarehouse(String warehouse) { this.warehouse = warehouse; }
+    public Long getPoItemId() { return poItemId; }
+    public void setPoItemId(Long poItemId) { this.poItemId = poItemId; }
+    public String getPoNumber() { return poNumber; }
+    public void setPoNumber(String poNumber) { this.poNumber = poNumber; }
 }

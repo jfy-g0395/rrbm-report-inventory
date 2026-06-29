@@ -570,6 +570,10 @@ public class ProductController {
             logItem.setRejectedQty(rejected);
             logItem.setUnitCost(uc);
             logItem.setWarehouse(wh);
+            // Per-line PO tag (multi-PO delivery): persisted so applyEffects/reverseEffects
+            // can fulfil/roll back the exact PO line even across delivery edits.
+            logItem.setPoItemId(item.getPoItemId());
+            logItem.setPoNumber(item.getPoNumber());
             log.getItems().add(logItem);
             totalQty += received;
         }
@@ -578,7 +582,9 @@ public class ProductController {
         log.setTotalQuantity(totalQty);
         deliveryLogRepository.save(log);
 
-        // Apply stock add, PO auto-match/advance, and create the PENDING payable.
+        // Apply stock add, PO auto-match/advance (per-line PO tag → linked PO → FIFO),
+        // and create the PENDING payable — all centralized in DeliveryStockService so
+        // receive / cancel / edit stay consistent.
         deliveryStockService.applyEffects(log, userId);
 
         // #3 fix: actor is the logged-in encoder, not the receiver

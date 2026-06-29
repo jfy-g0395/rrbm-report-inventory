@@ -96,39 +96,27 @@ public class DeliveryStockService {
             Product prod = productRepository.findById(drItem.getProductId()).orElse(null);
             if (prod == null) continue;
 
+            // Resolve which PO line this row fulfils, most-specific first:
             PoItem poItem = null;
-            if (linkedPo != null) {
-                if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getItemCode().equalsIgnoreCase(i.getItemCode()))
-                            .findFirst().orElse(null);
-                }
-                if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getItemCode().equalsIgnoreCase(i.getSupplierItemCode()))
-                            .findFirst().orElse(null);
-                }
-                if (poItem == null && prod.getName() != null) {
-                    poItem = linkedPo.getItems().stream()
-                            .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                                    && prod.getName().equalsIgnoreCase(i.getItemDescription()))
-                            .findFirst().orElse(null);
-                }
-            } else {
-                if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    List<PoItem> open = poItemRepository.findByItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
-                if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-                    List<PoItem> open = poItemRepository.findBySupplierItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
-                if (poItem == null && prod.getName() != null) {
-                    List<PoItem> open = poItemRepository.findByItemDescriptionIgnoreCaseAndIsFulfilledFalseOrderByIdAsc(prod.getName());
-                    if (!open.isEmpty()) poItem = open.get(0);
-                }
+            // 0a. Explicit per-line PO item — exact; lets ONE delivery receipt fulfil lines
+            //     across MULTIPLE POs, including the same product on two different POs.
+            if (drItem.getPoItemId() != null) {
+                poItem = poItemRepository.findById(drItem.getPoItemId()).orElse(null);
+            }
+            // 0b. Per-line PO number — match the open line within that one PO.
+            if (poItem == null && drItem.getPoNumber() != null && !drItem.getPoNumber().isBlank()) {
+                PurchaseOrder linePo = purchaseOrderRepository.findByPoNumber(drItem.getPoNumber().trim()).orElse(null);
+                if (linePo != null) poItem = matchOpenPoItem(linePo, prod);
+            }
+            // 1. Request-level linked PO (top "linked PO" dropdown) — existing behaviour.
+            if (poItem == null && linkedPo != null) {
+                poItem = matchOpenPoItem(linkedPo, prod);
+            }
+            // 2. Global FIFO fallback — only when no PO context was given at all.
+            if (poItem == null && linkedPo == null
+                    && drItem.getPoItemId() == null
+                    && (drItem.getPoNumber() == null || drItem.getPoNumber().isBlank())) {
+                poItem = fifoMatchOpenPoItem(prod);
             }
             if (poItem == null) continue;
 
@@ -194,27 +182,50 @@ public class DeliveryStockService {
         // ── 2. Reverse PO item fulfillment ───────────────────────────────────
         try {
             Set<Long> touchedPoIds = new HashSet<>();
-            if (log.getPoNumber() != null && !log.getPoNumber().isBlank()) {
-                PurchaseOrder linkedPo = purchaseOrderRepository.findByPoNumber(log.getPoNumber()).orElse(null);
-                if (linkedPo != null) {
-                    for (DeliveryLogItem drItem : log.getItems()) {
-                        PoItem poItem = findPoItemForDrItem(drItem, linkedPo.getItems());
-                        if (poItem == null) continue;
-                        int received = receivedOf(drItem);
+            Set<Long> handledPoItemIds = new HashSet<>();
+
+            // Pass A — explicit per-line PO tags: roll back the EXACT line by that line's
+            // received qty. Handles the same product on two POs under one DR precisely.
+            for (DeliveryLogItem drItem : log.getItems()) {
+                if (drItem.getPoItemId() == null) continue;
+                PoItem poItem = poItemRepository.findById(drItem.getPoItemId()).orElse(null);
+                if (poItem == null) continue;
+                int received = receivedOf(drItem);
+                if (received <= 0) continue;
+                reversePoItem(poItem, received);
+                poItemRepository.save(poItem);
+                handledPoItemIds.add(poItem.getId());
+                touchedPoIds.add(poItem.getPurchaseOrder().getId());
+            }
+
+            // Pass B — untagged lines: existing linked-PO / FIFO behaviour, skipping any
+            // line already handled in Pass A. No tags present → identical to the old path.
+            boolean hasUntagged = log.getItems().stream().anyMatch(i -> i.getPoItemId() == null);
+            if (hasUntagged) {
+                if (log.getPoNumber() != null && !log.getPoNumber().isBlank()) {
+                    PurchaseOrder linkedPo = purchaseOrderRepository.findByPoNumber(log.getPoNumber()).orElse(null);
+                    if (linkedPo != null) {
+                        for (DeliveryLogItem drItem : log.getItems()) {
+                            if (drItem.getPoItemId() != null) continue;
+                            PoItem poItem = findPoItemForDrItem(drItem, linkedPo.getItems());
+                            if (poItem == null || handledPoItemIds.contains(poItem.getId())) continue;
+                            int received = receivedOf(drItem);
+                            if (received <= 0) continue;
+                            reversePoItem(poItem, received);
+                            poItemRepository.save(poItem);
+                            touchedPoIds.add(linkedPo.getId());
+                        }
+                    }
+                } else {
+                    List<PoItem> fifoMatched = poItemRepository.findByDrNumberOrderByIdAsc(log.getReceiptNumber());
+                    for (PoItem poItem : fifoMatched) {
+                        if (handledPoItemIds.contains(poItem.getId())) continue;
+                        int received = resolveReceivedQtyForPoItem(poItem, log.getItems());
                         if (received <= 0) continue;
                         reversePoItem(poItem, received);
                         poItemRepository.save(poItem);
-                        touchedPoIds.add(linkedPo.getId());
+                        touchedPoIds.add(poItem.getPurchaseOrder().getId());
                     }
-                }
-            } else {
-                List<PoItem> fifoMatched = poItemRepository.findByDrNumberOrderByIdAsc(log.getReceiptNumber());
-                for (PoItem poItem : fifoMatched) {
-                    int received = resolveReceivedQtyForPoItem(poItem, log.getItems());
-                    if (received <= 0) continue;
-                    reversePoItem(poItem, received);
-                    poItemRepository.save(poItem);
-                    touchedPoIds.add(poItem.getPurchaseOrder().getId());
                 }
             }
             for (Long poId : touchedPoIds) {
@@ -244,6 +255,51 @@ public class DeliveryStockService {
     }
 
     // ── Helpers (ported from DeliveryReportController) ───────────────────────────
+
+    /**
+     * First OPEN (unfulfilled) line within a specific PO matching this product —
+     * legacy itemCode, then supplier itemCode, then product name vs item description.
+     */
+    private PoItem matchOpenPoItem(PurchaseOrder po, Product prod) {
+        PoItem poItem = null;
+        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
+            poItem = po.getItems().stream()
+                    .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
+                            && prod.getItemCode().equalsIgnoreCase(i.getItemCode()))
+                    .findFirst().orElse(null);
+        }
+        if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
+            poItem = po.getItems().stream()
+                    .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
+                            && prod.getItemCode().equalsIgnoreCase(i.getSupplierItemCode()))
+                    .findFirst().orElse(null);
+        }
+        if (poItem == null && prod.getName() != null) {
+            poItem = po.getItems().stream()
+                    .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
+                            && prod.getName().equalsIgnoreCase(i.getItemDescription()))
+                    .findFirst().orElse(null);
+        }
+        return poItem;
+    }
+
+    /** FIFO fallback across ALL open POs for this product (oldest open line first). */
+    private PoItem fifoMatchOpenPoItem(Product prod) {
+        PoItem poItem = null;
+        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
+            List<PoItem> open = poItemRepository.findByItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
+            if (!open.isEmpty()) poItem = open.get(0);
+        }
+        if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
+            List<PoItem> open = poItemRepository.findBySupplierItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
+            if (!open.isEmpty()) poItem = open.get(0);
+        }
+        if (poItem == null && prod.getName() != null) {
+            List<PoItem> open = poItemRepository.findByItemDescriptionIgnoreCaseAndIsFulfilledFalseOrderByIdAsc(prod.getName());
+            if (!open.isEmpty()) poItem = open.get(0);
+        }
+        return poItem;
+    }
 
     private PoItem findPoItemForDrItem(DeliveryLogItem drItem, List<PoItem> poItems) {
         if (drItem.getProductId() == null) return null;
