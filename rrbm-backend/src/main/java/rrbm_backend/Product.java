@@ -61,6 +61,12 @@ public class Product {
     @Column(name = "unit_cost", precision = 10, scale = 2)
     private BigDecimal unitCost = BigDecimal.ZERO;
 
+    // Agent base price per unit — the company price an agent buys at; the agent's over price
+    // (commission) is unitPrice - agentBasePrice. Managed only by Accounting+/admin roles.
+    // Nullable: products without one leave the order's base/over price for manual entry.
+    @Column(name = "agent_base_price", precision = 10, scale = 2)
+    private BigDecimal agentBasePrice;
+
     // Stock level that triggers CRITICAL warning (red)
     @Column(name = "threshold_critical")
     private Integer thresholdCritical = 1000;

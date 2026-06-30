@@ -22,7 +22,7 @@ public class UserController {
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     private static final List<String> VALID_ROLES =
-        List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "STANDARD_USER");
+        List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "ACCOUNTING_PLUS", "STANDARD_USER");
 
     private static final String ALL_PAGES =
         "[\"dashboard\",\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-reports\",\"activity-log\",\"employees\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\",\"cash-flow\"]";
@@ -33,6 +33,9 @@ public class UserController {
         m.put("STANDARD_USER",
             "[\"orders\",\"rejected-items\",\"receive-stocks\",\"inventory\",\"delivery-reports\"]");
         m.put("ACCOUNTING",
+            "[\"dashboard\",\"orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]");
+        // Accounting+ — same pages as Accounting, plus the exclusive ability to see/set agent base prices.
+        m.put("ACCOUNTING_PLUS",
             "[\"dashboard\",\"orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]");
         m.put("ADMINISTRATOR", ALL_PAGES);
         m.put("ADMIN",         ALL_PAGES);

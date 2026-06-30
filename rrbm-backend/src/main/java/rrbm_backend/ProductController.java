@@ -175,6 +175,9 @@ public class ProductController {
         product.setSellingTag("SELLING"); // always default to SELLING; tag editable from inventory UI
         if (body.get("unitPrice") != null) product.setUnitPrice(new BigDecimal(body.get("unitPrice").toString()));
         if (body.get("unitCost") != null) product.setUnitCost(new BigDecimal(body.get("unitCost").toString()));
+        // Agent base price (auto-fill default for agent over-price). Master-key gated like the rest.
+        if (body.get("agentBasePrice") != null && !body.get("agentBasePrice").toString().isBlank())
+            product.setAgentBasePrice(new BigDecimal(body.get("agentBasePrice").toString()));
         if (body.get("thresholdCritical") != null) product.setThresholdCritical(((Number) body.get("thresholdCritical")).intValue());
         if (body.get("thresholdLow") != null) product.setThresholdLow(((Number) body.get("thresholdLow")).intValue());
         if (body.get("stockWh1") != null) product.setStockWh1(((Number) body.get("stockWh1")).intValue());
@@ -298,6 +301,16 @@ public class ProductController {
             if (product.getUnitCost() == null || newCost.compareTo(product.getUnitCost()) != 0) {
                 changes.add("Cost: ₱" + product.getUnitCost() + " → ₱" + newCost);
                 product.setUnitCost(newCost);
+            }
+        }
+        // Agent Base Price (auto-fill default for agent over-price). Blank clears it.
+        if (body.containsKey("agentBasePrice")) {
+            Object raw = body.get("agentBasePrice");
+            BigDecimal newBase = (raw == null || raw.toString().isBlank()) ? null : new BigDecimal(raw.toString());
+            if ((newBase == null) != (product.getAgentBasePrice() == null)
+                    || (newBase != null && newBase.compareTo(product.getAgentBasePrice()) != 0)) {
+                changes.add("Agent base price: ₱" + product.getAgentBasePrice() + " → ₱" + newBase);
+                product.setAgentBasePrice(newBase);
             }
         }
         // Threshold Critical
