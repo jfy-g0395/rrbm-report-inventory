@@ -564,6 +564,13 @@
       return;
     }
 
+    // Keep open/unaccomplished orders on top and sink terminal ones (Delivered, Cancelled) to the
+    // bottom so staff don't scroll past finished orders. Stable sort preserves each group's order.
+    const _terminalStatus = { 'DELIVERED': 1, 'CANCELLED': 1 };
+    orders = orders.slice().sort(function (a, b) {
+      return (_terminalStatus[a.status] ? 1 : 0) - (_terminalStatus[b.status] ? 1 : 0);
+    });
+
     tb.innerHTML = orders.map(function (o) {
       const activeItems = (o.items || []).filter(function(it) { return (it.quantity - (it.voidedQuantity || 0)) > 0; });
       const first = activeItems[0];
