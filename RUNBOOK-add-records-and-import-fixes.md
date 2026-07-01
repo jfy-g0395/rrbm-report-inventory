@@ -12,6 +12,9 @@
 > not spawn subagents. Run the exact commands in Sections 2–4 in order, read only the specific
 > files/queries a step calls for, and stop to report the moment something fails instead of
 > exploring. Keep output short. The goal is: verify drift → migrate → deploy → verify → done.
+>
+> **Efficiency must NEVER mean skipping the migration-drift fix (Section 2.3) or any verification
+> step (Sections 2.4 and 4). If in doubt, STOP and ask — do not guess to save time.**
 
 ---
 
