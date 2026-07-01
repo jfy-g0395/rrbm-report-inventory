@@ -938,10 +938,11 @@
             <div class="card-body">
               <div class="row mb-3">
                 <div class="col-md-6">
-                  <label class="form-label">Linked Purchase Order</label>
+                  <label class="form-label">Load items from a Purchase Order <span style="font-size:11px;color:var(--text-muted);">(optional)</span></label>
                   <select class="form-select" id="delivery-po-number" onchange="onDeliveryPoChange(this)">
-                    <option value="">— No linked PO (unlinked delivery) —</option>
+                    <option value="">— Select a PO to add its open items —</option>
                   </select>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Adds one line per open item, pre-tagged to that PO. You can also add lines manually and pick a PO per line.</div>
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Supplier Name <span class="text-danger">*</span></label>

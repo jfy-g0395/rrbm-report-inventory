@@ -2289,7 +2289,7 @@
       + '<div class="product-dropdown" id="d-prod-dd-' + n + '"></div>'
       + '</div></div>'
       + '<div class="col-md-2"><label class="form-label">PO (optional)</label>'
-      + '<select class="form-select delivery-po-line" id="delivery-po-line-' + n + '" title="Tag this line to a specific Purchase Order — lets one DR fulfil items across multiple POs">' + _deliveryPoOptionsHtml() + '</select></div>'
+      + '<select class="form-select delivery-po-line" id="delivery-po-line-' + n + '" onchange="onDeliveryLinePoChange(' + n + ')" title="Tag this line to a Purchase Order — the product list then shows only that PO\'s open items, with remaining quantity">' + _deliveryPoOptionsHtml() + '</select></div>'
       + '<div class="col-md-1"><label class="form-label">Qty <span class="text-danger">*</span></label>'
       + '<input type="number" class="form-control delivery-qty" id="delivery-qty-' + n + '" min="1" value="1" /></div>'
       + '<div class="col-md-2"><label class="form-label">Total Received</label>'
@@ -2311,25 +2311,102 @@
     const input    = $('d-prod-in-' + n);
     const dropdown = $('d-prod-dd-' + n);
     if (!input || !dropdown) return;
+    input.addEventListener('input', function () { _showDeliveryDropdown(n); });
+    input.addEventListener('focus', function () { _showDeliveryDropdown(n); });
+    document.addEventListener('click', function (e) {
+      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('show');
+      }
+    });
+  }
 
-    function showDeliveryDropdown() {
-      const t = input.value.toLowerCase().trim();
-      const matches = t.length === 0
-        ? appState.cachedProducts
-        : appState.cachedProducts.filter(function (p) {
+  /** Open (unfulfilled) items of a PO as product-candidate objects for the scoped picker. */
+  function _deliveryPoOpenItems(poNumber) {
+    var po = _deliveryPoCache[poNumber];
+    if (!po || !po.items) return [];
+    return po.items.filter(function (it) { return !it.isFulfilled; }).map(function (it) {
+      var pid  = it.productId || _resolveProductIdForPoItem(it);
+      var prod = (appState.cachedProducts || []).find(function (p) { return String(p.id) === String(pid); });
+      var remaining = (it.quantityOrdered || 0) - (it.fulfilledQty || 0);
+      return {
+        id: pid,
+        name: (prod && prod.name) || it.itemDescription || '(unnamed)',
+        code: it.itemCode || (prod && prod.productCode) || '',
+        remaining: remaining > 0 ? remaining : 0,
+        unitPrice: it.unitPrice != null ? it.unitPrice : (prod && prod.unitCost != null ? prod.unitCost : null),
+        poItemId: it.id
+      };
+    });
+  }
+
+  /** Show the product dropdown for line n — scoped to its per-line PO when one is tagged. */
+  function _showDeliveryDropdown(n) {
+    var input = $('d-prod-in-' + n), dropdown = $('d-prod-dd-' + n);
+    if (!input || !dropdown) return;
+    var poSel = $('delivery-po-line-' + n);
+    var po = poSel ? poSel.value : '';
+    var t = input.value.toLowerCase().trim();
+    if (po) {
+      var cands = _deliveryPoOpenItems(po).filter(function (c) {
+        return t.length === 0 || c.name.toLowerCase().includes(t) || (c.code || '').toLowerCase().includes(t);
+      });
+      _renderDeliveryPoDropdown(dropdown, cands, n);
+    } else {
+      var matches = t.length === 0 ? appState.cachedProducts
+        : (appState.cachedProducts || []).filter(function (p) {
             return p.name.toLowerCase().includes(t)
                 || (p.productCode || '').toLowerCase().includes(t)
                 || (p.sku || '').toLowerCase().includes(t);
           });
       renderDeliveryProductDropdown(dropdown, matches, n);
     }
+  }
 
-    input.addEventListener('input', showDeliveryDropdown);
-    input.addEventListener('focus', showDeliveryDropdown);
-    document.addEventListener('click', function (e) {
-      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+  /** When a line's PO changes: tag the row, drop a product not in that PO, re-open the picker. */
+  window.onDeliveryLinePoChange = function (n) {
+    var sel = $('delivery-po-line-' + n), row = $('delivery-row-' + n);
+    var po = sel ? sel.value : '';
+    if (row) row.setAttribute('data-po', po || '');
+    var pidEl = $('d-prod-id-' + n);
+    if (po && pidEl && pidEl.value) {
+      var inPo = _deliveryPoOpenItems(po).some(function (c) { return String(c.id) === String(pidEl.value); });
+      if (!inPo) { pidEl.value = ''; if ($('d-prod-in-' + n)) $('d-prod-in-' + n).value = ''; }
+    }
+    var input = $('d-prod-in-' + n);
+    if (input) input.focus();
+    _showDeliveryDropdown(n);
+  };
+
+  /** Render a PO-scoped product dropdown (name + code + remaining qty); auto-fills qty/cost on pick. */
+  function _renderDeliveryPoDropdown(dropdown, cands, rowNum) {
+    if (!cands || cands.length === 0) {
+      dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No open items in this PO</div>';
+      dropdown.classList.add('show');
+      return;
+    }
+    dropdown.innerHTML = cands.map(function (c) {
+      var codeTag = c.code
+        ? '<span class="product-code" style="margin-right:5px;font-size:10px;">' + escapeHtml(c.code) + '</span>' : '';
+      return '<div class="product-dropdown-item" data-id="' + (c.id || '') + '" data-name="' + escapeHtml(c.name) + '"'
+        + ' data-remaining="' + c.remaining + '" data-cost="' + (c.unitPrice != null ? c.unitPrice : '') + '" data-row="' + rowNum + '">'
+        + '<div style="flex:1;"><div class="product-name">' + codeTag + escapeHtml(c.name) + '</div>'
+        + '<div style="font-size:10px;color:#888;">Remaining: <span style="font-weight:600;color:var(--text-primary);">' + c.remaining.toLocaleString() + '</span> pcs</div></div></div>';
+    }).join('');
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var rn = this.getAttribute('data-row');
+        var id = this.getAttribute('data-id');
+        if (!id) { showToast('This PO item is not linked to a catalog product — pick it manually.', 'error'); return; }
+        $('d-prod-in-' + rn).value = this.getAttribute('data-name');
+        $('d-prod-id-' + rn).value = id;
+        var rem = parseInt(this.getAttribute('data-remaining'), 10) || 0;
+        if ($('delivery-received-' + rn)) $('delivery-received-' + rn).value = rem;
+        if ($('delivery-qty-' + rn)) $('delivery-qty-' + rn).value = rem > 0 ? rem : 1;
+        var cost = this.getAttribute('data-cost');
+        if (cost !== '' && $('delivery-unit-cost-' + rn)) $('delivery-unit-cost-' + rn).value = parseFloat(cost).toFixed(2);
         dropdown.classList.remove('show');
-      }
+      });
     });
   }
 
@@ -2387,7 +2464,7 @@
     // Always refresh the PO dropdown with current incomplete POs
     const poSel = $('delivery-po-number');
     if (poSel) {
-      poSel.innerHTML = '<option value="">— No linked PO (manual entry) —</option>';
+      poSel.innerHTML = '<option value="">— Select a PO to add its open items —</option>';
       _deliveryPoCache = {};
       try {
         const token = localStorage.getItem('rrbm_token');
@@ -2436,28 +2513,48 @@
     appState.deliveryFormReady = true;
   }
 
-  window.onDeliveryPoChange = function(sel) {
-    var opt     = sel.options[sel.selectedIndex];
-    var supEl   = $('delivery-supplier');
-    var addBtn  = $('delivery-add-line');
-    var c       = $('delivery-items-container');
-
-    if (sel.value && opt && opt.dataset.vendor) {
-      if (supEl) supEl.value = opt.dataset.vendor;
-      // Auto-populate line items from the selected PO
-      var po = _deliveryPoCache[sel.value];
-      if (po) {
-        _populateDeliveryItemsFromPo(po);
-        if (addBtn) addBtn.style.display = 'none'; // hide manual Add Line when PO selected
-      }
-    } else {
-      // No PO selected — clear auto-rows and restore manual entry
-      if (supEl) supEl.value = '';
-      if (c) { c.innerHTML = ''; appState.deliveryLineCounter = 0; }
-      addDeliveryLineRow();
-      if (addBtn) addBtn.style.display = '';
-    }
+  // "Load items from a PO" — a repeatable action that adds one editable, pre-tagged row per open
+  // item (so one DR can load several POs). Resets itself so it reads as an action, not a selection.
+  window.onDeliveryPoChange = function (sel) {
+    var poNumber = sel.value;
+    if (!poNumber) return;
+    var po = _deliveryPoCache[poNumber];
+    if (!po) { sel.value = ''; return; }
+    var supEl = $('delivery-supplier');
+    if (supEl && !supEl.value) supEl.value = po.vendorName || '';   // fill supplier only if empty
+    _removeEmptyDeliveryRows();
+    var open = (po.items || []).filter(function (it) { return !it.isFulfilled; });
+    if (open.length === 0) { showToast('All items in ' + poNumber + ' are already fulfilled.', 'error'); }
+    open.forEach(function (it) { _addDeliveryLineForPoItem(poNumber, it); });
+    sel.value = '';
   };
+
+  /** Remove delivery rows that have no product selected (blank starter rows). */
+  function _removeEmptyDeliveryRows() {
+    document.querySelectorAll('#delivery-items-container .delivery-line').forEach(function (row) {
+      var idEl = row.querySelector('.delivery-product-id');
+      if (!idEl || !idEl.value) row.remove();
+    });
+  }
+
+  /** Add one editable delivery line pre-tagged to a PO — product + remaining qty + cost pre-filled. */
+  function _addDeliveryLineForPoItem(poNumber, item) {
+    addDeliveryLineRow();
+    var n = appState.deliveryLineCounter;
+    var sel = $('delivery-po-line-' + n);
+    if (sel) sel.value = poNumber;
+    var row = $('delivery-row-' + n);
+    if (row) row.setAttribute('data-po', poNumber);
+    var pid  = item.productId || _resolveProductIdForPoItem(item);
+    var prod = (appState.cachedProducts || []).find(function (p) { return String(p.id) === String(pid); });
+    if (pid && $('d-prod-id-' + n)) $('d-prod-id-' + n).value = pid;
+    if ($('d-prod-in-' + n)) $('d-prod-in-' + n).value = (prod && prod.name) || item.itemDescription || '';
+    var remaining = (item.quantityOrdered || 0) - (item.fulfilledQty || 0);
+    if (remaining < 0) remaining = 0;
+    if ($('delivery-received-' + n)) $('delivery-received-' + n).value = remaining;
+    if ($('delivery-qty-' + n)) $('delivery-qty-' + n).value = remaining > 0 ? remaining : 1;
+    if (item.unitPrice != null && $('delivery-unit-cost-' + n)) $('delivery-unit-cost-' + n).value = parseFloat(item.unitPrice).toFixed(2);
+  }
 
   /** Resolve a PO item's productId from the cached product list by itemCode or name. */
   function _resolveProductIdForPoItem(poItem) {
@@ -2575,8 +2672,8 @@
     const rows = $$('.delivery-line');
     if (rows.length === 0) { showToast('Add at least one line item', 'error'); return; }
 
-    const isPoBacked = !!($('delivery-po-number') || {}).value;
     const items = [];
+    let skippedLineCount = 0;
     for (let i = 0; i < rows.length; i++) {
       const row        = rows[i];
       const prodIdEl   = row.querySelector('.delivery-product-id');
@@ -2584,31 +2681,31 @@
       const receivedEl = row.querySelector('.delivery-received');
       const rejectedEl = row.querySelector('.delivery-rejected');
       const whEl       = row.querySelector('.delivery-wh');
+      const unitCostEl = row.querySelector('.delivery-unit-cost');
+      const poLineEl   = row.querySelector('.delivery-po-line');
+      const isPoTagged = !!(poLineEl && poLineEl.value);
 
       if (!prodIdEl || !prodIdEl.value) {
         showToast('Select a product on every line', 'error'); return;
       }
 
-      const unitCostEl = row.querySelector('.delivery-unit-cost');
-      const qty      = qtyEl      ? parseInt(qtyEl.value, 10)        : 0;
-      const received = receivedEl ? parseInt(receivedEl.value, 10) || 0 : (isPoBacked ? 0 : qty);
+      const qty      = qtyEl      ? parseInt(qtyEl.value, 10) || 0      : 0;
+      const received = receivedEl ? parseInt(receivedEl.value, 10) || 0 : qty;
       const rejected = rejectedEl ? parseInt(rejectedEl.value, 10) || 0 : 0;
       const unitCost = unitCostEl && unitCostEl.value ? parseFloat(unitCostEl.value) || null : null;
 
-      if (!isPoBacked) {
-        // Manual entry: qty and received must both be at least 1
+      if (isPoTagged) {
+        // PO line: skip when nothing was received or rejected (partial delivery).
+        if (received === 0 && rejected === 0) { skippedLineCount++; continue; }
+      } else {
+        // Manual line: qty and received must both be at least 1.
         if (!qty || qty < 1) { showToast('Quantity must be at least 1', 'error'); return; }
         if (received < 1) { showToast('Enter a received quantity on every line before posting', 'error'); return; }
-      } else {
-        // PO-backed: skip lines where nothing was received or rejected
-        if (received === 0 && rejected === 0) continue;
       }
 
-      // Per-line PO tag (manual rows only): resolve the exact PO item so one DR can
-      // fulfil lines across multiple POs, including the same product on two POs.
-      const poLineEl = row.querySelector('.delivery-po-line');
+      // Per-line PO tag: resolve the exact PO item so one DR can fulfil lines across POs.
       let linePoNumber = null, linePoItemId = null;
-      if (poLineEl && poLineEl.value) {
+      if (isPoTagged) {
         linePoNumber = poLineEl.value;
         linePoItemId = _resolvePoItemIdForRow(linePoNumber, parseInt(prodIdEl.value, 10));
       }
@@ -2616,15 +2713,11 @@
       items.push({ productId: parseInt(prodIdEl.value, 10), quantity: qty || received || 1, received: received, rejected: rejected, warehouse: whEl ? whEl.value : 'wh1', unitCost: unitCost, poItemId: linePoItemId, poNumber: linePoNumber });
     }
 
-    // PO-backed: warn if some lines were excluded, block if all excluded
-    if (isPoBacked) {
-      var skippedLineCount = rows.length - items.length;
-      if (items.length === 0) {
-        showToast('Enter at least one received quantity before submitting', 'error'); return;
-      }
-      if (skippedLineCount > 0) {
-        showToast(skippedLineCount + ' line' + (skippedLineCount !== 1 ? 's' : '') + ' with no received qty were excluded from this receipt', 'warning');
-      }
+    if (items.length === 0) {
+      showToast('Enter at least one received quantity before submitting', 'error'); return;
+    }
+    if (skippedLineCount > 0) {
+      showToast(skippedLineCount + ' PO line' + (skippedLineCount !== 1 ? 's' : '') + ' with no received qty were excluded from this receipt', 'warning');
     }
 
     const poNumber = (($('delivery-po-number') || {}).value || '').trim() || null;
