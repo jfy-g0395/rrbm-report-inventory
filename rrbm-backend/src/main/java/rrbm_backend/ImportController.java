@@ -47,7 +47,7 @@ public class ImportController {
             Set.of("ACCOUNTING", "ADMIN", "ADMINISTRATOR", "SUPER_ADMIN");
 
     private static final Set<String> VALID_SOURCES =
-            Set.of("WALK_IN", "AGENT", "ECOMMERCE", "FACEBOOK_PAGE", "RESELLER", "DISTRIBUTOR");
+            Set.of("WALK_IN", "IN_HOUSE", "AGENT", "ECOMMERCE", "FACEBOOK_PAGE", "RESELLER", "DISTRIBUTOR");
 
     private static final Set<String> VALID_PAYMENT_METHODS =
             Set.of("CASH", "BANK_TRANSFER", "GCASH", "PAYMAYA", "COD");

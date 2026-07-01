@@ -45,7 +45,7 @@
 
   function formatSource(src) {
     const map = {
-      'WALK_IN': 'Walk-in', 'AGENT': 'Agent',
+      'WALK_IN': 'Walk-in', 'IN_HOUSE': 'In House', 'AGENT': 'Agent',
       'ECOMMERCE': 'E-Commerce', 'FACEBOOK_PAGE': 'Facebook Page',
       'RESELLER': 'Reseller', 'DISTRIBUTOR': 'Distributor',
     };
@@ -802,6 +802,7 @@
 
     var srcDisplay = '';
     if (order.source === 'WALK_IN')        srcDisplay = 'Walk-in';
+    else if (order.source === 'IN_HOUSE')  srcDisplay = 'In House';
     else if (order.source === 'AGENT')     srcDisplay = 'Agent';
     else if (order.source === 'RESELLER')  srcDisplay = 'Reseller' + (order.agentName ? ' (' + order.agentName + ')' : '');
     else if (order.source === 'ECOMMERCE') srcDisplay = order.ecommercePlatform

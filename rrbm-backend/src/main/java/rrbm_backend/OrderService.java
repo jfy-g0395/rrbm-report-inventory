@@ -30,7 +30,7 @@ public class OrderService {
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     private static final Set<String> VALID_SOURCES = Set.of(
-        "WALK_IN", "AGENT", "ECOMMERCE", "FACEBOOK_PAGE", "RESELLER", "DISTRIBUTOR"
+        "WALK_IN", "IN_HOUSE", "AGENT", "ECOMMERCE", "FACEBOOK_PAGE", "RESELLER", "DISTRIBUTOR"
     );
 
     private final OrderRepository    orderRepository;
