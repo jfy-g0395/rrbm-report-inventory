@@ -7,6 +7,12 @@
 > READ THIS WHOLE FILE FIRST. Do the pre-flight (Section 2) before anything else.
 > If any pre-flight check fails, STOP and report — do not deploy.
 
+> **BE TOKEN- AND USAGE-EFFICIENT.** This branch is already written, compiled, and tested — do
+> NOT re-investigate the codebase, re-plan, or re-read files beyond what a step here names. Do
+> not spawn subagents. Run the exact commands in Sections 2–4 in order, read only the specific
+> files/queries a step calls for, and stop to report the moment something fails instead of
+> exploring. Keep output short. The goal is: verify drift → migrate → deploy → verify → done.
+
 ---
 
 ## 1. What this branch changes
