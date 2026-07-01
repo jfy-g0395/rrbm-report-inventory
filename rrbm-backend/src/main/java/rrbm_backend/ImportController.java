@@ -539,6 +539,12 @@ public class ImportController {
                                 + "ordered directly — use the set code"
                                 + (setCodes.isBlank() ? "" : " (" + setCodes + ")"));
                     }
+                } else {
+                    // Unmatched product code: without this guard the row would parse as VALID
+                    // with a null productId, so it would commit as an order but the inventory
+                    // deduction would be silently skipped (revenue recorded, stock untouched).
+                    itemErrors.add("Product Code '" + itemCode
+                            + "' not found — no matching product (inventory would not be deducted)");
                 }
             }
 
@@ -1058,6 +1064,16 @@ public class ImportController {
                 boolean   reportClosed = dailyReportRepository.findByReportDate(targetDate).isPresent();
 
                 Order order = buildOrderFromRow(saleRow, override);
+
+                // Defense-in-depth: never commit an order whose line has no matched product.
+                // InventoryService.deductStockForOrder() silently skips null-productId items,
+                // which would record revenue without reducing stock. Parse-time validation
+                // already blocks this, but guard the commit path too (e.g. pre-fix sessions).
+                if (!recordingOnly && order.getItems().stream().anyMatch(it -> it.getProductId() == null)) {
+                    throw new IllegalStateException("Order '" + saleRow.receiptNum()
+                            + "' has a line item with no matching product — inventory cannot be deducted");
+                }
+
                 order.setImported(true);
                 order.setImportRef(saleRow.receiptNum());
                 order.setRecordingOnly(recordingOnly);
@@ -1792,6 +1808,12 @@ public class ImportController {
                                 + "ordered directly — use the set code"
                                 + (setCodes.isBlank() ? "" : " (" + setCodes + ")"));
                     }
+                } else {
+                    // Unmatched product code: without this guard the row would parse as VALID
+                    // with a null productId, so it would commit as an order but the inventory
+                    // deduction would be silently skipped (revenue recorded, stock untouched).
+                    itemErrors.add("Product Code '" + itemCode
+                            + "' not found — no matching product (inventory would not be deducted)");
                 }
             }
 

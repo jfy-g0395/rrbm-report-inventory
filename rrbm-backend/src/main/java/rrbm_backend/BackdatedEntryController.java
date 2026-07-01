@@ -92,6 +92,8 @@ public class BackdatedEntryController {
 
         List<Map<String, Object>> orders   = asMapList(body.get("orders"));
         List<Map<String, Object>> expenses = asMapList(body.get("expenses"));
+        // "Create daily report" checkbox on the Add Records page.
+        boolean createReport = Boolean.TRUE.equals(body.get("createReport"));
 
         List<Map<String, Object>> committedOrders   = new ArrayList<>();
         List<Map<String, Object>> committedExpenses = new ArrayList<>();
@@ -192,6 +194,23 @@ public class BackdatedEntryController {
                     .stream().map(LocalDate::toString).toList();
         }
 
+        // "Create daily report" checkbox: for each affected date that has no report yet, create
+        // one now. closeForImportDate is idempotent (returns false if one already exists) and
+        // also writes the per-day expense-log snapshot. Dates that already had a report were
+        // refreshed by recomputeAffected above.
+        List<String> createdReports = new ArrayList<>();
+        if (createReport) {
+            for (LocalDate d : affectedDates) {
+                try {
+                    if (dailyReportService.closeForImportDate(userId, user.getFullName(), d)) {
+                        createdReports.add(d.toString());
+                    }
+                } catch (Exception e) {
+                    errors.add(rowError("report", -1, e));
+                }
+            }
+        }
+
         int committed = committedOrders.size() + committedExpenses.size();
         log.info("Backdated commit by {}: {} order(s), {} expense(s), {} error(s), dates {}, amended {}",
                 user.getFullName(), committedOrders.size(), committedExpenses.size(),
@@ -205,6 +224,7 @@ public class BackdatedEntryController {
         result.put("errors",            errors);
         result.put("affectedDates",     affectedDates.stream().map(LocalDate::toString).toList());
         result.put("amendedReports",    amendedReports);
+        result.put("createdReports",    createdReports);
         return ResponseEntity.ok(result);
     }
 
@@ -231,10 +251,15 @@ public class BackdatedEntryController {
     }
 
     private static Map<String, Object> rowError(String type, int index, Exception e) {
+        String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        // Previously a failed row was recorded only in the returned errors[] and the endpoint
+        // still returned 200 — a total failure looked like a silent "committed 0". Log it too
+        // so the real cause is visible server-side.
+        log.warn("Backdated {} row {} failed: {}", type, index, reason, e);
         Map<String, Object> err = new LinkedHashMap<>();
         err.put("type",   type);
         err.put("index",  index);
-        err.put("reason", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+        err.put("reason", reason);
         return err;
     }
 }

@@ -4056,7 +4056,83 @@
       wkYearEl.value = _isoInfo.year;
       if (wkWeekEl && !wkWeekEl.value) wkWeekEl.value = _isoInfo.week;
     }
+
+    loadExpenseLogDays();
   }
+
+  // ── Daily Expense Log (persisted per-day snapshots) ──────────────────────
+  async function loadExpenseLogDays() {
+    var tb = $('exp-log-days-tbody');
+    if (!tb) return;
+    var token = localStorage.getItem('rrbm_token');
+    if (!token) return;
+    try {
+      var res = await fetch(API_BASE + '/api/expenses/log/days', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:16px;">Failed to load</td></tr>'; return; }
+      var days = await res.json();
+      if (!days.length) { tb.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:16px;">No closed days yet</td></tr>'; return; }
+      tb.innerHTML = days.map(function (d) {
+        return '<tr style="cursor:pointer;" onclick="loadExpenseLogDay(\'' + d.date + '\')">'
+          + '<td>' + escapeHtml(d.date) + ' <span style="color:var(--text-muted);font-size:11px;">(' + (d.entryCount || 0) + ')</span></td>'
+          + '<td style="text-align:right;">₱' + Number(d.total || 0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
+          + '</tr>';
+      }).join('');
+    } catch (e) {
+      tb.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:16px;">Connection error</td></tr>';
+    }
+  }
+
+  window.loadExpenseLogDay = async function (date) {
+    var box = $('exp-log-detail');
+    if (!box) return;
+    box.innerHTML = 'Loading…';
+    var token = localStorage.getItem('rrbm_token');
+    try {
+      var res = await fetch(API_BASE + '/api/expenses/log/daily?date=' + encodeURIComponent(date),
+                            { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) { box.innerHTML = '<span style="color:var(--text-muted);">No expense log for ' + escapeHtml(date) + '.</span>'; return; }
+      var data = await res.json();
+      var snap = data.snapshot || {};
+      var entries = snap.entries || [], byCat = snap.byCategory || [], byPay = snap.byPaymentMethod || [];
+      var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2}); };
+
+      var html = '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;">'
+        + '<strong style="font-size:15px;">' + escapeHtml(date) + '</strong>'
+        + '<span style="font-weight:600;color:var(--accent);">Total: ' + fmt(data.total) + ' · ' + (data.entryCount || 0) + ' entr' + ((data.entryCount === 1) ? 'y' : 'ies') + '</span>'
+        + '</div>';
+
+      html += '<div class="table-scroll" style="max-height:260px;overflow-y:auto;margin-bottom:12px;"><table class="table" style="margin:0;font-size:12px;">'
+        + '<thead><tr><th>Recorded By</th><th>Items</th><th>Payment</th><th style="text-align:right;">Total</th></tr></thead><tbody>';
+      if (!entries.length) {
+        html += '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:14px;">No expense entries this day</td></tr>';
+      } else {
+        html += entries.map(function (e) {
+          var items = (e.items || []).map(function (it) { return escapeHtml(it.description || '') + ' (' + fmt(it.amount) + ')'; }).join(', ');
+          return '<tr><td>' + escapeHtml(e.adminName || '—') + '</td>'
+            + '<td>' + items + (e.recordingOnly ? ' <span style="color:var(--text-muted);">[rec-only]</span>' : '') + '</td>'
+            + '<td>' + escapeHtml(e.paymentMethod || '—') + '</td>'
+            + '<td style="text-align:right;">' + fmt(e.totalAmount) + '</td></tr>';
+        }).join('');
+      }
+      html += '</tbody></table></div>';
+
+      if (byCat.length) {
+        html += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">By Category</div>'
+          + '<div style="margin-bottom:10px;font-size:12px;">'
+          + byCat.map(function (c) { return escapeHtml(c.name || c.code || '—') + ': ' + fmt(c.total); }).join(' · ')
+          + '</div>';
+      }
+      if (byPay.length) {
+        html += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">By Payment Method</div>'
+          + '<div style="font-size:12px;">'
+          + byPay.map(function (p) { return escapeHtml(p.method || '—') + ': ' + fmt(p.total); }).join(' · ')
+          + '</div>';
+      }
+      box.innerHTML = html;
+    } catch (e) {
+      box.innerHTML = '<span style="color:var(--text-muted);">Connection error</span>';
+    }
+  };
 
   // Returns { year, week } for a given date using ISO 8601 week numbering.
   function _currentISOWeekYear(date) {
@@ -13171,7 +13247,8 @@
       var res = await fetch(API_BASE + '/api/backdated/commit', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ adminSecurityKey: key, orders: orders, expenses: expenses })
+        body: JSON.stringify({ adminSecurityKey: key, orders: orders, expenses: expenses,
+                               createReport: !!(($('addrec-create-report') || {}).checked) })
       });
       var data = {};
       try { data = await res.json(); } catch (e) {}
@@ -13189,9 +13266,11 @@
       });
       renderAddRecList();
       loadImportHistory();
+      var errCount = (data.errors && data.errors.length) ? data.errors.length : 0;
+      var firstReason = errCount ? (data.errors[0].reason || '') : '';
       showToast('Committed ' + (data.committed || 0) + ' record(s)'
-                + ((data.errors && data.errors.length) ? ', ' + data.errors.length + ' error(s)' : ''),
-                (data.errors && data.errors.length) ? 'error' : 'success');
+                + (errCount ? ' · ' + errCount + ' failed: ' + firstReason : ''),
+                errCount ? 'error' : 'success');
     } catch (e) {
       showToast('Connection error', 'error');
     } finally {
@@ -13204,6 +13283,7 @@
     if (!card || !body) return;
     var orders = data.committedOrders || [], expenses = data.committedExpenses || [];
     var collections = data.collections || [], errors = data.errors || [], amended = data.amendedReports || [];
+    var created = data.createdReports || [];
 
     var html = ''
       + '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;">'
@@ -13217,6 +13297,12 @@
       html += '<div style="margin-bottom:12px;font-size:12.5px;">'
         + '<i class="ti ti-history" style="color:#8B5CF6;"></i> <strong>Amended reports</strong> (recomputed closed days): '
         + amended.map(function (d) { return '<span style="display:inline-block;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:1px 8px;margin:2px;">' + escapeHtml(d) + '</span>'; }).join('')
+        + '</div>';
+    }
+    if (created.length) {
+      html += '<div style="margin-bottom:12px;font-size:12.5px;">'
+        + '<i class="ti ti-file-plus" style="color:#10B981;"></i> <strong>Daily reports created</strong>: '
+        + created.map(function (d) { return '<span style="display:inline-block;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:1px 8px;margin:2px;">' + escapeHtml(d) + '</span>'; }).join('')
         + '</div>';
     }
     if (collections.length) {

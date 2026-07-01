@@ -42,6 +42,7 @@ public class ExpenseController {
     private final SettingsRepository           settingsRepository;
     private final ExpenseCategoryRepository    categoryRepository;
     private final CashLedgerService            cashLedgerService;
+    private final DailyExpenseLogRepository     dailyExpenseLogRepository;
     private final BCryptPasswordEncoder        passwordEncoder = new BCryptPasswordEncoder();
 
     public ExpenseController(ExpenseRepository expenseRepository,
@@ -50,7 +51,8 @@ public class ExpenseController {
                               JwtUtil jwtUtil,
                               SettingsRepository settingsRepository,
                               ExpenseCategoryRepository categoryRepository,
-                              CashLedgerService cashLedgerService) {
+                              CashLedgerService cashLedgerService,
+                              DailyExpenseLogRepository dailyExpenseLogRepository) {
         this.expenseRepository  = expenseRepository;
         this.userRepository     = userRepository;
         this.activityLogService = activityLogService;
@@ -58,11 +60,52 @@ public class ExpenseController {
         this.settingsRepository = settingsRepository;
         this.categoryRepository = categoryRepository;
         this.cashLedgerService  = cashLedgerService;
+        this.dailyExpenseLogRepository = dailyExpenseLogRepository;
     }
 
     private Long userIdFromHeader(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) return null;
         return jwtUtil.extractUserId(authHeader.substring(7));
+    }
+
+    // ── GET /api/expenses/log/days — persisted per-day expense logs (Expense Log tab) ──
+    @GetMapping("/log/days")
+    public ResponseEntity<?> expenseLogDays(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        if (userIdFromHeader(authHeader) == null)
+            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        List<Map<String, Object>> days = dailyExpenseLogRepository.findAllByOrderByReportDateDesc()
+                .stream().map(l -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("date",       l.getReportDate().toString());
+                    m.put("total",      l.getTotalAmount());
+                    m.put("entryCount", l.getEntryCount());
+                    return m;
+                }).collect(Collectors.toList());
+        return ResponseEntity.ok(days);
+    }
+
+    // ── GET /api/expenses/log/daily?date= — one day's persisted expense log ──
+    @GetMapping("/log/daily")
+    public ResponseEntity<?> expenseLogForDate(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        if (userIdFromHeader(authHeader) == null)
+            return ResponseEntity.status(401).body(Map.of("error", "Unauthorized"));
+        return dailyExpenseLogRepository.findByReportDate(date)
+                .<ResponseEntity<?>>map(l -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("date",       l.getReportDate().toString());
+                    m.put("total",      l.getTotalAmount());
+                    m.put("entryCount", l.getEntryCount());
+                    try {
+                        m.put("snapshot", new com.fasterxml.jackson.databind.ObjectMapper()
+                                .readTree(l.getSnapshotJson()));
+                    } catch (Exception e) { m.put("snapshot", Collections.emptyMap()); }
+                    return ResponseEntity.ok(m);
+                })
+                .orElseGet(() -> ResponseEntity.status(404).body(
+                        Map.of("error", "No expense log for " + date + " — the day may not be closed yet")));
     }
 
     // ── POST /api/expenses ─────────────────────────────────────────────────

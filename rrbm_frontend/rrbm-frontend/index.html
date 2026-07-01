@@ -1903,6 +1903,31 @@
             </div>
           </div>
 
+          <!-- Daily Expense Log (persisted snapshots, created when a day is closed) -->
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-header">
+              <div class="card-title"><i class="ti ti-book" style="margin-right:6px;"></i>Daily Expense Log</div>
+              <span style="font-size:12px;color:var(--text-muted);">Full expense log per day — saved when a day is closed</span>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                <div style="flex:0 0 260px;max-width:300px;">
+                  <div class="table-scroll" style="max-height:360px;overflow-y:auto;">
+                    <table class="table" style="margin:0;font-size:13px;">
+                      <thead><tr><th>Date</th><th style="text-align:right;">Total</th></tr></thead>
+                      <tbody id="exp-log-days-tbody">
+                        <tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div style="flex:1;min-width:280px;">
+                  <div id="exp-log-detail" style="font-size:13px;color:var(--text-muted);">Select a day on the left to view its full expense log.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Weekly Report -->
           <div class="card" style="margin-bottom:14px;">
             <div class="card-header">
@@ -2131,6 +2156,12 @@
                 <div>
                   <label class="form-label">Default date for new entries</label>
                   <input type="date" id="addrec-default-date" class="form-control" style="width:180px;" onchange="onAddRecDefaultDateChange()">
+                </div>
+                <div style="align-self:center;">
+                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                    <input type="checkbox" id="addrec-create-report" checked>
+                    <span>Create daily report for each date after submitting</span>
+                  </label>
                 </div>
               </div>
             </div>

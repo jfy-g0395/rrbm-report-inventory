@@ -21,6 +21,7 @@ public class DailyReportService {
     private final UserRepository         userRepository;
     private final ExpenseRepository      expenseRepository;
     private final CashLedgerService      cashLedgerService;
+    private final DailyExpenseLogService  dailyExpenseLogService;
     private final BCryptPasswordEncoder  passwordEncoder = new BCryptPasswordEncoder();
 
     public DailyReportService(DailyReportRepository reportRepo,
@@ -30,7 +31,8 @@ public class DailyReportService {
                                OrderRepository orderRepository,
                                UserRepository userRepository,
                                ExpenseRepository expenseRepository,
-                               CashLedgerService cashLedgerService) {
+                               CashLedgerService cashLedgerService,
+                               DailyExpenseLogService dailyExpenseLogService) {
         this.reportRepo         = reportRepo;
         this.activityLogService = activityLogService;
         this.transactionService = transactionService;
@@ -39,6 +41,7 @@ public class DailyReportService {
         this.userRepository     = userRepository;
         this.expenseRepository  = expenseRepository;
         this.cashLedgerService  = cashLedgerService;
+        this.dailyExpenseLogService = dailyExpenseLogService;
     }
 
     public Optional<DailyReport> getReportByDate(LocalDate date) {
@@ -243,6 +246,9 @@ public class DailyReportService {
 
         reportRepo.save(report);
 
+        // Persist the per-day expense snapshot alongside the report (Expense Log tab).
+        dailyExpenseLogService.snapshotForDate(date, userId);
+
         // Close activity-log entries for that date
         activityLogService.closeLogsForDate(date);
 
@@ -277,9 +283,9 @@ public class DailyReportService {
      * Called only by ImportController after a successful batch commit.
      */
     @Transactional
-    public void closeForImportDate(Long userId, String userName, LocalDate date) {
+    public boolean closeForImportDate(Long userId, String userName, LocalDate date) {
         // Idempotent: skip silently if already closed
-        if (reportRepo.findByReportDate(date).isPresent()) return;
+        if (reportRepo.findByReportDate(date).isPresent()) return false;
 
         DailyReport report = new DailyReport();
         populateSnapshot(report, date);
@@ -288,11 +294,15 @@ public class DailyReportService {
         report.setCreatedAt(OffsetDateTime.now());
         reportRepo.save(report);
 
+        // Persist the per-day expense snapshot alongside the report (Expense Log tab).
+        dailyExpenseLogService.snapshotForDate(date, userId);
+
         activityLogService.log(userId, userName, "CLOSE_DAILY_SALES",
                 "Auto-closed daily report for " + date + " via batch import"
                 + " — Net: ₱" + report.getNetSales() + " | Gross: ₱" + report.getGrossSales()
                 + " | Expenses: ₱" + report.getTotalExpenses(),
                 "DAILY_REPORT", report.getId().toString());
+        return true;
     }
 
     /**
@@ -317,6 +327,9 @@ public class DailyReportService {
         report.setAmendedAt(OffsetDateTime.now());
         report.setAmendedBy(userId);
         reportRepo.save(report);
+
+        // Keep the per-day expense snapshot in sync with the amended report.
+        dailyExpenseLogService.snapshotForDate(date, userId);
 
         activityLogService.log(userId, userName, "AMEND_DAILY_REPORT",
                 "Recomputed daily report for " + date + " after backdated entry"
