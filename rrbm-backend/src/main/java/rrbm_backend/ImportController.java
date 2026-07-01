@@ -518,7 +518,16 @@ public class ImportController {
                 itemErrors.add("Product Code is required");
             } else {
                 Optional<Product> found = productRepository.findByProductCode(itemCode);
-                if (found.isPresent()) { productId = found.get().getId(); productName = found.get().getName(); }
+                if (found.isPresent()) {
+                    productId = found.get().getId();
+                    productName = found.get().getName();
+                } else {
+                    // Unmatched product code: previously this passed validation with a
+                    // null productId, so the order committed but InventoryService silently
+                    // skipped the stock deduction. Reject it so the operator fixes the code.
+                    itemErrors.add("Product Code '" + itemCode
+                            + "' not found — no matching product (inventory would not be deducted)");
+                }
             }
 
             int qty = 0;
@@ -1030,6 +1039,19 @@ public class ImportController {
                 boolean   reportClosed = dailyReportRepository.findByReportDate(targetDate).isPresent();
 
                 Order order = buildOrderFromRow(saleRow, override);
+
+                // Defense-in-depth: never commit an order whose line has no matched
+                // product. InventoryService.deductStockForOrder() silently skips items
+                // with a null productId, which would record revenue without reducing
+                // stock. Parse-time validation already blocks this, but guard the commit
+                // path too (e.g. sessions parsed before this fix was deployed).
+                boolean hasUnmatchedItem = order.getItems().stream()
+                        .anyMatch(it -> it.getProductId() == null);
+                if (hasUnmatchedItem) {
+                    throw new IllegalStateException("Order '" + saleRow.receiptNum()
+                            + "' has a line item with no matching product — inventory cannot be deducted");
+                }
+
                 order.setImported(true);
                 order.setImportRef(saleRow.receiptNum());
 
@@ -1715,7 +1737,16 @@ public class ImportController {
                 itemErrors.add("Product Code is required");
             } else {
                 Optional<Product> found = productRepository.findByProductCode(itemCode);
-                if (found.isPresent()) { productId = found.get().getId(); productName = found.get().getName(); }
+                if (found.isPresent()) {
+                    productId = found.get().getId();
+                    productName = found.get().getName();
+                } else {
+                    // Unmatched product code: previously this passed validation with a
+                    // null productId, so the order committed but InventoryService silently
+                    // skipped the stock deduction. Reject it so the operator fixes the code.
+                    itemErrors.add("Product Code '" + itemCode
+                            + "' not found — no matching product (inventory would not be deducted)");
+                }
             }
 
             int qty = 0;
