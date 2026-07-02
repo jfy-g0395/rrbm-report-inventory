@@ -13,6 +13,10 @@ public interface InventoryMovementRepository extends JpaRepository<InventoryMove
     // Get all movements linked to a specific order
     List<InventoryMovement> findByReferenceIdOrderByCreatedAtDesc(String referenceId);
 
+    // All movements within a datetime range (for the daily/weekly Movement Log report)
+    List<InventoryMovement> findByCreatedAtBetweenOrderByCreatedAtDesc(
+            java.time.LocalDateTime start, java.time.LocalDateTime end);
+
     // Find rejected movements (void/cancel/return) within a date range for the rejected items report
     @Query("SELECT m FROM InventoryMovement m " +
            "WHERE m.movementType IN ('VOID_REJECTED', 'CANCEL_REJECTED', 'RETURN_REJECTED') " +

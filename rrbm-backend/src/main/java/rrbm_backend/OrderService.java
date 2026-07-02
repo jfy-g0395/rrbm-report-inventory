@@ -1233,8 +1233,13 @@ public class OrderService {
                                 + " (original date: " + originalDate + ")",
                         "ORDER", orderId);
 
-                // Cash on hand: batch COD collections are taken in cash. Idempotent.
-                cashLedgerService.recordOrderCashSale(order, userId, callerName, LocalDate.now());
+                // Cash on hand: only orders actually paid in cash affect the drawer. Batch collect
+                // has no per-order picker, so it uses each order's recorded mode — COD/CASH count as
+                // cash; BANK_TRANSFER/GCASH/PAYMAYA do not. Idempotent.
+                String batchMode = order.getPaymentMode() == null ? "" : order.getPaymentMode().trim().toUpperCase();
+                if (batchMode.equals("CASH") || batchMode.equals("COD")) {
+                    cashLedgerService.recordOrderCashSale(order, userId, callerName, LocalDate.now());
+                }
 
                 collected++;
             } catch (Exception e) {

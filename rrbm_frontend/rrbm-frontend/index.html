@@ -795,6 +795,13 @@
              VIEW: INVENTORY
              ==================================================== -->
         <section class="view" id="view-inv">
+          <!-- Inventory sub-tabs: Stock Levels | Movement Log -->
+          <div style="display:flex;gap:6px;margin-bottom:12px;">
+            <button class="btn btn-sm btn-primary"   id="inv-tabbtn-stock"     onclick="switchInvTab('stock')"><i class="ti ti-packages"></i> Stock Levels</button>
+            <button class="btn btn-sm btn-secondary" id="inv-tabbtn-movements" onclick="switchInvTab('movements')"><i class="ti ti-arrows-exchange"></i> Movement Log</button>
+          </div>
+
+          <div id="inv-tab-stock">
           <div class="card">
             <div class="card-header">
               <!-- #1: single-row toolbar — title left, controls right, no wrapping -->
@@ -842,6 +849,37 @@
               </table>
             </div>
           </div>
+          </div><!-- /inv-tab-stock -->
+
+          <div id="inv-tab-movements" style="display:none;">
+            <div class="card">
+              <div class="card-header" style="flex-wrap:wrap;gap:8px;">
+                <div class="card-title" style="margin-right:auto;">Inventory Movement Log</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                  <button class="btn btn-sm btn-primary"   id="invmov-daily-btn"  onclick="setInvMovRange('daily')">Daily</button>
+                  <button class="btn btn-sm btn-secondary" id="invmov-weekly-btn" onclick="setInvMovRange('weekly')">Weekly</button>
+                  <input type="date" id="invmov-date" class="form-control" style="width:150px;font-size:12px;" onchange="loadInvMovements()" />
+                </div>
+              </div>
+              <div class="card-body">
+                <div id="invmov-summary" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;"></div>
+                <div id="invmov-byday" style="margin-bottom:12px;"></div>
+                <div class="table-scroll">
+                  <table class="table" style="margin:0;">
+                    <thead>
+                      <tr>
+                        <th>Time</th><th>Product</th><th>Type</th><th style="text-align:center;">Dir</th>
+                        <th>WH</th><th style="text-align:right;">Qty</th><th>Reason</th><th>Order Ref</th>
+                      </tr>
+                    </thead>
+                    <tbody id="invmov-tbody">
+                      <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div><!-- /inv-tab-movements -->
         </section>
 
         <!-- ====================================================

@@ -562,11 +562,16 @@ public class OrderController {
                             + " (original date: " + originalDate + ")",
                     "ORDER", id);
 
-            // Cash on hand: COD/deferred orders are paid at collection. Default to CASH
-            // (Cash-on-Delivery); skip only if the caller explicitly collected non-cash.
-            // Idempotent — a re-collect won't double count.
+            // Cash on hand: the collector picks the actual method received. Only Cash affects the
+            // drawer; Bank Transfer / GCash / PayMaya do not. Default to CASH only when the caller
+            // sends nothing (legacy clients). Idempotent — a re-collect won't double count.
             String collectMode = body.getOrDefault("paymentMode", "CASH");
             collectMode = (collectMode == null || collectMode.trim().isEmpty()) ? "CASH" : collectMode.trim();
+
+            // Record the actual method received onto the order so reports/records reflect reality.
+            order.setPaymentMode(collectMode.toUpperCase());
+            orderRepository.save(order);
+
             if ("CASH".equalsIgnoreCase(collectMode)) {
                 cashLedgerService.recordOrderCashSale(order, userId, caller.getFullName(), LocalDate.now());
             }
