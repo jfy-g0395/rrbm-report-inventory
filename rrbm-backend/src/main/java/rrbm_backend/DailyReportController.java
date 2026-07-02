@@ -308,7 +308,8 @@ public class DailyReportController {
 
     /** True only for SUPER_ADMIN or ACCOUNTING. */
     private boolean canManageManualRejected(User u) {
-        return u != null && ("SUPER_ADMIN".equals(u.getRole()) || "ACCOUNTING".equals(u.getRole()));
+        return u != null && ("SUPER_ADMIN".equals(u.getRole()) || "ACCOUNTING".equals(u.getRole())
+                || "REJECT_MANAGEMENT".equals(u.getRole()));
     }
 
     @PostMapping("/rejected-items/manual")
@@ -318,7 +319,7 @@ public class DailyReportController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         User caller = callerFromHeader(authHeader);
         if (!canManageManualRejected(caller)) {
-            return ResponseEntity.status(403).body(Map.of("message", "Only accounting and super-admin can add rejected items"));
+            return ResponseEntity.status(403).body(Map.of("message", "Only accounting, super-admin, or reject-management can add rejected items"));
         }
         // Product must be picked from inventory — name + code are taken from the
         // product record (authoritative), never from free-typed text.
@@ -356,7 +357,7 @@ public class DailyReportController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         User caller = callerFromHeader(authHeader);
         if (!canManageManualRejected(caller)) {
-            return ResponseEntity.status(403).body(Map.of("message", "Only accounting and super-admin can edit rejected items"));
+            return ResponseEntity.status(403).body(Map.of("message", "Only accounting, super-admin, or reject-management can edit rejected items"));
         }
         ManualRejectedItem mr = manualRejectedRepo.findById(id).orElse(null);
         if (mr == null) return ResponseEntity.notFound().build();
@@ -394,7 +395,7 @@ public class DailyReportController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         User caller = callerFromHeader(authHeader);
         if (!canManageManualRejected(caller)) {
-            return ResponseEntity.status(403).body(Map.of("message", "Only accounting and super-admin can delete rejected items"));
+            return ResponseEntity.status(403).body(Map.of("message", "Only accounting, super-admin, or reject-management can delete rejected items"));
         }
         ManualRejectedItem mr = manualRejectedRepo.findById(id).orElse(null);
         if (mr == null) return ResponseEntity.notFound().build();

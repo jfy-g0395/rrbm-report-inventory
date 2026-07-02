@@ -187,6 +187,7 @@
     'STANDARD_USER':  ['orders','rejected-items','receive-stocks','inventory','delivery-reports'],
     'ACCOUNTING':     ['dashboard','orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
     'ACCOUNTING_PLUS':['dashboard','orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'REJECT_MANAGEMENT':['dashboard','rejected-items','inventory','receive-stocks'],
     'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
     'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
     'SUPER_ADMIN':    null
@@ -212,6 +213,7 @@
       'ADMINISTRATOR':  { cls: 'badge-ok',    label: 'Administrator' },
       'ACCOUNTING':     { cls: 'badge-ok',    label: 'Accounting' },
       'ACCOUNTING_PLUS':{ cls: 'badge-honey', label: 'Accounting+' },
+      'REJECT_MANAGEMENT':{ cls: 'badge-ok',  label: 'Reject Management' },
       'STAFF':          { cls: 'badge-low',   label: 'Staff' },
       'STANDARD_USER':  { cls: 'badge-low',   label: 'Standard User' },
     };
@@ -8095,7 +8097,7 @@
   // Manual rejected items can be added/edited/deleted only by accounting + super-admin.
   function canManageRejected() {
     var r = currentUserRole();
-    return r === 'SUPER_ADMIN' || r === 'ACCOUNTING';
+    return r === 'SUPER_ADMIN' || r === 'ACCOUNTING' || r === 'REJECT_MANAGEMENT';
   }
 
   function initRejectedItemsView() {

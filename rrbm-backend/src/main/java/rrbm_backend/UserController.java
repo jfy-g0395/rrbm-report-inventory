@@ -22,7 +22,7 @@ public class UserController {
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     private static final List<String> VALID_ROLES =
-        List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "ACCOUNTING_PLUS", "STANDARD_USER");
+        List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "ACCOUNTING_PLUS", "REJECT_MANAGEMENT", "STANDARD_USER");
 
     private static final String ALL_PAGES =
         "[\"dashboard\",\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-reports\",\"activity-log\",\"employees\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\",\"cash-flow\"]";
@@ -37,6 +37,9 @@ public class UserController {
         // Accounting+ — same pages as Accounting, plus the exclusive ability to see/set agent base prices.
         m.put("ACCOUNTING_PLUS",
             "[\"dashboard\",\"orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]");
+        // Reject Management — specialized role that manages the Rejected Items page.
+        m.put("REJECT_MANAGEMENT",
+            "[\"dashboard\",\"rejected-items\",\"inventory\",\"receive-stocks\"]");
         m.put("ADMINISTRATOR", ALL_PAGES);
         m.put("ADMIN",         ALL_PAGES);
         // SUPER_ADMIN → null (bypass; stored value is irrelevant)
