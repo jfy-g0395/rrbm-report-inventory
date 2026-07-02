@@ -10630,8 +10630,15 @@
 
         var w = window.open('', '_blank', 'width=900,height=780');
         if (w) { w.document.write(html); w.document.close(); w.focus(); }
+        else { showToast('Popup blocked — please allow popups for this site to download the report.', 'error'); }
       })
       .catch(function(err) { showToast('Error generating report: ' + (err.message||err), 'error'); });
+  };
+
+  /** Modal "Download PDF" button — global wrapper that closes over _drepCurrentDate
+   *  (the module-local var isn't visible to inline onclick handlers in global scope). */
+  window.downloadCurrentDailyReportPdf = function () {
+    downloadDailyReportPdf(_drepCurrentDate);
   };
 
   // Called by the Refresh button — loads all report sections with the same month
