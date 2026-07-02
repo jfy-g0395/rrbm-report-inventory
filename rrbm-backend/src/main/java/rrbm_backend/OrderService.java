@@ -607,15 +607,9 @@ public class OrderService {
                     inventoryService.requireValidWarehouse(
                         destinationMap.get(item.getId()), item.getProductName());
             }
-        } else {
-            // Non-DELIVERED: all items auto-SELLABLE; warehouse required for every active line
-            for (OrderItem item : order.getItems()) {
-                int alreadyVoided = item.getVoidedQuantity() != null ? item.getVoidedQuantity() : 0;
-                if (item.getQuantity() - alreadyVoided > 0)
-                    inventoryService.requireValidWarehouse(
-                        destinationMap.get(item.getId()), item.getProductName());
-            }
         }
+        // Non-DELIVERED: goods never left the warehouse — stock is auto-restored to the exact
+        // origin warehouse(s) from the movement ledger, so no per-line restock warehouse is required.
 
         // Inventory side-effects: stock restore + movement records per item
         inventoryService.restoreStockForCancelledWithDisposition(

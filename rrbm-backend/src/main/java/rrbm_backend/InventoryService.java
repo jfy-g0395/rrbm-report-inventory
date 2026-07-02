@@ -4,8 +4,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,7 +45,9 @@ public class InventoryService {
                 continue;
             }
 
-            Product product = productRepository.findById(item.getProductId())
+            // Lock the row for the duration of the tx so concurrent deductions/cancels on the same
+            // product serialize instead of overwriting each other (lost update).
+            Product product = productRepository.findByIdForUpdate(item.getProductId())
                     .orElseThrow(() -> new RuntimeException(
                             "Product not found: " + item.getProductName()));
 
@@ -70,7 +75,7 @@ public class InventoryService {
                 // warehouse drawn from so the order line carries a representative value.
                 String primaryWh = null;
                 for (ProductSetComponent comp : comps) {
-                    Product compProduct = productRepository.findById(comp.getComponentProductId())
+                    Product compProduct = productRepository.findByIdForUpdate(comp.getComponentProductId())
                             .orElseThrow(() -> new RuntimeException(
                                     "Component product (id=" + comp.getComponentProductId() + ") not found."));
                     int needed = qty * comp.getQuantityPerSet();
@@ -267,46 +272,58 @@ public class InventoryService {
      */
     @Transactional
     public void restoreStockForCancelledOrder(Order order, Long userId) {
-        for (OrderItem item : order.getItems()) {
-            if (item.getProductId() == null) {
-                continue; // Typed manually — nothing to restore
+        // Movement-driven: return stock to the exact warehouse(s) and quantities still outstanding
+        // per the order's inventory_movements ledger — not a single guessed warehouse. This fixes
+        // (a) multi-warehouse / SET deductions being dumped into one warehouse, and (b) double-
+        // restoring units that a prior partial void already returned.
+        restoreOutstandingFromMovements(order.getId(), userId,
+                "Cancellation of order " + order.getId());
+    }
+
+    /** Movement types that actually changed physical stock (excludes audit-only *_REJECTED rows). */
+    private static final Set<String> STOCK_AFFECTING_TYPES =
+            Set.of("ORDER_OUT", "ITEM_VOID", "CANCELLED_RETURN", "RETURN_SELLABLE");
+
+    /**
+     * Restores whatever stock is still net-deducted for an order, reading its movement ledger.
+     * For each (product, warehouse), sums the stock-affecting movements; a negative net means that
+     * many units are still out, so it adds them back to that same warehouse (atomic increment) and
+     * writes a CANCELLED_RETURN movement. Naturally correct for SET components (they have their own
+     * ORDER_OUT rows) and for orders with prior partial voids (already offset in the net).
+     */
+    private void restoreOutstandingFromMovements(String orderId, Long userId, String reason) {
+        List<InventoryMovement> movs = movementRepository.findByReferenceIdOrderByCreatedAtDesc(orderId);
+
+        // productId → (warehouse → net quantity)
+        Map<Long, Map<String, Integer>> net = new HashMap<>();
+        for (InventoryMovement m : movs) {
+            if (m.getProductId() == null || m.getWarehouse() == null) continue;
+            if (!STOCK_AFFECTING_TYPES.contains(m.getMovementType())) continue;
+            int q = m.getQuantity() != null ? m.getQuantity() : 0;
+            net.computeIfAbsent(m.getProductId(), k -> new HashMap<>())
+               .merge(m.getWarehouse().toLowerCase(), q, Integer::sum);
+        }
+
+        // Sorted product ids keep lock/update ordering consistent across concurrent cancels.
+        for (Long productId : new TreeSet<>(net.keySet())) {
+            for (Map.Entry<String, Integer> e : net.get(productId).entrySet()) {
+                int n = e.getValue();
+                if (n >= 0) continue;               // nothing still outstanding in this warehouse
+                int restore = -n;
+                String wh = e.getKey();
+                addWhStock(productId, wh, restore);  // atomic in-DB increment
+                logMovement(productId, "CANCELLED_RETURN", wh, +restore, orderId, reason, userId);
             }
+        }
+        checkAndAlertLowStock();
+    }
 
-            Product product = productRepository.findById(item.getProductId()).orElse(null);
-            if (product == null) continue; // Deleted product — skip
-
-            String warehouse = item.getWarehouse() != null ? item.getWarehouse().toLowerCase() : "wh1";
-            int qty = item.getQuantity();
-
-            if (Boolean.TRUE.equals(product.getIsSet())) {
-                // Restore each component
-                List<ProductSetComponent> comps = productSetComponentRepository.findBySetProductId(product.getId());
-                for (ProductSetComponent comp : comps) {
-                    Product compProduct = productRepository.findById(comp.getComponentProductId()).orElse(null);
-                    if (compProduct == null) continue;
-                    int restore = qty * comp.getQuantityPerSet();
-                    switch (warehouse) {
-                        case "wh1": compProduct.setStockWh1(compProduct.getStockWh1() + restore); break;
-                        case "wh2": compProduct.setStockWh2(compProduct.getStockWh2() + restore); break;
-                        case "wh3": compProduct.setStockWh3(compProduct.getStockWh3() + restore); break;
-                    }
-                    productRepository.save(compProduct);
-                    logMovement(compProduct.getId(), "CANCELLED_RETURN", warehouse, +restore,
-                            order.getId(),
-                            "Cancellation of set order " + order.getId() + " (set: " + product.getName() + ")",
-                            userId);
-                }
-            } else {
-                // Regular product
-                switch (warehouse) {
-                    case "wh1": product.setStockWh1(product.getStockWh1() + qty); break;
-                    case "wh2": product.setStockWh2(product.getStockWh2() + qty); break;
-                    case "wh3": product.setStockWh3(product.getStockWh3() + qty); break;
-                }
-                productRepository.save(product);
-                logMovement(item.getProductId(), "CANCELLED_RETURN", warehouse, +qty,
-                        order.getId(), "Cancellation of order " + order.getId(), userId);
-            }
+    /** Atomic in-DB stock increment (no read-modify-write, so no lost updates). */
+    private void addWhStock(Long productId, String warehouse, int delta) {
+        switch (warehouse) {
+            case "wh2": productRepository.addStockWh2(productId, delta); break;
+            case "wh3": productRepository.addStockWh3(productId, delta); break;
+            default:    productRepository.addStockWh1(productId, delta); break;
         }
     }
 
@@ -340,6 +357,15 @@ public class InventoryService {
                                                         Map<Long, String> destinationMap,
                                                         boolean isDelivered,
                                                         Long userId) {
+        // Non-delivered: goods never left the warehouse, so return them to the exact origin
+        // warehouse(s) from the movement ledger — no disposition, no manual warehouse needed.
+        if (!isDelivered) {
+            restoreOutstandingFromMovements(order.getId(), userId,
+                    "Replacement cancel of order " + order.getId());
+            return;
+        }
+        // Delivered: physical goods are coming back — honor per-item SELLABLE/REJECTED and the
+        // staff-chosen restock warehouse.
         for (OrderItem item : order.getItems()) {
             if (item.getProductId() == null) continue; // manually typed item — skip
 
@@ -379,12 +405,7 @@ public class InventoryService {
                                 productRepository.findById(comp.getComponentProductId()).orElse(null);
                         if (compProduct == null) continue;
                         int restore = qty * comp.getQuantityPerSet();
-                        switch (destWh) {
-                            case "wh2": compProduct.setStockWh2(compProduct.getStockWh2() + restore); break;
-                            case "wh3": compProduct.setStockWh3(compProduct.getStockWh3() + restore); break;
-                            default:    compProduct.setStockWh1(compProduct.getStockWh1() + restore); break;
-                        }
-                        productRepository.save(compProduct);
+                        addWhStock(compProduct.getId(), destWh, restore);  // atomic
                         logMovement(compProduct.getId(), "CANCELLED_RETURN", destWh, +restore,
                                 order.getId(),
                                 "Replacement cancel of set order " + order.getId()
@@ -393,12 +414,7 @@ public class InventoryService {
                     }
                 } else {
                     // ── Regular product ──────────────────────────────────────
-                    switch (destWh) {
-                        case "wh2": product.setStockWh2(product.getStockWh2() + qty); break;
-                        case "wh3": product.setStockWh3(product.getStockWh3() + qty); break;
-                        default:    product.setStockWh1(product.getStockWh1() + qty); break;
-                    }
-                    productRepository.save(product);
+                    addWhStock(product.getId(), destWh, qty);  // atomic
                     logMovement(item.getProductId(), "CANCELLED_RETURN", destWh, +qty,
                             order.getId(),
                             "Replacement cancel of order " + order.getId() + " — SELLABLE",
@@ -452,21 +468,17 @@ public class InventoryService {
 
         if (restoreStock) {
             String destWh = requireValidWarehouse(destinationWarehouse, product.getName());
-            switch (destWh) {
-                case "wh2": product.setStockWh2(product.getStockWh2() + voidQty); break;
-                case "wh3": product.setStockWh3(product.getStockWh3() + voidQty); break;
-                default:    product.setStockWh1(product.getStockWh1() + voidQty); break;
-            }
-            productRepository.save(product);
+            addWhStock(product.getId(), destWh, voidQty);  // atomic
             logMovement(item.getProductId(), "ITEM_VOID", destWh, +voidQty,
                     orderId,
                     "Void of " + voidQty + " unit(s) — "
                         + (isDelivered ? "SELLABLE return" : "non-delivered order")
                         + " — order " + orderId,
                     userId);
+            // in-memory entity is pre-increment (atomic UPDATE bypassed it) → add voidQty for display
             return voidQty + " unit(s) of " + item.getProductName()
                 + " returned to " + destWh.toUpperCase()
-                + " — new stock total: " + getWhStock(product, destWh);
+                + " — new stock total: " + (getWhStock(product, destWh) + voidQty);
         } else {
             // REJECTED: no stock change; keep origin warehouse as audit tag
             logMovement(item.getProductId(), "VOID_REJECTED", originWarehouse, voidQty,
