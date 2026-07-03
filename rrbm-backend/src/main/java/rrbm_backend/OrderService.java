@@ -469,7 +469,12 @@ public class OrderService {
      */
     @Transactional
     public Order cancelOrder(String orderId, Long cancelledByUserId, String reason) {
-        Order order = getOrderById(orderId);
+        // Fetch items eagerly: the movement-ledger restore no longer touches order.getItems(),
+        // so without this the collection stays uninitialized and convertToResponse() (called
+        // after this @Transactional method commits and the session closes) throws
+        // LazyInitializationException. Mirrors cancelOrderForReplacement().
+        Order order = orderRepository.findByIdWithItems(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
 
         if ("CANCELLED".equals(order.getStatus())) {
             throw new RuntimeException("Order is already cancelled");
