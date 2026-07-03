@@ -249,10 +249,13 @@ public class TransactionService {
 
     /**
      * Creates a SALE transaction when a deferred order is eventually collected.
-     * effective_date = original order date so revenue is retroactively posted there.
+     * effective_date = the actual collection date (cash-basis recognition): the COLL-DEFER(-X)
+     * posted at force-close already removed the accrued sale from the order date, so posting
+     * COLL-SALE(+X) on the collection date recognizes the revenue when the money was actually
+     * received — not on the (possibly backdated) original order date.
      */
     @Transactional
-    public Transaction recordCollectionSale(Order order, Long userId) {
+    public Transaction recordCollectionSale(Order order, Long userId, LocalDate collectionDate) {
         Transaction txn = new Transaction();
         txn.setTransactionCode("COLL-SALE-" + order.getId());
         txn.setOrderId(order.getId());
@@ -267,8 +270,8 @@ public class TransactionService {
         txn.setReferenceId(order.getId());
         txn.setNotes("Collection received — " + order.getCustomerName());
         txn.setCreatedBy(userId);
-        // Retroactive: post to the original order date
-        txn.setEffectiveDate(order.getCreatedAt().toLocalDate());
+        // Post revenue on the actual collection date.
+        txn.setEffectiveDate(collectionDate != null ? collectionDate : order.getCreatedAt().toLocalDate());
         return transactionRepository.save(txn);
     }
 

@@ -458,6 +458,32 @@ public class OrderController {
     }
 
     /**
+     * GET /api/orders/collections/history?start=YYYY-MM-DD&end=YYYY-MM-DD
+     * Already-collected payments in the date range (by collection date), newest-first.
+     * Feeds the Collections History tab. Defaults to the last 30 days when params are omitted.
+     */
+    @GetMapping("/collections/history")
+    public ResponseEntity<?> getCollectionsHistory(
+            @RequestParam(required = false) String start,
+            @RequestParam(required = false) String end) {
+        LocalDate endDate;
+        LocalDate startDate;
+        try {
+            endDate   = (end   == null || end.isBlank())   ? LocalDate.now()             : LocalDate.parse(end.trim());
+            startDate = (start == null || start.isBlank()) ? endDate.minusDays(30)       : LocalDate.parse(start.trim());
+        } catch (Exception ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid start/end date"));
+        }
+        if (startDate.isAfter(endDate)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "start date must be on or before end date"));
+        }
+        List<OrderResponse> response = orderRepository.findCollectedBetween(startDate, endDate).stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * PATCH /api/orders/{id}/collect
      * Mark an order as collected:
      *   1. Verify the logged-in admin's personal security key.
@@ -511,13 +537,35 @@ public class OrderController {
                         .body(Map.of("message", "Order is not in a collectable state (status: " + status + ")"));
             }
 
-            // Mark as collected / delivered
+            LocalDate originalDate = order.getCreatedAt().toLocalDate();
+
+            // The collector records the ACTUAL date the payment was received (defaults to today for
+            // legacy clients). All collection money — cash-on-hand, the COLL-SALE revenue entry, and
+            // the daily-report revenue — is booked on this date so late-recorded orders land on the
+            // real collection date instead of the (possibly backdated) order date.
+            LocalDate collectionDate;
+            try {
+                String cd = body.get("collectionDate");
+                collectionDate = (cd == null || cd.trim().isEmpty()) ? LocalDate.now() : LocalDate.parse(cd.trim());
+            } catch (Exception ex) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Invalid collection date"));
+            }
+            if (collectionDate.isAfter(LocalDate.now())) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Collection date cannot be in the future"));
+            }
+            if (collectionDate.isBefore(originalDate)) {
+                return ResponseEntity.badRequest().body(Map.of("message",
+                        "Collection date cannot be before the order date (" + originalDate + ")"));
+            }
+
+            // Mark as collected / delivered — stamp collectedAt with the chosen date (keeping the
+            // current time-of-day) so Collections History and reports attribute it correctly.
             order.setStatus("DELIVERED");
-            order.setCollectedAt(OffsetDateTime.now());
+            OffsetDateTime nowTs = OffsetDateTime.now();
+            order.setCollectedAt(collectionDate.isEqual(nowTs.toLocalDate())
+                    ? nowTs : collectionDate.atTime(nowTs.toOffsetTime()));
             order.setCollectedBy(caller.getFullName());
             orderRepository.save(order);
-
-            LocalDate originalDate = order.getCreatedAt().toLocalDate();
 
             // Only record COLL-SALE and patch the daily report if this order went through
             // force-close (status was PENDING_COLLECTION). In that path, recordDeferralVoid
@@ -529,7 +577,7 @@ public class OrderController {
             // daily report already includes it — posting another SALE entry here would
             // double-count revenue on both the transaction ledger and the closed report.
             if ("PENDING_COLLECTION".equals(status)) {
-                transactionService.recordCollectionSale(order, userId);
+                transactionService.recordCollectionSale(order, userId, collectionDate);
 
                 // Create commission entries — safe (idempotent via existsByOrderId guard)
                 try { commissionService.createEntriesForOrder(order, userId); }
@@ -537,16 +585,23 @@ public class OrderController {
                     log.warn("Failed to create commission entries for order {}: {}", order.getId(), e.getMessage());
                 }
 
-                dailyReportRepository.findByReportDate(originalDate).ifPresent(report -> {
-                    BigDecimal amount = order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO;
-                    // Restore revenue in the snapshot
+                final BigDecimal amount = order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO;
+
+                // Revenue is recognized on the COLLECTION date (cash basis) — patch that day's snapshot.
+                dailyReportRepository.findByReportDate(collectionDate).ifPresent(report -> {
                     report.setGrossSales(report.getGrossSales() != null
                             ? report.getGrossSales().add(amount) : amount);
                     report.setNetSales(report.getNetSales() != null
                             ? report.getNetSales().add(amount) : amount);
                     report.setTotalRevenue(report.getTotalRevenue() != null
                             ? report.getTotalRevenue().add(amount) : amount);
-                    // Reconcile order-count fields: order is now fulfilled
+                    dailyReportRepository.save(report);
+                });
+
+                // Fulfillment counts stay on the ORIGINAL date's snapshot, where this order was
+                // counted as unfulfilled when that day closed. When collectionDate == originalDate
+                // both patches hit the same snapshot, collapsing into the legacy single patch.
+                dailyReportRepository.findByReportDate(originalDate).ifPresent(report -> {
                     report.setTotalOrders(report.getTotalOrders() + 1);
                     report.setUnfulfilledOrders(Math.max(0, report.getUnfulfilledOrders() - 1));
                     BigDecimal ua = report.getUnfulfilledAmount() != null
@@ -559,7 +614,7 @@ public class OrderController {
             // Activity log
             activityLogService.log(userId, caller.getFullName(), "ORDER_COLLECT",
                     "Collected payment for order " + id + " — ₱" + order.getTotal()
-                            + " (original date: " + originalDate + ")",
+                            + " (order date: " + originalDate + ", collected: " + collectionDate + ")",
                     "ORDER", id);
 
             // Cash on hand: the collector picks the actual method received. Only Cash affects the
@@ -573,7 +628,7 @@ public class OrderController {
             orderRepository.save(order);
 
             if ("CASH".equalsIgnoreCase(collectMode)) {
-                cashLedgerService.recordOrderCashSale(order, userId, caller.getFullName(), LocalDate.now());
+                cashLedgerService.recordOrderCashSale(order, userId, caller.getFullName(), collectionDate);
             }
 
             return ResponseEntity.ok(convertToResponse(order));
@@ -625,8 +680,21 @@ public class OrderController {
                         .body(Map.of("message", "Invalid admin security key"));
             }
 
+            // One collection date applies to the whole batch (default today; never future).
+            LocalDate collectionDate;
+            try {
+                Object cd = body.get("collectionDate");
+                String cds = (cd == null) ? null : cd.toString().trim();
+                collectionDate = (cds == null || cds.isEmpty()) ? LocalDate.now() : LocalDate.parse(cds);
+            } catch (Exception ex) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Invalid collection date"));
+            }
+            if (collectionDate.isAfter(LocalDate.now())) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Collection date cannot be in the future"));
+            }
+
             OrderService.BatchCollectResult result = orderService.batchMarkAsCollected(
-                    orderIds, userId, caller.getFullName());
+                    orderIds, userId, caller.getFullName(), collectionDate);
 
             Map<String, Object> response = new java.util.LinkedHashMap<>();
             response.put("collected", result.collected);

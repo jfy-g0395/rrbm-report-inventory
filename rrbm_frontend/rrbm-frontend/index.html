@@ -1770,6 +1770,12 @@
              VIEW: COLLECTIONS
              ==================================================== -->
         <section class="view" id="view-collections">
+          <!-- Pending / History tab switch (same pattern as the Inventory Movement Log) -->
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <button class="btn btn-sm btn-primary"   id="coll-tabbtn-pending" onclick="switchCollectionsTab('pending')">Pending Collections</button>
+            <button class="btn btn-sm btn-secondary" id="coll-tabbtn-history" onclick="switchCollectionsTab('history')">Collections History</button>
+          </div>
+          <div id="coll-tab-pending">
           <div class="card">
             <div class="card-header">
               <div>
@@ -1806,6 +1812,46 @@
               </table>
             </div>
           </div>
+          </div><!-- /coll-tab-pending -->
+
+          <div id="coll-tab-history" style="display:none;">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title"><i class="ti ti-history" style="margin-right:6px;"></i>Collections History</div>
+                  <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Payments already collected — newest first</div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+                  <div>
+                    <label class="form-label" style="font-size:11px;">From</label>
+                    <input type="date" class="form-control" id="coll-hist-start" onchange="loadCollectionsHistory()" style="min-width:150px;" />
+                  </div>
+                  <div>
+                    <label class="form-label" style="font-size:11px;">To</label>
+                    <input type="date" class="form-control" id="coll-hist-end" onchange="loadCollectionsHistory()" style="min-width:150px;" />
+                  </div>
+                  <button class="btn btn-secondary btn-sm" onclick="loadCollectionsHistory()"><i class="ti ti-refresh"></i> Refresh</button>
+                </div>
+              </div>
+              <div id="coll-hist-summary" style="font-size:12px;color:var(--text-muted);padding:0 4px 10px;"></div>
+              <div class="table-scroll">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Collected</th>
+                      <th>Order ID</th>
+                      <th>Customer</th>
+                      <th>Method</th>
+                      <th style="text-align:right;">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody id="coll-hist-tbody">
+                    <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div><!-- /coll-tab-history -->
         </section>
 
         <!-- ====================================================
@@ -3703,6 +3749,9 @@
           You are about to mark <strong id="batch-collect-count">0</strong> order(s) as collected.<br/>
           Enter your admin security key to confirm. This action will be logged for each order.
         </p>
+        <label class="form-label">Collection Date <span class="text-danger">*</span></label>
+        <input type="date" class="form-control" id="batch-collect-date" />
+        <div style="font-size:11px;color:var(--text-muted);margin:4px 0 12px;">One date applies to all selected orders. Cash is booked on this date; orders dated after it are skipped.</div>
         <label class="form-label">Admin Security Key <span class="text-danger">*</span></label>
         <input type="password" class="form-control" id="batch-collect-key" placeholder="Enter your admin security key" />
         <div id="batch-collect-result" style="margin-top:10px;font-size:13px;"></div>
@@ -5104,6 +5153,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u10"></script>
+  <script src="js/app.js?v=u11"></script>
 </body>
 </html>

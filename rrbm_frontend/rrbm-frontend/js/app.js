@@ -1386,6 +1386,8 @@
     if (countEl) countEl.textContent = count;
     var keyEl = $('batch-collect-key');
     if (keyEl) keyEl.value = '';
+    var dateEl = $('batch-collect-date');
+    if (dateEl) { dateEl.value = new Date().toISOString().split('T')[0]; dateEl.max = dateEl.value; }
     var resultEl = $('batch-collect-result');
     if (resultEl) resultEl.innerHTML = '';
     var confirmBtn = $('btn-batch-collect-confirm');
@@ -1396,6 +1398,8 @@
   window.confirmBatchCollect = async function () {
     var key = (($('batch-collect-key') || {}).value || '').trim();
     if (!key) { showToast('Security key is required', 'error'); return; }
+    var collectionDate = (($('batch-collect-date') || {}).value) || '';
+    if (!collectionDate) { showToast('Collection date is required', 'error'); return; }
     var checked = $$('.collection-checkbox:checked');
     var orderIds = Array.from(checked).map(function (cb) { return cb.value; });
     if (orderIds.length === 0) { showToast('No orders selected', 'error'); return; }
@@ -1407,7 +1411,7 @@
       var res = await fetch(API_BASE + '/api/orders/batch-mark-collected', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ orderIds: orderIds, securityKey: key })
+        body: JSON.stringify({ orderIds: orderIds, securityKey: key, collectionDate: collectionDate })
       });
       var data = await res.json();
       if (res.ok) {
@@ -1487,6 +1491,11 @@
       return '<option value="' + m[0] + '"' + (m[0] === _defaultMode ? ' selected' : '') + '>' + m[1] + '</option>';
     }).join('');
 
+    // Collection date — the actual date the payment was received. Defaults to today; can be
+    // backdated for late-recorded orders, but not before the order date and not into the future.
+    var _todayStr = new Date().toISOString().split('T')[0];
+    var _orderDateStr = order.createdAt ? new Date(order.createdAt).toISOString().split('T')[0] : '';
+
     var hasVoids = (order.items || []).some(function(it) { return (it.voidedQuantity || 0) > 0; });
     var itemsHtml = (order.items || []).map(function(it) {
       var _voided = it.voidedQuantity || 0;
@@ -1542,6 +1551,11 @@
               '<label class="form-label" style="font-size:11px;">Payment Method Received</label>' +
               '<select class="form-select" id="coll-detail-mode" style="min-width:150px;">' + _modeOptions + '</select>' +
             '</div>' +
+            '<div>' +
+              '<label class="form-label" style="font-size:11px;">Collection Date</label>' +
+              '<input type="date" class="form-control" id="coll-detail-date" value="' + _todayStr + '"' +
+                (_orderDateStr ? ' min="' + _orderDateStr + '"' : '') + ' max="' + _todayStr + '" style="min-width:150px;" />' +
+            '</div>' +
             '<div style="flex:1;min-width:160px;">' +
               '<label class="form-label" style="font-size:11px;">Your Security Key</label>' +
               '<input type="password" class="form-control" id="coll-detail-key" placeholder="Enter security key" />' +
@@ -1565,6 +1579,8 @@
     var key = ($('coll-detail-key') || {}).value || '';
     if (!key) { showToast('Security key is required', 'error'); return; }
     var paymentMode = (($('coll-detail-mode') || {}).value) || 'CASH';
+    var collectionDate = (($('coll-detail-date') || {}).value) || '';
+    if (!collectionDate) { showToast('Collection date is required', 'error'); return; }
 
     var btn = $('coll-detail-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
@@ -1572,13 +1588,13 @@
     try {
       var res = await fetch(API_BASE + '/api/orders/' + encodeURIComponent(orderId) + '/collect', {
         method: 'PATCH', headers: authHeaders(),
-        body: JSON.stringify({ securityKey: key, paymentMode: paymentMode })
+        body: JSON.stringify({ securityKey: key, paymentMode: paymentMode, collectionDate: collectionDate })
       });
       var data = await res.json();
       if (res.ok) {
         closeModal('modal-collection-detail');
-        var origDate = data.createdAt ? new Date(data.createdAt).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : 'original date';
-        showToast('Payment collected! Revenue posted to ' + origDate, 'success');
+        var collDate = new Date(collectionDate + 'T00:00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});
+        showToast('Payment collected! Booked on ' + collDate, 'success');
         loadCollections();
       } else {
         showToast('Error: ' + (data.message || 'Collection failed'), 'error');
@@ -1589,6 +1605,68 @@
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Collect Payment'; }
     }
   };
+
+  // ================================================================
+  // COLLECTIONS — Pending / History tab switch (same pattern as Movement Log)
+  // ================================================================
+  window.switchCollectionsTab = function (tab) {
+    var isPending = tab !== 'history';
+    var pend = $('coll-tab-pending'), hist = $('coll-tab-history');
+    if (pend) pend.style.display = isPending ? '' : 'none';
+    if (hist) hist.style.display = isPending ? 'none' : '';
+    var bP = $('coll-tabbtn-pending'), bH = $('coll-tabbtn-history');
+    if (bP) bP.className = 'btn btn-sm ' + (isPending ? 'btn-primary' : 'btn-secondary');
+    if (bH) bH.className = 'btn btn-sm ' + (isPending ? 'btn-secondary' : 'btn-primary');
+    if (!isPending) {
+      var s = $('coll-hist-start'), e = $('coll-hist-end');
+      if (e && !e.value) e.value = new Date().toISOString().split('T')[0];
+      if (s && !s.value) {
+        var d = new Date(); d.setDate(d.getDate() - 30);
+        s.value = d.toISOString().split('T')[0];
+      }
+      loadCollectionsHistory();
+    }
+  };
+
+  window.loadCollectionsHistory = async function () {
+    var tb = $('coll-hist-tbody');
+    if (!tb) return;
+    var end = ($('coll-hist-end') || {}).value || new Date().toISOString().split('T')[0];
+    var start = ($('coll-hist-start') || {}).value || end;
+    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+    try {
+      var res = await fetch(API_BASE + '/api/orders/collections/history?start=' + start + '&end=' + end, { headers: authHeaders() });
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#EF4444;">Failed to load</td></tr>'; return; }
+      renderCollectionsHistory(await res.json());
+    } catch (e) {
+      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#EF4444;">Connection error</td></tr>';
+    }
+  };
+
+  function renderCollectionsHistory(rows) {
+    var tb = $('coll-hist-tbody');
+    if (!tb) return;
+    var sum = $('coll-hist-summary');
+    if (!rows || rows.length === 0) {
+      tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">No collections in this range</td></tr>';
+      if (sum) sum.textContent = '';
+      return;
+    }
+    var total = 0;
+    tb.innerHTML = rows.map(function (o) {
+      var amt = Number(o.total || 0) - Number(o.voidedAmount || 0);
+      total += amt;
+      var when = o.collectedAt ? new Date(o.collectedAt).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '—';
+      return '<tr>'
+        + '<td>' + when + '</td>'
+        + '<td>' + escapeHtml(ecomOrderRef(o) || o.id) + '</td>'
+        + '<td>' + escapeHtml(o.customerName || '—') + '</td>'
+        + '<td>' + formatPaymentMode(o.paymentMode) + '</td>'
+        + '<td style="text-align:right;font-weight:600;">' + fmt(amt) + '</td>'
+        + '</tr>';
+    }).join('');
+    if (sum) sum.textContent = rows.length + ' collection' + (rows.length === 1 ? '' : 's') + ' — Total ' + fmt(total);
+  }
 
   // ================================================================
   // INVENTORY — Movement Log (sub-tab, live report over inventory_movements)
