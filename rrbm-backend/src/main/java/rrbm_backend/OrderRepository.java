@@ -86,6 +86,15 @@ public interface OrderRepository extends JpaRepository<Order, String> {
            "ORDER BY o.createdAt ASC")
     List<Order> findPendingCollections();
 
+    // Collections History: orders already collected (collectedAt set) whose collection date falls
+    // in [start, end], newest-first. Drives the Collections History tab.
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items " +
+           "WHERE o.collectedAt IS NOT NULL " +
+           "AND CAST(o.collectedAt AS date) BETWEEN :start AND :end " +
+           "ORDER BY o.collectedAt DESC")
+    List<Order> findCollectedBetween(@Param("start") java.time.LocalDate start,
+                                     @Param("end") java.time.LocalDate end);
+
     // Find orders for an agent in a date range that don't have commission entries yet.
     // Used by backfill when a new period is opened.
     @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items " +

@@ -58,6 +58,8 @@ class CollectionsIT {
     @Autowired private ActivityLogRepository activityLogRepository;
     @Autowired private MasterKeyRepository masterKeyRepository;
     @Autowired private JwtUtil jwtUtil;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    @Autowired private CashLedgerRepository cashLedgerRepository;
 
     private static final long RUN = System.currentTimeMillis() % 100000;
     private static final String PASSWORD = "S4-Secret!";
@@ -109,8 +111,6 @@ class CollectionsIT {
     @AfterAll
     void clean() {
         // Delete in FK-safe order to respect foreign key constraints
-        LocalDateTime yesterday = LocalDateTime.now().minusDays(1);
-        LocalDateTime tomorrow = LocalDateTime.now().plusDays(1);
 
         // 1. Delete transactions (has FK to orders)
         transactionRepository.deleteAll();
@@ -124,8 +124,13 @@ class CollectionsIT {
         // 4. Delete commission entries
         commissionEntryRepository.deleteAll();
 
-        // 5. Delete orders
-        orderRepository.findByCreatedAtBetween(yesterday, tomorrow)
+        // 4b. Delete cash-ledger entries (FK to orders) so orders can be removed
+        cashLedgerRepository.deleteAll();
+
+        // 5. Delete every order these tests created — any date, since t12 backdates one 5 days back
+        //    (order_items cascade with the order).
+        orderRepository.findAll().stream()
+                .filter(o -> o.getCustomerName() != null && o.getCustomerName().startsWith("S4-"))
                 .forEach(o -> orderRepository.deleteById(o.getId()));
 
         // 6. Delete daily report for today if it exists
@@ -522,5 +527,90 @@ class CollectionsIT {
         // Full ledger for this order: SALE(+X) + COLL-DEFER(-X) + COLL-SALE(+X) = +X
         // No double-count: original SALE still present (not removed, just netted by COLL-DEFER)
         assertThat(transactionRepository.existsByTransactionCode("SALE-" + orderId)).isTrue();
+    }
+
+    /**
+     * Collection-date feature: a late-recorded, force-closed order collected on a chosen date must
+     * recognize revenue on THAT date (cash basis), not on the backdated order date.
+     */
+    @Test
+    void t12_collectPendingCollection_withBackdatedDate_postsRevenueAndCollectedAtOnThatDate() throws Exception {
+        String orderId = createCODOrderViaApi("S4-Backdate-" + RUN, new BigDecimal("2"), adminJwtWithKey);
+
+        // Simulate a late-recorded order awaiting collection: dated 5 days ago, PENDING_COLLECTION.
+        // created_at is @Column(updatable=false), so backdate it with direct SQL.
+        LocalDateTime backdated = LocalDateTime.now().minusDays(5);
+        jdbcTemplate.update("UPDATE orders SET created_at = ?, status = 'PENDING_COLLECTION' WHERE id = ?",
+                java.sql.Timestamp.valueOf(backdated), orderId);
+        LocalDate orderDate = backdated.toLocalDate();
+
+        LocalDate collDate = LocalDate.now().minusDays(3); // between the order date and today
+
+        mockMvc.perform(patch("/api/orders/" + orderId + "/collect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + adminJwtWithKey)
+                        .content("{\"securityKey\":\"" + SEC_KEY + "\",\"paymentMode\":\"CASH\",\"collectionDate\":\"" + collDate + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DELIVERED"));
+
+        Order collected = orderRepository.findById(orderId).orElseThrow();
+        assertThat(collected.getCollectedAt()).isNotNull();
+        assertThat(collected.getCollectedAt().toLocalDate()).isEqualTo(collDate);
+
+        // Revenue (COLL-SALE) recognized on the collection date, NOT the 5-days-ago order date.
+        Transaction collSale = transactionRepository.findByOrderIdOrderByCreatedAtDesc(orderId).stream()
+                .filter(t -> ("COLL-SALE-" + orderId).equals(t.getTransactionCode()))
+                .findFirst().orElseThrow();
+        assertThat(collSale.getEffectiveDate()).isEqualTo(collDate);
+        assertThat(collSale.getEffectiveDate()).isNotEqualTo(orderDate);
+    }
+
+    /** Collection date must be rejected when it is in the future or before the order date. */
+    @Test
+    void t13_collect_rejectsFutureAndPreOrderDates() throws Exception {
+        String orderId = createCODOrderViaApi("S4-DateGuard-" + RUN, new BigDecimal("2"), adminJwtWithKey);
+
+        String future = LocalDate.now().plusDays(1).toString();
+        mockMvc.perform(patch("/api/orders/" + orderId + "/collect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + adminJwtWithKey)
+                        .content("{\"securityKey\":\"" + SEC_KEY + "\",\"collectionDate\":\"" + future + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        String beforeOrder = LocalDate.now().minusDays(1).toString(); // order was created today
+        mockMvc.perform(patch("/api/orders/" + orderId + "/collect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + adminJwtWithKey)
+                        .content("{\"securityKey\":\"" + SEC_KEY + "\",\"collectionDate\":\"" + beforeOrder + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        Order o = orderRepository.findById(orderId).orElseThrow();
+        assertThat(o.getStatus()).isEqualTo("PENDING");
+        assertThat(o.getCollectedAt()).isNull();
+    }
+
+    /** Collections History endpoint returns collected orders in range and excludes uncollected ones. */
+    @Test
+    void t14_collectionsHistory_returnsCollectedInRange() throws Exception {
+        String collectedId = createCODOrderViaApi("S4-Hist-Collected-" + RUN, new BigDecimal("2"), adminJwtWithKey);
+        String pendingId   = createCODOrderViaApi("S4-Hist-Pending-" + RUN, new BigDecimal("2"), adminJwtWithKey);
+
+        mockMvc.perform(patch("/api/orders/" + collectedId + "/collect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", "Bearer " + adminJwtWithKey)
+                        .content("{\"securityKey\":\"" + SEC_KEY + "\",\"collectionDate\":\"" + LocalDate.now() + "\"}"))
+                .andExpect(status().isOk());
+
+        String today = LocalDate.now().toString();
+        String json = mockMvc.perform(get("/api/orders/collections/history?start=" + today + "&end=" + today)
+                        .header("Authorization", "Bearer " + adminJwtWithKey))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode arr = objectMapper.readTree(json);
+        List<String> ids = new ArrayList<>();
+        arr.forEach(n -> ids.add(n.get("id").asText()));
+        assertThat(ids).contains(collectedId);
+        assertThat(ids).doesNotContain(pendingId);
     }
 }

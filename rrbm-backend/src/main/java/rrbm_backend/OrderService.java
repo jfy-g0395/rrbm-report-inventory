@@ -1175,7 +1175,9 @@ public class OrderService {
     }
 
     @Transactional
-    public BatchCollectResult batchMarkAsCollected(List<String> orderIds, Long userId, String callerName) {
+    public BatchCollectResult batchMarkAsCollected(List<String> orderIds, Long userId, String callerName,
+                                                   LocalDate collectionDate) {
+        final LocalDate collDate = (collectionDate != null) ? collectionDate : LocalDate.now();
         int collected = 0;
         List<Map<String, Object>> skipped  = new ArrayList<>();
         List<Map<String, Object>> errors   = new ArrayList<>();
@@ -1194,50 +1196,65 @@ public class OrderService {
                     continue;
                 }
 
+                final LocalDate originalDate = order.getCreatedAt().toLocalDate();
+                // One date applies to the whole batch; skip any order that predates it (can't be
+                // collected before it existed) rather than booking money before the order date.
+                if (collDate.isBefore(originalDate)) {
+                    skipped.add(Map.of("orderId", orderId,
+                            "reason", "Collection date " + collDate + " is before the order date " + originalDate));
+                    continue;
+                }
+
                 order.setStatus("DELIVERED");
-                order.setCollectedAt(OffsetDateTime.now());
+                OffsetDateTime nowTs = OffsetDateTime.now();
+                order.setCollectedAt(collDate.isEqual(nowTs.toLocalDate())
+                        ? nowTs : collDate.atTime(nowTs.toOffsetTime()));
                 order.setCollectedBy(callerName);
                 orderRepository.save(order);
 
-                LocalDate originalDate = order.getCreatedAt().toLocalDate();
-
                 if ("PENDING_COLLECTION".equals(status)) {
-                    transactionService.recordCollectionSale(order, userId);
+                    transactionService.recordCollectionSale(order, userId, collDate);
                     try { commissionService.createEntriesForOrder(order, userId); }
                     catch (Exception e) {
                         log.warn("Failed to create commission entries for order {}: {}", order.getId(), e.getMessage());
                     }
 
-                    Optional<DailyReport> reportOpt = dailyReportRepository.findByReportDate(originalDate);
-                    if (reportOpt.isPresent()) {
-                        DailyReport report = reportOpt.get();
-                        BigDecimal amount = order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO;
+                    final BigDecimal amount = order.getTotal() != null ? order.getTotal() : BigDecimal.ZERO;
+
+                    // Revenue recognized on the COLLECTION date (cash basis).
+                    dailyReportRepository.findByReportDate(collDate).ifPresent(report -> {
                         report.setGrossSales(report.getGrossSales() != null
                                 ? report.getGrossSales().add(amount) : amount);
                         report.setNetSales(report.getNetSales() != null
                                 ? report.getNetSales().add(amount) : amount);
                         report.setTotalRevenue(report.getTotalRevenue() != null
                                 ? report.getTotalRevenue().add(amount) : amount);
+                        dailyReportRepository.save(report);
+                    });
+
+                    // Fulfillment counts stay on the ORIGINAL date's snapshot (collapses into one
+                    // patch when collDate == originalDate).
+                    dailyReportRepository.findByReportDate(originalDate).ifPresent(report -> {
                         report.setTotalOrders(report.getTotalOrders() + 1);
                         report.setUnfulfilledOrders(Math.max(0, report.getUnfulfilledOrders() - 1));
                         BigDecimal ua = report.getUnfulfilledAmount() != null
                                 ? report.getUnfulfilledAmount() : BigDecimal.ZERO;
                         report.setUnfulfilledAmount(ua.subtract(amount).max(BigDecimal.ZERO));
                         dailyReportRepository.save(report);
-                    }
+                    });
                 }
 
                 activityLogService.log(userId, callerName, "ORDER_COLLECT",
                         "Collected payment for order " + orderId + " — ₱" + order.getTotal()
-                                + " (original date: " + originalDate + ")",
+                                + " (order date: " + originalDate + ", collected: " + collDate + ")",
                         "ORDER", orderId);
 
                 // Cash on hand: only orders actually paid in cash affect the drawer. Batch collect
                 // has no per-order picker, so it uses each order's recorded mode — COD/CASH count as
-                // cash; BANK_TRANSFER/GCASH/PAYMAYA do not. Idempotent.
+                // cash; BANK_TRANSFER/GCASH/PAYMAYA do not. Booked on the batch collection date. Idempotent.
                 String batchMode = order.getPaymentMode() == null ? "" : order.getPaymentMode().trim().toUpperCase();
                 if (batchMode.equals("CASH") || batchMode.equals("COD")) {
-                    cashLedgerService.recordOrderCashSale(order, userId, callerName, LocalDate.now());
+                    cashLedgerService.recordOrderCashSale(order, userId, callerName, collDate);
                 }
 
                 collected++;
