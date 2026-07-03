@@ -297,7 +297,7 @@ public class DailyReportController {
     }
 
     // ── Manual rejected items: create / update / delete ───────────────────────
-    // Restricted to accounting + super-admin (page access alone is not enough).
+    // Gated by the 'add-rejected-items' page permission (SUPER_ADMIN bypasses).
 
     /** Returns the caller User from the Bearer token, or null. */
     private User callerFromHeader(String authHeader) {
@@ -306,10 +306,9 @@ public class DailyReportController {
         return uid != null ? userRepository.findById(uid).orElse(null) : null;
     }
 
-    /** True only for SUPER_ADMIN or ACCOUNTING. */
+    /** Add/edit/delete manual rejected items — SUPER_ADMIN or the 'add-rejected-items' permission. */
     private boolean canManageManualRejected(User u) {
-        return u != null && ("SUPER_ADMIN".equals(u.getRole()) || "ACCOUNTING".equals(u.getRole())
-                || "REJECT_MANAGEMENT".equals(u.getRole()));
+        return u != null && u.hasPagePermission("add-rejected-items");
     }
 
     @PostMapping("/rejected-items/manual")

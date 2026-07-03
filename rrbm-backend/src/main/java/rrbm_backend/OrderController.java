@@ -387,7 +387,7 @@ public class OrderController {
             }
             if (!isOrderManager(caller)) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(Map.of("message", "Only Accounting or Super Admin can cancel orders"));
+                        .body(Map.of("message", "You do not have permission to cancel orders (requires the Void & Cancel Orders access)"));
             }
             if (caller.getAdminSecurityKey() == null) {
                 return ResponseEntity.status(403)
@@ -680,7 +680,7 @@ public class OrderController {
                     .body(Map.of("message", "User not found"));
         if (!isOrderManager(voidCaller))
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("message", "Only Accounting or Super Admin can void order items"));
+                    .body(Map.of("message", "You do not have permission to void order items (requires the Void & Cancel Orders access)"));
 
         // ── Basic request validation ──────────────────────────────────────
         if (request.getItems() == null || request.getItems().isEmpty())
@@ -824,7 +824,7 @@ public class OrderController {
                     .body(Map.of("message", "User not found"));
         if (!isOrderManager(caller))
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("message", "Only Accounting or Super Admin can process returns"));
+                    .body(Map.of("message", "You do not have permission to process returns (requires the Void & Cancel Orders access)"));
         if (caller.getAdminSecurityKey() == null)
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("message",
@@ -976,7 +976,7 @@ public class OrderController {
                     .body(Map.of("message", "User not found"));
         if (!isOrderManager(replaceCaller))
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("message", "Only Accounting or Super Admin can cancel orders for replacement"));
+                    .body(Map.of("message", "You do not have permission to cancel orders for replacement (requires the Void & Cancel Orders access)"));
 
         // ── Request validation ────────────────────────────────────────────
         if (request.getMasterKey() == null || request.getMasterKey().trim().isEmpty())
@@ -1029,7 +1029,7 @@ public class OrderController {
      * feature: distinct endpoint, request type, and service path from
      * return / replacement / void.
      *
-     * Auth: JWT + Accounting/Super-Admin role + caller's admin security key
+     * Auth: JWT + the Void & Cancel Orders permission + caller's admin security key
      * (NOT the master key).  All financial deltas post to TODAY so closed daily
      * reports stay immutable.
      */
@@ -1060,7 +1060,7 @@ public class OrderController {
                     .body(Map.of("message", "User not found"));
         if (!isOrderManager(caller))
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("message", "Only Accounting or Super Admin can correct recorded items"));
+                    .body(Map.of("message", "You do not have permission to correct recorded items (requires the Void & Cancel Orders access)"));
         if (caller.getAdminSecurityKey() == null)
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("message",
@@ -1078,8 +1078,9 @@ public class OrderController {
         }
     }
 
+    /** Void/cancel/return orders — SUPER_ADMIN or the 'void-cancel-orders' permission. */
     private boolean isOrderManager(User u) {
-        return "SUPER_ADMIN".equals(u.getRole()) || "ACCOUNTING".equals(u.getRole());
+        return u != null && u.hasPagePermission("void-cancel-orders");
     }
 
     /**

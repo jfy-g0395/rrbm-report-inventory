@@ -177,17 +177,14 @@
     return ref || null;
   }
 
-  // True for roles that can issue refunds / voids
+  // True for users granted the Void & Cancel Orders permission (issue refunds / voids / cancels).
   function canManageOrders() {
-    const u = JSON.parse(localStorage.getItem('rrbm_user') || '{}');
-    return ['SUPER_ADMIN', 'ACCOUNTING'].includes(u.role);
+    return hasPagePermission('void-cancel-orders');
   }
 
   const ROLE_DEFAULT_PAGES = {
     'STANDARD_USER':  ['orders','rejected-items','receive-stocks','inventory','delivery-reports'],
-    'ACCOUNTING':     ['dashboard','orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
-    'ACCOUNTING_PLUS':['dashboard','orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
-    'REJECT_MANAGEMENT':['dashboard','rejected-items','inventory','receive-stocks'],
+    'ACCOUNTING':     ['dashboard','orders','void-cancel-orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','add-rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
     'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
     'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
     'SUPER_ADMIN':    null
@@ -212,8 +209,6 @@
       'ADMIN':          { cls: 'badge-ok',    label: 'Admin' },
       'ADMINISTRATOR':  { cls: 'badge-ok',    label: 'Administrator' },
       'ACCOUNTING':     { cls: 'badge-ok',    label: 'Accounting' },
-      'ACCOUNTING_PLUS':{ cls: 'badge-honey', label: 'Accounting+' },
-      'REJECT_MANAGEMENT':{ cls: 'badge-ok',  label: 'Reject Management' },
       'STAFF':          { cls: 'badge-low',   label: 'Staff' },
       'STANDARD_USER':  { cls: 'badge-low',   label: 'Standard User' },
     };
@@ -282,11 +277,12 @@
   }
 
   // Who may see/set a product's agent base price (the sensitive auto-fill default).
+  // Admins only (the former ACCOUNTING_PLUS grantee was retired with the role).
   function canViewAgentPricing() {
     const r = currentUserRole();
-    return r === 'SUPER_ADMIN' || r === 'ADMINISTRATOR' || r === 'ACCOUNTING_PLUS';
+    return r === 'SUPER_ADMIN' || r === 'ADMINISTRATOR';
   }
-  // Who may open the Edit Product modal to change the base price (admins + Accounting+).
+  // Who may open the Edit Product modal to change the base price (admins only).
   function canEditAgentPricing() { return canViewAgentPricing(); }
   // Read an agent-base-price input as a number, or null when blank (blank clears the field).
   function _agentBaseField(id) {
@@ -416,6 +412,17 @@
     if (!key) return true; // dashboard, settings — not page-restricted
     const pages = getAllowedPages();
     if (pages === null) return true; // null = unrestricted
+    return pages.includes(key);
+  }
+
+  // True if the user holds a given page/capability key. Mirrors the backend
+  // User.hasPagePermission: SUPER_ADMIN and null allowedPages are unrestricted.
+  // Used for action permissions (add-rejected-items, void-cancel-orders) that
+  // are stored in allowedPages but aren't navigable pages.
+  function hasPagePermission(key) {
+    if (currentUserRole() === 'SUPER_ADMIN') return true;
+    const pages = getAllowedPages();
+    if (pages === null) return true; // legacy unrestricted
     return pages.includes(key);
   }
 
@@ -1650,7 +1657,7 @@
     $('editprod-description').value  = p.description   || '';
     $('editprod-price').value        = p.unitPrice    != null ? p.unitPrice  : '';
     $('editprod-cost').value         = p.unitCost     != null ? p.unitCost   : '';
-    // Agent base price — visible/editable only to Accounting+ / admins.
+    // Agent base price — visible/editable only to admins.
     if ($('editprod-agent-base')) $('editprod-agent-base').value = (canViewAgentPricing() && p.agentBasePrice != null) ? p.agentBasePrice : '';
     if ($('editprod-agent-base-wrap')) $('editprod-agent-base-wrap').style.display = canViewAgentPricing() ? 'grid' : 'none';
     $('editprod-wh1').value          = p.stockWh1     != null ? p.stockWh1   : 0;
@@ -1707,7 +1714,8 @@
     // Populate sub-category datalist based on selected category
     onEditProdCategoryInput();
 
-    // Accounting+ (not an admin) may ONLY change the agent base price here — lock everything else.
+    // Legacy pricing-only lock (was for Accounting+): now inert since agent-pricing viewers
+    // are exactly the admins who can also edit inventory, so pricingOnly is always false.
     var pricingOnly = canViewAgentPricing() && !canEditInventory();
     ['editprod-code','editprod-name','editprod-category','editprod-subcategory','editprod-item-code',
      'editprod-description','editprod-price','editprod-cost','editprod-wh1','editprod-wh2','editprod-wh3']
@@ -1838,7 +1846,7 @@
     if (!tb) return;
 
     // Show/hide the Actions column header based on edit permission.
-    // Accounting+ also gets the column (Edit-only) so they can set agent base prices.
+    // Admins also get the column (Edit-only) so they can set agent base prices.
     const canEdit = canEditInventory();
     const canEditActions = canEdit || canViewAgentPricing();
     const actTh = $('inv-actions-th');
@@ -2077,7 +2085,7 @@
     if ($('addprod-wh3')) $('addprod-wh3').value = '0';
     if ($('addprod-thresh-crit')) $('addprod-thresh-crit').value = 1000;
     if ($('addprod-thresh-low'))  $('addprod-thresh-low').value  = 2000;
-    // Agent base price field — visible only to Accounting+ / admins.
+    // Agent base price field — visible only to admins.
     if ($('addprod-agent-base')) $('addprod-agent-base').value = '';
     if ($('addprod-agent-base-wrap')) $('addprod-agent-base-wrap').style.display = canViewAgentPricing() ? '' : 'none';
     // Reset set section
@@ -8094,10 +8102,9 @@
   // ================================================================
   // REJECTED ITEMS PAGE
   // ================================================================
-  // Manual rejected items can be added/edited/deleted only by accounting + super-admin.
+  // Manual rejected items — gated by the Add Rejected Items permission (SUPER_ADMIN bypasses).
   function canManageRejected() {
-    var r = currentUserRole();
-    return r === 'SUPER_ADMIN' || r === 'ACCOUNTING' || r === 'REJECT_MANAGEMENT';
+    return hasPagePermission('add-rejected-items');
   }
 
   function initRejectedItemsView() {

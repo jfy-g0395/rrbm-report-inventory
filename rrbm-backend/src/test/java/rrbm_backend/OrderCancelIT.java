@@ -284,6 +284,10 @@ class OrderCancelIT {
         String adminSecKey = "S3-admin-gate-" + RUN;
         User adminUser = ITSupport.seedUser(userRepository, "ADMINISTRATOR",
                 "s3-cancel-admin-" + RUN + "@test.rrbm.internal", "S3 Cancel Admin", PASSWORD, adminSecKey);
+        // Realistic administrator: has the Orders page but NOT the void-cancel-orders capability,
+        // so the 403 is produced by the order-action gate rather than the page interceptor.
+        adminUser.setAllowedPages("[\"orders\"]");
+        adminUser = userRepository.save(adminUser);
         String adminJwt = ITSupport.jwtFor(jwtUtil, adminUser);
 
         try {

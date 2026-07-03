@@ -22,7 +22,7 @@ public class UserController {
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     private static final List<String> VALID_ROLES =
-        List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "ACCOUNTING_PLUS", "REJECT_MANAGEMENT", "STANDARD_USER");
+        List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "STANDARD_USER");
 
     private static final String ALL_PAGES =
         "[\"dashboard\",\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-reports\",\"activity-log\",\"employees\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\",\"cash-flow\"]";
@@ -32,14 +32,11 @@ public class UserController {
         Map<String, String> m = new HashMap<>();
         m.put("STANDARD_USER",
             "[\"orders\",\"rejected-items\",\"receive-stocks\",\"inventory\",\"delivery-reports\"]");
+        // Accounting keeps the two action permissions it had as a role before the
+        // REJECT_MANAGEMENT/ACCOUNTING_PLUS roles were retired: void/cancel orders and
+        // add manual rejected items. (Existing accounting users are backfilled by V91.)
         m.put("ACCOUNTING",
-            "[\"dashboard\",\"orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]");
-        // Accounting+ — same pages as Accounting, plus the exclusive ability to see/set agent base prices.
-        m.put("ACCOUNTING_PLUS",
-            "[\"dashboard\",\"orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]");
-        // Reject Management — specialized role that manages the Rejected Items page.
-        m.put("REJECT_MANAGEMENT",
-            "[\"dashboard\",\"rejected-items\",\"inventory\",\"receive-stocks\"]");
+            "[\"dashboard\",\"orders\",\"void-cancel-orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"add-rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]");
         m.put("ADMINISTRATOR", ALL_PAGES);
         m.put("ADMIN",         ALL_PAGES);
         // SUPER_ADMIN → null (bypass; stored value is irrelevant)

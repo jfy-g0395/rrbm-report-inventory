@@ -2878,7 +2878,7 @@
         </div>
         <div class="row mb-3" id="addprod-agent-base-wrap" style="display:none;">
           <div class="col-md-6">
-            <label class="form-label">Agent Base Price ₱ <span style="font-size:11px;color:var(--text-muted);">(Accounting+ only)</span></label>
+            <label class="form-label">Agent Base Price ₱ <span style="font-size:11px;color:var(--text-muted);">(Admins only)</span></label>
             <input type="number" class="form-control" id="addprod-agent-base" min="0" step="0.01" placeholder="0.00" />
           </div>
         </div>
@@ -2971,7 +2971,7 @@
         </div>
         <div class="grid grid-2" style="gap:10px;margin-bottom:12px;display:none;" id="editprod-agent-base-wrap">
           <div>
-            <label class="form-label">Agent Base Price (₱) <span style="font-size:11px;color:var(--text-muted);">(Accounting+ only)</span></label>
+            <label class="form-label">Agent Base Price (₱) <span style="font-size:11px;color:var(--text-muted);">(Admins only)</span></label>
             <input type="number" class="form-control" id="editprod-agent-base" min="0" step="0.01" placeholder="0.00" />
           </div>
         </div>
@@ -3740,8 +3740,6 @@
             <select class="form-select" id="add-emp-role" onchange="onRoleSelectChange('add')">
               <option value="STANDARD_USER">Standard User</option>
               <option value="ACCOUNTING">Accounting</option>
-              <option value="ACCOUNTING_PLUS">Accounting+</option>
-              <option value="REJECT_MANAGEMENT">Reject Management</option>
               <option value="ADMINISTRATOR">Administrator</option>
               <option value="SUPER_ADMIN">Super Admin</option>
             </select>
@@ -3786,12 +3784,14 @@
           </label>
           <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px 20px;" id="add-emp-page-access">
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="orders" checked /> Orders</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="void-cancel-orders" checked /> Void &amp; Cancel Orders</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="order-history" checked /> Order History</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="daily-reports" checked /> Daily Reports</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="inventory" checked /> Inventory</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="purchase-orders" checked /> Purchase Orders</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="receive-stocks" checked /> Receive Stocks</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="rejected-items" checked /> Rejected Items</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="add-rejected-items" checked /> Add Rejected Items</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="reports" checked /> Monthly Report</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="delivery-reports" checked /> Delivery Reports</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="activity-log" checked /> Activity Log</label>
@@ -3902,8 +3902,6 @@
             <select class="form-select" id="edit-emp-role" onchange="onRoleSelectChange('edit')">
               <option value="STANDARD_USER">Standard User</option>
               <option value="ACCOUNTING">Accounting</option>
-              <option value="ACCOUNTING_PLUS">Accounting+</option>
-              <option value="REJECT_MANAGEMENT">Reject Management</option>
               <option value="ADMINISTRATOR">Administrator</option>
               <option value="SUPER_ADMIN">Super Admin</option>
             </select>
@@ -3948,12 +3946,14 @@
           </label>
           <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px 20px;" id="edit-emp-page-access">
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="orders" /> Orders</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="void-cancel-orders" /> Void &amp; Cancel Orders</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="order-history" /> Order History</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="daily-reports" /> Daily Reports</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="inventory" /> Inventory</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="purchase-orders" /> Purchase Orders</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="receive-stocks" /> Receive Stocks</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="rejected-items" /> Rejected Items</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="add-rejected-items" /> Add Rejected Items</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="reports" /> Monthly Report</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="delivery-reports" /> Delivery Reports</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="activity-log" /> Activity Log</label>
@@ -4050,8 +4050,6 @@
         <select class="form-select" id="assign-role-select">
           <option value="STANDARD_USER">Standard User</option>
           <option value="ACCOUNTING">Accounting</option>
-          <option value="ACCOUNTING_PLUS">Accounting+</option>
-          <option value="REJECT_MANAGEMENT">Reject Management</option>
           <option value="ADMINISTRATOR">Administrator</option>
           <option value="SUPER_ADMIN">Super Admin</option>
         </select>
@@ -5068,6 +5066,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u7"></script>
+  <script src="js/app.js?v=u8"></script>
 </body>
 </html>

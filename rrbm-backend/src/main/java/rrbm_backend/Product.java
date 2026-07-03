@@ -62,7 +62,7 @@ public class Product {
     private BigDecimal unitCost = BigDecimal.ZERO;
 
     // Agent base price per unit — the company price an agent buys at; the agent's over price
-    // (commission) is unitPrice - agentBasePrice. Managed only by Accounting+/admin roles.
+    // (commission) is unitPrice - agentBasePrice. Managed only by admin roles.
     // Nullable: products without one leave the order's base/over price for manual entry.
     @Column(name = "agent_base_price", precision = 10, scale = 2)
     private BigDecimal agentBasePrice;

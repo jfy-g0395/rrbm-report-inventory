@@ -92,4 +92,17 @@ public class User {
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
     }
+
+    /**
+     * True if this user is granted the given page/capability key.
+     * Mirrors the frontend rule and {@link PageAccessInterceptor}: SUPER_ADMIN is unrestricted,
+     * a null allowedPages is legacy-unrestricted, otherwise the JSON array must contain the key.
+     * allowedPages is a JSON array of quoted keys, so a quoted-token match is exact here (our
+     * keys are distinct and never substrings of one another).
+     */
+    public boolean hasPagePermission(String key) {
+        if ("SUPER_ADMIN".equals(role)) return true;
+        if (allowedPages == null) return true;
+        return allowedPages.contains("\"" + key + "\"");
+    }
 }
