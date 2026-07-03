@@ -469,7 +469,12 @@ public class OrderService {
      */
     @Transactional
     public Order cancelOrder(String orderId, Long cancelledByUserId, String reason) {
-        Order order = getOrderById(orderId);
+        // Fetch items eagerly: the movement-ledger restore no longer touches order.getItems(),
+        // so without this the collection stays uninitialized and convertToResponse() (called
+        // after this @Transactional method commits and the session closes) throws
+        // LazyInitializationException. Mirrors cancelOrderForReplacement().
+        Order order = orderRepository.findByIdWithItems(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
 
         if ("CANCELLED".equals(order.getStatus())) {
             throw new RuntimeException("Order is already cancelled");
@@ -607,15 +612,9 @@ public class OrderService {
                     inventoryService.requireValidWarehouse(
                         destinationMap.get(item.getId()), item.getProductName());
             }
-        } else {
-            // Non-DELIVERED: all items auto-SELLABLE; warehouse required for every active line
-            for (OrderItem item : order.getItems()) {
-                int alreadyVoided = item.getVoidedQuantity() != null ? item.getVoidedQuantity() : 0;
-                if (item.getQuantity() - alreadyVoided > 0)
-                    inventoryService.requireValidWarehouse(
-                        destinationMap.get(item.getId()), item.getProductName());
-            }
         }
+        // Non-DELIVERED: goods never left the warehouse — stock is auto-restored to the exact
+        // origin warehouse(s) from the movement ledger, so no per-line restock warehouse is required.
 
         // Inventory side-effects: stock restore + movement records per item
         inventoryService.restoreStockForCancelledWithDisposition(

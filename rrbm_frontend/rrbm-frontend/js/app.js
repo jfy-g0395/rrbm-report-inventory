@@ -6942,9 +6942,9 @@
     }
     var html = activeItems.map(function(it) {
       var effQty = it.quantity - (it.voidedQuantity || 0);
-      // Warehouse select is visible immediately for non-DELIVERED (auto-SELLABLE);
-      // hidden for DELIVERED until Sellable button is clicked.
-      var whDisplay = isDelivered ? 'none' : '';
+      // DELIVERED: staff choose SELLABLE/REJECTED + a restock warehouse (goods physically return).
+      // Non-DELIVERED: goods never left — stock auto-restores to its origin warehouse(s), so no
+      // picker is shown (removes the wrong-warehouse error source).
       return '<div style="padding:7px 0;border-bottom:1px solid var(--border);" data-item-id="' + it.id + '">'
         + '<div style="display:flex;align-items:center;gap:8px;">'
         + '<div style="flex:1;font-size:12px;">' + escapeHtml(it.productName || '') + ' <span style="color:var(--text-muted);">×' + effQty + '</span></div>'
@@ -6957,16 +6957,18 @@
               + '</div>'
             : '')
         + '</div>'
-        + '<div class="cfr-wh-row" style="display:' + whDisplay + ';margin-top:6px;">'
-        + '<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Restock to warehouse</div>'
-        + '<select class="form-select cfr-warehouse" style="font-size:12px;padding:4px 8px;"'
-        + ' onchange="onCfrDispositionChange()">'
-        + '<option value="">-- select --</option>'
-        + '<option value="wh1">WH1</option>'
-        + '<option value="wh2">WH2</option>'
-        + '<option value="wh3">Balagtas</option>'
-        + '</select>'
-        + '</div>'
+        + (isDelivered
+            ? '<div class="cfr-wh-row" style="display:none;margin-top:6px;">'
+              + '<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">Restock to warehouse</div>'
+              + '<select class="form-select cfr-warehouse" style="font-size:12px;padding:4px 8px;"'
+              + ' onchange="onCfrDispositionChange()">'
+              + '<option value="">-- select --</option>'
+              + '<option value="wh1">WH1</option>'
+              + '<option value="wh2">WH2</option>'
+              + '<option value="wh3">Balagtas</option>'
+              + '</select>'
+              + '</div>'
+            : '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;"><i class="ti ti-arrow-back-up"></i> Stock returns to its original warehouse automatically.</div>')
         + '</div>';
     }).join('');
     $('cancel-disposition-rows').innerHTML = html;
@@ -7012,20 +7014,23 @@
           var wh = row.querySelector('.cfr-warehouse');
           if (!wh || !wh.value) warehouseOk = false;
         }
-      } else {
-        var wh2 = row.querySelector('.cfr-warehouse');
-        if (!wh2 || !wh2.value) warehouseOk = false;
       }
+      // Non-delivered: no warehouse to choose (auto-restore to origin) → nothing to gate.
     });
     $('cancel-submit-btn').disabled = !(masterKey && (!isDelivered || allDisposed) && warehouseOk);
   };
 
   // Unified cancel submit — routes to standard cancel or cancel-for-replacement
   window.confirmCancel = async function () {
+    if (appState._cancelInFlight) return;   // breathing time: ignore rapid double-submits
     var type   = appState.cancelType || 'standard';
     var reason = ($('cancel-reason-input').value || '').trim();
     if (!reason) { showToast('Cancellation reason is required', 'error'); return; }
 
+    var _cbtn = $('cancel-submit-btn');
+    appState._cancelInFlight = true;
+    if (_cbtn) _cbtn.disabled = true;
+    try {
     if (type === 'standard') {
       var key = ($('cancel-key-input').value || '').trim();
       if (!key) { showToast('Admin security key is required', 'error'); return; }
@@ -7065,13 +7070,10 @@
         });
         if (!valid) { showToast('Please select a disposition for every item', 'error'); return; }
       } else {
-        var valid2 = true;
+        // Non-delivered: stock auto-restores to its origin warehouse(s); no warehouse to send.
         $('cancel-disposition-rows').querySelectorAll('[data-item-id]').forEach(function(row) {
-          var wh = row.querySelector('.cfr-warehouse');
-          if (!wh || !wh.value) { valid2 = false; return; }
-          items.push({ orderItemId: Number(row.getAttribute('data-item-id')), restockWarehouse: wh.value });
+          items.push({ orderItemId: Number(row.getAttribute('data-item-id')) });
         });
-        if (!valid2) { showToast('Please select a restock warehouse for every item', 'error'); return; }
       }
       try {
         var res2 = await fetch('' + API_BASE + '/api/orders/' + appState.cancelTargetId + '/cancel-for-replacement', {
@@ -7087,6 +7089,10 @@
           showToast('Error: ' + (err2.message || 'Failed to cancel for replacement'), 'error');
         }
       } catch (e2) { showToast('Connection error', 'error'); }
+    }
+    } finally {
+      appState._cancelInFlight = false;
+      if (_cbtn) _cbtn.disabled = false;
     }
   };
 
