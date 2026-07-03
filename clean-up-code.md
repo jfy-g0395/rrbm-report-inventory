@@ -13,14 +13,38 @@
 
 ---
 
-## 1. What is already done (on `origin/main`, HEAD `298e971`)
-No code to write. `main` already contains all of:
+## 0. PRE-FLIGHT — confirm GitHub is the source of truth (do FIRST, before anything else)
+The dev machine's changes may not all have been pushed. **Before syncing or deploying, verify nothing is
+out of sync — do NOT overwrite or delete anything until these pass.**
+
+```bash
+git fetch --all --prune
+git status -sb        # working tree MUST be clean. Uncommitted/untracked files on the host → STOP & report
+git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads   # any '[ahead N]' = unpushed → STOP
+```
+Then confirm the two expected PRs are **merged into `origin/main`** (otherwise the deploy ships stale code):
+- PR: `docs/clean-up-code-runbook` (this runbook)
+- PR: `feat/daily-report-pizza-boxes-dispatched` (pizza-boxes = dispatched — see its own runbook,
+  `RUNBOOK-daily-report-pizza-boxes-dispatched.md`)
+```bash
+gh pr list --state open --base main      # both should be MERGED (i.e. NOT still listed) before deploy
+git log --oneline origin/main -8         # confirm both merge commits are present
+```
+- **Any discrepancy (dirty tree, unpushed branch, unmerged PR) → STOP and report to the user.** Do not
+  guess, do not `reset`/`clean`, do not proceed to §2.
+- Reference (dev machine at time of writing): no unpushed commits; only 3 harmless stray files
+  (`cashflow.patch`, `rrbm_import_test2.xlsx` deletion, `rrbm_import_template.xlsx`) — none are lost work.
+
+## 1. What is already done (on `origin/main`)
+No code to write — deploy what's on `main` once §0 passes. `main` (plus the two PRs above) contains:
 1. **Cancel/void warehouse-symmetric restore** + concurrency safety + cancel "breathing time" + the
    LazyInit eager-load fix. (details: `RUNBOOK-cancel-restore-warehouse-symmetry.md`)
 2. **Collection payment-method gate** + **Inventory Movement Log** viewer.
 3. **Collection-date at collect** + **Collections History** tab.
 4. Roles `ACCOUNTING_PLUS` / `REJECT_MANAGEMENT` retired → page-access permissions.
-5. Frontend cache-bust bumped to **v10** (`app.js`).
+5. **Daily report: pizza boxes = DISPATCHED, not sold** (V92 re-backfill; label "Pizza Boxes Dispatched").
+   Follow its dedicated runbook `RUNBOOK-daily-report-pizza-boxes-dispatched.md` (has its own pre-flight).
+6. Frontend cache-bust (`app.js?v=…`) bumped — load the latest and hard-refresh if an old cache shows.
 
 ## 2. What is LEFT to do — do these in order
 1. **Sync to latest main** (do NOT stay on the old feature branch):
@@ -41,7 +65,7 @@ No code to write. `main` already contains all of:
    docker compose up -d
    docker compose logs -f backend   # confirm "Started RrbmBackendApplication" + Flyway OK
    ```
-   Confirm the browser loads `app.js?v=10` (hard-refresh if the old cache shows).
+   Confirm the browser loads the latest `app.js?v=…` from `index.html` (hard-refresh if an old cache shows).
 4. **Verify** — §3 below.
 5. **Tidy the working tree** (only if these stray files are present and untracked/ignored):
    `cashflow.patch`, `rrbm_import_template.xlsx`, `rrbm_import_test2.xlsx`. Do **not** delete anything
