@@ -10557,7 +10557,7 @@
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Total Orders</div><div style="font-size:20px;font-weight:700;">' + (rep.totalOrders||0) + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Net Revenue</div><div style="font-size:16px;font-weight:700;color:#10B981;">' + fmt(netVal) + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Items Sold</div><div style="font-size:20px;font-weight:700;">' + (rep.totalItemsSold||0) + '</div></div>';
-    h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Pizza Boxes Sold</div><div style="font-size:20px;font-weight:700;color:#C25A0A;">' + (rep.totalPizzaBoxes||0).toLocaleString() + '</div></div>';
+    h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Pizza Boxes Dispatched</div><div style="font-size:20px;font-weight:700;color:#C25A0A;">' + (rep.totalPizzaBoxes||0).toLocaleString() + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Cancelled</div><div style="font-size:20px;font-weight:700;color:#EF4444;">' + (rep.totalCancelled||0) + '</div></div>';
     h += '<div style="' + cardSt + '"><div style="font-size:10px;color:#888;">Expenses</div><div style="font-size:16px;font-weight:700;color:#EF4444;">' + fmt(rep.totalExpenses) + '</div><div style="font-size:9px;color:#888;">' + (rep.expensesCount||0) + ' entries</div></div>';
     h += '</div>';

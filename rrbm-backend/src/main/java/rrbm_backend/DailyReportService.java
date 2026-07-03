@@ -161,12 +161,14 @@ public class DailyReportService {
             "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
-        // Total pizza boxes sold (V75) — quantity for products in the "Pizza Box" category
+        // Total pizza boxes DISPATCHED (V92) — quantity for products in the "Pizza Box" category
+        // across all orders except cancelled/voided (a full void sets status = 'CANCELLED').
+        // Deliberately includes PENDING and PENDING_COLLECTION: execs want dispatched, not sold.
         Object pizzaBoxesResult = em.createNativeQuery(
             "SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi " +
             "JOIN orders o ON oi.order_id = o.id " +
             "JOIN products p ON oi.product_id = p.id " +
-            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION') " +
+            "WHERE o.id LIKE :prefix AND o.status <> 'CANCELLED' " +
             "AND p.category = 'Pizza Box'"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
@@ -412,12 +414,14 @@ public class DailyReportService {
             "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
-        // Total pizza boxes sold (V75) — quantity for products in the "Pizza Box" category
+        // Total pizza boxes DISPATCHED (V92) — quantity for products in the "Pizza Box" category
+        // across all orders except cancelled/voided (a full void sets status = 'CANCELLED').
+        // Deliberately includes PENDING and PENDING_COLLECTION: execs want dispatched, not sold.
         Object pizzaBoxesResult = em.createNativeQuery(
             "SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi " +
             "JOIN orders o ON oi.order_id = o.id " +
             "JOIN products p ON oi.product_id = p.id " +
-            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION') " +
+            "WHERE o.id LIKE :prefix AND o.status <> 'CANCELLED' " +
             "AND p.category = 'Pizza Box'"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
