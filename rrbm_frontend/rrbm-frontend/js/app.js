@@ -1477,6 +1477,16 @@
     var created = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}) : '—';
     var displayId = ecomOrderRef(order) || order.id;
 
+    // Payment method received at collection — default to the order's recorded mode (COD → Cash),
+    // editable before confirming. Only Cash affects cash-on-hand.
+    var _origMode = (order.paymentMode || 'CASH').toUpperCase();
+    var _defaultMode = (_origMode === 'COD') ? 'CASH' : _origMode;
+    var _modeChoices = [['CASH','Cash'],['BANK_TRANSFER','Bank Transfer'],['GCASH','GCash'],['PAYMAYA','PayMaya']];
+    if (!_modeChoices.some(function(m){ return m[0] === _defaultMode; })) _defaultMode = 'CASH';
+    var _modeOptions = _modeChoices.map(function(m){
+      return '<option value="' + m[0] + '"' + (m[0] === _defaultMode ? ' selected' : '') + '>' + m[1] + '</option>';
+    }).join('');
+
     var hasVoids = (order.items || []).some(function(it) { return (it.voidedQuantity || 0) > 0; });
     var itemsHtml = (order.items || []).map(function(it) {
       var _voided = it.voidedQuantity || 0;
@@ -1527,14 +1537,19 @@
         '</div>' +
         '<div style="border-top:1px solid var(--border);padding-top:12px;">' +
           '<div style="font-size:12px;font-weight:600;margin-bottom:8px;">Mark as Collected</div>' +
-          '<div style="display:flex;gap:8px;align-items:flex-end;">' +
-            '<div style="flex:1;">' +
+          '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">' +
+            '<div>' +
+              '<label class="form-label" style="font-size:11px;">Payment Method Received</label>' +
+              '<select class="form-select" id="coll-detail-mode" style="min-width:150px;">' + _modeOptions + '</select>' +
+            '</div>' +
+            '<div style="flex:1;min-width:160px;">' +
               '<label class="form-label" style="font-size:11px;">Your Security Key</label>' +
               '<input type="password" class="form-control" id="coll-detail-key" placeholder="Enter security key" />' +
             '</div>' +
             '<button class="btn btn-success btn-sm" id="coll-detail-btn" onclick="confirmCollectFromDetail(\'' + escapeHtml(order.id) + '\')">' +
               '<i class="ti ti-check"></i> Collect Payment</button>' +
           '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Only <strong>Cash</strong> adds to cash-on-hand. Bank Transfer / GCash / PayMaya are recorded but don\'t affect the drawer.</div>' +
         '</div>';
     }
 
@@ -1549,6 +1564,7 @@
   window.confirmCollectFromDetail = async function (orderId) {
     var key = ($('coll-detail-key') || {}).value || '';
     if (!key) { showToast('Security key is required', 'error'); return; }
+    var paymentMode = (($('coll-detail-mode') || {}).value) || 'CASH';
 
     var btn = $('coll-detail-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
@@ -1556,7 +1572,7 @@
     try {
       var res = await fetch(API_BASE + '/api/orders/' + encodeURIComponent(orderId) + '/collect', {
         method: 'PATCH', headers: authHeaders(),
-        body: JSON.stringify({ securityKey: key })
+        body: JSON.stringify({ securityKey: key, paymentMode: paymentMode })
       });
       var data = await res.json();
       if (res.ok) {
@@ -1573,6 +1589,100 @@
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Collect Payment'; }
     }
   };
+
+  // ================================================================
+  // INVENTORY — Movement Log (sub-tab, live report over inventory_movements)
+  // ================================================================
+  var _invMovMode = 'daily';
+
+  window.switchInvTab = function (tab) {
+    var isStock = tab === 'stock';
+    var stock = $('inv-tab-stock'), mov = $('inv-tab-movements');
+    if (stock) stock.style.display = isStock ? '' : 'none';
+    if (mov)   mov.style.display   = isStock ? 'none' : '';
+    var bS = $('inv-tabbtn-stock'), bM = $('inv-tabbtn-movements');
+    if (bS) bS.className = 'btn btn-sm ' + (isStock ? 'btn-primary' : 'btn-secondary');
+    if (bM) bM.className = 'btn btn-sm ' + (isStock ? 'btn-secondary' : 'btn-primary');
+    if (!isStock) {
+      var d = $('invmov-date');
+      if (d && !d.value) d.value = new Date().toISOString().split('T')[0];
+      loadInvMovements();
+    }
+  };
+
+  window.setInvMovRange = function (mode) {
+    _invMovMode = mode;
+    var bD = $('invmov-daily-btn'), bW = $('invmov-weekly-btn');
+    if (bD) bD.className = 'btn btn-sm ' + (mode === 'daily'  ? 'btn-primary' : 'btn-secondary');
+    if (bW) bW.className = 'btn btn-sm ' + (mode === 'weekly' ? 'btn-primary' : 'btn-secondary');
+    loadInvMovements();
+  };
+
+  window.loadInvMovements = async function () {
+    var tb = $('invmov-tbody');
+    if (!tb) return;
+    var dateStr = ($('invmov-date') || {}).value || new Date().toISOString().split('T')[0];
+    var start = dateStr, end = dateStr;
+    if (_invMovMode === 'weekly') {
+      var d = new Date(dateStr + 'T00:00:00');
+      d.setDate(d.getDate() - 6);
+      start = d.toISOString().split('T')[0];
+    }
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+    try {
+      var res = await fetch(API_BASE + '/api/inventory/movements?start=' + start + '&end=' + end, { headers: authHeaders() });
+      if (!res.ok) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Failed to load</td></tr>'; return; }
+      renderInvMovements(await res.json());
+    } catch (e) {
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">Connection error</td></tr>';
+    }
+  };
+
+  function renderInvMovements(data) {
+    var sum = data.summary || {};
+    var sumEl = $('invmov-summary');
+    if (sumEl) {
+      var stat = function (label, val, color) {
+        return '<div style="padding:10px 14px;background:var(--bg-secondary);border-radius:var(--radius-sm);min-width:110px;text-align:center;">'
+          + '<div style="font-size:20px;font-weight:700;color:' + color + ';">' + val + '</div>'
+          + '<div style="font-size:11px;color:var(--text-muted);">' + label + '</div></div>';
+      };
+      sumEl.innerHTML = stat('Total In', '+' + (sum.totalIn || 0), '#10B981')
+        + stat('Total Out', '-' + (sum.totalOut || 0), '#EF4444')
+        + stat('Net', (sum.net || 0), (sum.net || 0) < 0 ? '#EF4444' : '#10B981')
+        + stat('Movements', (sum.count || 0), 'var(--text-primary)');
+    }
+    var byDayEl = $('invmov-byday');
+    if (byDayEl) {
+      var days = data.byDay || [];
+      byDayEl.innerHTML = (days.length > 1)
+        ? '<div style="font-size:12px;color:var(--text-secondary);">' + days.map(function (d) {
+            return escapeHtml(d.date) + ': <span style="color:#10B981;">+' + d.in + '</span> / <span style="color:#EF4444;">-' + d.out + '</span>';
+          }).join(' &nbsp;·&nbsp; ') + '</div>'
+        : '';
+    }
+    var tb = $('invmov-tbody');
+    var rows = data.movements || [];
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">No movements in this period</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(function (m) {
+      var t = m.createdAt ? new Date(m.createdAt).toLocaleString('en-PH', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : (m.date || '');
+      var isIn = m.direction === 'IN';
+      var color = isIn ? '#10B981' : '#EF4444';
+      return '<tr>'
+        + '<td style="white-space:nowrap;">' + escapeHtml(t) + '</td>'
+        + '<td>' + escapeHtml(m.productName || '') + (m.productCode ? ' <span style="color:var(--text-muted);font-size:11px;">' + escapeHtml(m.productCode) + '</span>' : '') + '</td>'
+        + '<td style="font-size:11px;">' + escapeHtml(m.movementType || '') + '</td>'
+        + '<td style="text-align:center;color:' + color + ';font-weight:600;">' + (isIn ? 'IN' : 'OUT') + '</td>'
+        + '<td>' + escapeHtml((m.warehouse || '').toUpperCase()) + '</td>'
+        + '<td style="text-align:right;color:' + color + ';font-weight:600;">' + (isIn ? '+' : '') + m.quantity + '</td>'
+        + '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(m.reason || '') + '</td>'
+        + '<td style="font-size:11px;">' + escapeHtml(m.referenceId || '') + '</td>'
+        + '</tr>';
+    }).join('');
+  }
 
   // ================================================================
   // INVENTORY — two-tier search
