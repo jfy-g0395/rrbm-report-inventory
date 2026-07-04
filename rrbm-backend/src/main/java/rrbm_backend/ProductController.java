@@ -358,11 +358,11 @@ public class ProductController {
                 product.setStockWh2(newVal);
             }
         }
-        // Stock WH3 (Santan)
+        // Stock WH3 (Balagtas)
         if (body.containsKey("stockWh3") && body.get("stockWh3") != null) {
             int newVal = ((Number) body.get("stockWh3")).intValue();
             if (!Objects.equals(newVal, product.getStockWh3())) {
-                changes.add("StockSantan: " + product.getStockWh3() + " → " + newVal);
+                changes.add("StockBalagtas: " + product.getStockWh3() + " → " + newVal);
                 product.setStockWh3(newVal);
             }
         }
