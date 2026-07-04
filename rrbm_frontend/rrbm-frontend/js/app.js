@@ -185,8 +185,9 @@
   const ROLE_DEFAULT_PAGES = {
     'STANDARD_USER':  ['orders','rejected-items','receive-stocks','inventory','delivery-reports'],
     'ACCOUNTING':     ['dashboard','orders','void-cancel-orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','add-rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
-    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
-    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'DELIVERY_MANAGEMENT':['dashboard','orders','delivery-schedule','inventory','delivery-reports'],
+    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
     'SUPER_ADMIN':    null
   };
 
@@ -209,6 +210,7 @@
       'ADMIN':          { cls: 'badge-ok',    label: 'Admin' },
       'ADMINISTRATOR':  { cls: 'badge-ok',    label: 'Administrator' },
       'ACCOUNTING':     { cls: 'badge-ok',    label: 'Accounting' },
+      'DELIVERY_MANAGEMENT':{ cls: 'badge-ok', label: 'Delivery Management' },
       'STAFF':          { cls: 'badge-low',   label: 'Staff' },
       'STANDARD_USER':  { cls: 'badge-low',   label: 'Standard User' },
     };
@@ -381,6 +383,7 @@
       'daily-reports': 'daily-reports',
       'inv': 'inventory',
       'delivery': 'receive-stocks', 'rejected-items': 'rejected-items',
+      'delivery-schedule': 'delivery-schedule',
       'purchase-orders': 'purchase-orders',
       'rep': 'reports',
       'delivery-rep': 'delivery-reports',
@@ -5741,6 +5744,7 @@
       inv:            ['Inventory',         'Stock levels'],
       delivery:       ['Receive Stock',     'Delivery receipt & stock in'],
       'rejected-items':    ['Rejected Items',    'Items rejected during delivery'],
+      'delivery-schedule': ['Delivery Schedule', 'Scheduled stock moves & order deliveries'],
       'purchase-orders':   ['Purchase Orders',   'Create and manage supplier purchase orders'],
       rep:            ['Monthly Report',     'Monthly analytics & insights'],
       'daily-reports':['Daily Reports',     'History of all closed daily sales'],
@@ -5777,6 +5781,7 @@
     if (view === 'set')           { loadMasterKeys(); loadNotificationEmails(); }
     if (view === 'daily-reports')   loadDailyReports();
     if (view === 'rejected-items')  initRejectedItemsView();
+    if (view === 'delivery-schedule') loadDeliverySchedule();
     if (view === 'purchase-orders') loadPurchaseOrders();
     if (view === 'order-history') {
       if ($('history-start') && !$('history-start').value) {
@@ -5801,6 +5806,21 @@
     if (view === 'emp')          renderUsers();
     if (view === 'dash')         { renderDashboard(); renderTopProductsToday(); loadProductAnalytics(); }
     if (view === 'set')          loadSettings();
+  };
+
+  // ================================================================
+  // Delivery Schedule (stock moves + order deliveries)
+  // ================================================================
+  // Session 0 stub — the two cards render empty; wired up in Sessions 1–4.
+  window.loadDeliverySchedule = function () {
+    var stockMovesBody = $('delivery-stock-moves-body');
+    if (stockMovesBody && !stockMovesBody.dataset.wired) {
+      stockMovesBody.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No stock moves yet.</div>';
+    }
+    var orderDeliveriesBody = $('delivery-order-deliveries-body');
+    if (orderDeliveriesBody && !orderDeliveriesBody.dataset.wired) {
+      orderDeliveriesBody.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No scheduled deliveries yet.</div>';
+    }
   };
 
   // ================================================================

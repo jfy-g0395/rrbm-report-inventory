@@ -28,15 +28,15 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 - `orders.chk_status` CHECK constraint (widen like V88 did for `chk_source`).
 - Roles: `UserController.VALID_ROLES` + `ROLE_DEFAULT_PAGES` + `ALL_PAGES` (L24–43) → `allowedPages`; frontend `PAGE_PERMISSIONS` (app.js:188), role badge (app.js:212), `viewToPageKey` (app.js:379), `canAccessPage` (app.js:411).
 - Frontend: `navigateTo` (app.js:5505); list load/render (`loadDailyReports`/`renderDailyReportsList` ~10295); modal `openModal/closeModal` (app.js:325); **product type-ahead `renderProductDropdown` (app.js:5964)** already shows `WH1:x · WH2:y · Balagtas:z` from `appState.cachedProducts` — reuse for the move modal; security-key gate `POST /api/auth/verify-security-key` (app.js:2925); order form type select (index.html:592); employee role selects (index.html ~3741/3902/4049); "Santan" label to fix: `ProductController.java:361/365`.
-- Next Flyway version: **V91** (V90 was used by the separate Reject-Management role fix / `chk_role` widening).
+- Next Flyway version: **V92** (V90 = Reject-Management `chk_role` widening; **V91 = the separate roles→page-access task** — retiring REJECT_MANAGEMENT/ACCOUNTING_PLUS, `V91__rejectmgmt_accountingplus_to_permissions.sql`).
 
 ---
 
 ## STATUS OVERVIEW
-- [ ] **Session 0** — Foundations: `DELIVERY_MANAGEMENT` role + Balagtas rename + empty Delivery Schedule tab (code-only, no migration)
-- [ ] **Session 1** — Stock Move backend (migration V90 + entities/service/controller)
+- [x] **Session 0** — Foundations: `DELIVERY_MANAGEMENT` role + Balagtas rename + empty Delivery Schedule tab (code-only, no migration)
+- [ ] **Session 1** — Stock Move backend (migration V92 + entities/service/controller)
 - [ ] **Session 2** — Stock Move frontend (request modal + approval actions) → **Phase A shippable**
-- [ ] **Session 3** — Deferred Delivery backend (migration V91 + defer/fulfill/reschedule/cancel + report exclusion)
+- [ ] **Session 3** — Deferred Delivery backend (migration V93 + defer/fulfill/reschedule/cancel + report exclusion)
 - [ ] **Session 4** — Deferred Delivery frontend (order-form option + tab management) → **Phase B shippable**
 - [ ] **Session 5** — Full E2E verification + deploy + commit
 
@@ -44,20 +44,20 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 
 ## Session 0 — Foundations (small, code-only, no DB migration)
 **Goal:** add the new role, finish the Balagtas rename, and stand up the empty tab so later sessions have a home.
-- [ ] Backend `UserController` (L24–43): add `"DELIVERY_MANAGEMENT"` to `VALID_ROLES`; add its `ROLE_DEFAULT_PAGES` entry (`dashboard, orders, delivery-schedule, inventory, delivery-reports`); add `"delivery-schedule"` to `ALL_PAGES`.
-- [ ] Frontend `PAGE_PERMISSIONS` (app.js:188): add `delivery-schedule` to admin/accounting+ where appropriate; add a `DELIVERY_MANAGEMENT` entry. Add role badge label (app.js:212) + `viewToPageKey` (app.js:379).
-- [ ] Add `DELIVERY_MANAGEMENT` option to the **3 employee role `<select>`s** (index.html ~3741/3902/4049) + `onRoleSelectChange` handling if needed.
-- [ ] Balagtas: `ProductController.java:365` `"StockSantan:"` → `"StockBalagtas:"`; comment L361 → Balagtas. Confirm no other functional "Santan" (leave `company_address` + migration history).
-- [ ] Nav item "Delivery Schedule" (index.html) + `view-delivery-schedule` section (two empty cards: "Stock Moves", "Order Deliveries") + `loadDeliverySchedule()` stub + `navigateTo` hook.
-- [ ] Cache-bust `app.js?v=u6 → u7`.
+- [x] Backend `UserController`: added `"DELIVERY_MANAGEMENT"` to `VALID_ROLES` (L25); added its `ROLE_DEFAULT_PAGES` entry (`dashboard, orders, delivery-schedule, inventory, delivery-reports`); added `"delivery-schedule"` to `ALL_PAGES`.
+- [x] Frontend `ROLE_DEFAULT_PAGES` (app.js): added `DELIVERY_MANAGEMENT` entry + `delivery-schedule` to `ADMINISTRATOR`/`ADMIN`. Added role badge label + `viewToPageKey('delivery-schedule')`.
+- [x] Added `DELIVERY_MANAGEMENT` option to all **3 role `<select>`s** (add-emp / edit-emp / assign-role). `onRoleSelectChange` needed no change (reads `ROLE_DEFAULT_PAGES`); also added a `delivery-schedule` checkbox to both add/edit page-access grids.
+- [x] Balagtas: `ProductController.java` `"StockSantan:"` → `"StockBalagtas:"` + comment. Confirmed remaining "Santan" hits are only the real street address `116 Santan St.` (app.js/index.html/docs) + DB backups + migration history — all left intact.
+- [x] Nav item "Delivery Schedule" (`nav-delivery-schedule`, after Rejected Items) + `view-delivery-schedule` section (two empty cards: "Stock Moves", "Order Deliveries") + `loadDeliverySchedule()` stub + `navigateTo` hook (title + load call).
+- [x] Cache-bust — `app.js?v=u11 → u12` (the token had advanced to u11 via the interim collections/cancel deploys; bumped to u12 when landing this session).
 **Verify (clone):** new role assignable + user gets the tab; tab renders empty; edit-product activity log shows "StockBalagtas".
 **Done when:** builds, tab visible to admins + Delivery Management, role saves.
-**State after this session:** _(fill in)_
-**Next session:** Session 1.
+**State after this session:** Committed on branch `feat/delivery-schedule-session0` (`b8e2e39`), based on current `main` (which now includes the cancel/collections-paymode/collection-date deploys). WIP was reconstructed cleanly from the original stash (no conflicts). **Backend compiles** — verified via `docker compose build backend` (Maven package inside the image). Cache-bust bumped `u11 → u12`. **NOT deployed** — held on the branch per user decision; not merged to main, not pushed. No DB migration touched; changes are additive/low-risk. Remaining post-deploy verification: new role assignable, DELIVERY_MANAGEMENT user sees the (empty) tab, edit-product log line reads "StockBalagtas". Note: frontend uses `ROLE_DEFAULT_PAGES` (not `PAGE_PERMISSIONS` as the reuse map said); the original stash is now redundant (fully captured in the commit) and can be dropped.
+**Next session:** Session 1 (Stock Move backend, migration **V92**). Deploy Session 0 first, or ship it together with a later session.
 
 ## Session 1 — Stock Move backend
 **Goal:** full API for inter-warehouse moves; stock changes only on complete.
-- [ ] Migration **V91__stock_transfers.sql**: `stock_transfers` (status PENDING/APPROVED/COMPLETED/REJECTED/CANCELLED, scheduled_date, requested_by(+name), approved_by(+name), approved_at, completed_at, reject_reason, notes, change_log, created_at) + `stock_transfer_items` (transfer_id FK, product_id, from_warehouse, to_warehouse, quantity>0).
+- [ ] Migration **V92__stock_transfers.sql**: `stock_transfers` (status PENDING/APPROVED/COMPLETED/REJECTED/CANCELLED, scheduled_date, requested_by(+name), approved_by(+name), approved_at, completed_at, reject_reason, notes, change_log, created_at) + `stock_transfer_items` (transfer_id FK, product_id, from_warehouse, to_warehouse, quantity>0).
 - [ ] `StockTransfer.java`, `StockTransferItem.java`, `StockTransferRepository.java`, `StockTransferService.java`, `StockTransferController.java` (`/api/stock-transfers`).
 - [ ] Endpoints: `POST /` (create), `GET /?status=`, `GET /{id}`, `POST /{id}/approve`, `/reschedule`, `/reject`, `/complete`, `/cancel`.
 - [ ] `complete`: `@Transactional`, guard status==APPROVED, per line re-check source stock, `deductWhStock(from)`+`addWhStock(to)`+save+`logMovement('TRANSFER',…)`×2 → COMPLETED. Approver-gated (role set).
@@ -78,7 +78,7 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 
 ## Session 3 — Deferred Delivery backend
 **Goal:** an order can be created deferred and fulfilled later, recording only on delivery day; safe cancel/reschedule.
-- [ ] Migration **V92__order_scheduled_delivery.sql**: add `orders.scheduled_delivery_date DATE`, `orders.delivery_change_log TEXT`, `orders.delivered_at TIMESTAMPTZ` (if absent); **widen `chk_status`** to include `'SCHEDULED_DELIVERY'`.
+- [ ] Migration **V93__order_scheduled_delivery.sql**: add `orders.scheduled_delivery_date DATE`, `orders.delivery_change_log TEXT`, `orders.delivered_at TIMESTAMPTZ` (if absent); **widen `chk_status`** to include `'SCHEDULED_DELIVERY'`.
 - [ ] `OrderService.createOrder`: if `scheduledDeliveryDate` present → save as `SCHEDULED_DELIVERY`, **skip** stock/sale/commission.
 - [ ] `fulfillScheduledDelivery(orderId,userId)` (model on `batchMarkAsCollected`): deduct stock + `recordSale` dated today + commission + cash-if-CASH + status `DELIVERED` + `delivered_at`.
 - [ ] `POST /{id}/reschedule-delivery` (update date, append change_log, repeatable) + `POST /{id}/fulfill-delivery` (covers "Mark Delivered" and "Deliver now").
@@ -102,7 +102,7 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 ## Session 5 — Integration, verification & deploy
 **Goal:** ship both features to prod safely.
 - [ ] Full clone E2E: both features + cancellation matrix + role gating + regression (normal orders still deduct/record).
-- [ ] Deploy: `docker compose up -d --build` (V91/V92 auto-apply), redeploy frontend with cache-bust; confirm Flyway at V92 and app healthy.
+- [ ] Deploy: `docker compose up -d --build` (V92/V93 auto-apply), redeploy frontend with cache-bust; confirm Flyway at V93 and app healthy.
 - [ ] Commit + push (frontend + backend); update this checklist to all-done.
 **Done when:** live prod healthy, both features verified, `main` in sync.
 **State after this session:** _(fill in)_

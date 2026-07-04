@@ -143,6 +143,9 @@
         <button class="nav-item" id="nav-rejected-items" data-view="rejected-items" onclick="navigateTo('rejected-items')">
           <i class="ti ti-package-off"></i><span>Rejected Items</span>
         </button>
+        <button class="nav-item" id="nav-delivery-schedule" data-view="delivery-schedule" onclick="navigateTo('delivery-schedule')">
+          <i class="ti ti-calendar-time"></i><span>Delivery Schedule</span>
+        </button>
 
         <div class="nav-section">Insights</div>
         <button class="nav-item" data-view="rep" onclick="navigateTo('rep')">
@@ -1621,6 +1624,26 @@
                 <tfoot id="rejected-items-tfoot"></tfoot>
               </table>
             </div>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: DELIVERY SCHEDULE (Session 0 shell — cards wired in Sessions 1–4)
+             ==================================================== -->
+        <section class="view" id="view-delivery-schedule">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Stock Moves</div>
+              <div style="font-size:12px;color:var(--text-muted);">Scheduled inter-warehouse stock transfers</div>
+            </div>
+            <div id="delivery-stock-moves-body"></div>
+          </div>
+          <div class="card" style="margin-top:16px;">
+            <div class="card-header">
+              <div class="card-title">Order Deliveries</div>
+              <div style="font-size:12px;color:var(--text-muted);">Orders scheduled for later delivery</div>
+            </div>
+            <div id="delivery-order-deliveries-body"></div>
           </div>
         </section>
 
@@ -3827,6 +3850,7 @@
             <select class="form-select" id="add-emp-role" onchange="onRoleSelectChange('add')">
               <option value="STANDARD_USER">Standard User</option>
               <option value="ACCOUNTING">Accounting</option>
+              <option value="DELIVERY_MANAGEMENT">Delivery Management</option>
               <option value="ADMINISTRATOR">Administrator</option>
               <option value="SUPER_ADMIN">Super Admin</option>
             </select>
@@ -3879,6 +3903,7 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="receive-stocks" checked /> Receive Stocks</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="rejected-items" checked /> Rejected Items</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="add-rejected-items" checked /> Add Rejected Items</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="delivery-schedule" checked /> Delivery Schedule</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="reports" checked /> Monthly Report</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="delivery-reports" checked /> Delivery Reports</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="activity-log" checked /> Activity Log</label>
@@ -3989,6 +4014,7 @@
             <select class="form-select" id="edit-emp-role" onchange="onRoleSelectChange('edit')">
               <option value="STANDARD_USER">Standard User</option>
               <option value="ACCOUNTING">Accounting</option>
+              <option value="DELIVERY_MANAGEMENT">Delivery Management</option>
               <option value="ADMINISTRATOR">Administrator</option>
               <option value="SUPER_ADMIN">Super Admin</option>
             </select>
@@ -4041,6 +4067,7 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="receive-stocks" /> Receive Stocks</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="rejected-items" /> Rejected Items</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="add-rejected-items" /> Add Rejected Items</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="delivery-schedule" /> Delivery Schedule</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="reports" /> Monthly Report</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="delivery-reports" /> Delivery Reports</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="activity-log" /> Activity Log</label>
@@ -4137,6 +4164,7 @@
         <select class="form-select" id="assign-role-select">
           <option value="STANDARD_USER">Standard User</option>
           <option value="ACCOUNTING">Accounting</option>
+          <option value="DELIVERY_MANAGEMENT">Delivery Management</option>
           <option value="ADMINISTRATOR">Administrator</option>
           <option value="SUPER_ADMIN">Super Admin</option>
         </select>
@@ -5153,6 +5181,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u11"></script>
+  <script src="js/app.js?v=u12"></script>
 </body>
 </html>
