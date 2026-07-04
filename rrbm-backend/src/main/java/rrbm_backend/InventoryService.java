@@ -702,6 +702,54 @@ public class InventoryService {
     }
 
     /**
+     * Physically moves stock between warehouses for one transfer line — the effect
+     * of "Complete" on a scheduled stock transfer. Pessimistically locks the product,
+     * re-checks that the source warehouse still holds enough, then deducts from source
+     * and adds to destination within the caller's transaction, and writes two TRANSFER
+     * movements (−qty out of source, +qty into destination). Throws on short stock so
+     * the whole complete rolls back.
+     *
+     * SET products are rejected — a set has no physical stock of its own; its
+     * components must be moved instead.
+     *
+     * @param referenceId transfer id (as string) recorded on both movement rows
+     * @param reason      human-readable movement reason (built with Balagtas labels)
+     */
+    @Transactional
+    public void applyStockTransfer(Long productId, String fromWarehouse, String toWarehouse,
+                                   int qty, String referenceId, String reason, Long userId) {
+        String from = requireValidWarehouse(fromWarehouse, "transfer product #" + productId);
+        String to   = requireValidWarehouse(toWarehouse,   "transfer product #" + productId);
+        if (from.equals(to))
+            throw new RuntimeException("Transfer source and destination warehouse must differ.");
+        if (qty <= 0)
+            throw new RuntimeException("Transfer quantity must be greater than zero.");
+
+        Product product = productRepository.findByIdForUpdate(productId)
+                .orElseThrow(() -> new RuntimeException(
+                        "Product not found for transfer (id=" + productId + ")."));
+
+        if (Boolean.TRUE.equals(product.getIsSet()))
+            throw new RuntimeException("Set product \"" + product.getName()
+                    + "\" cannot be transferred directly — move its components instead.");
+
+        int available = getWhStock(product, from);
+        if (available < qty)
+            throw new RuntimeException("Insufficient stock in " + from.toUpperCase()
+                    + " for \"" + product.getName() + "\". Available: " + available
+                    + ", requested: " + qty + ".");
+
+        deductWhStock(product, from, qty);
+        addWhStock(product, to, qty);
+        productRepository.save(product);
+
+        logMovement(productId, "TRANSFER", from, -qty, referenceId, reason, userId);
+        logMovement(productId, "TRANSFER", to,  +qty, referenceId, reason, userId);
+
+        checkAndAlertLowStock();
+    }
+
+    /**
      * Write one row to inventory_movements.
      * quantity is signed: negative = out, positive = in.
      */

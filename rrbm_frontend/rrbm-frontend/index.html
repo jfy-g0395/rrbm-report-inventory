@@ -596,7 +596,6 @@
                           <option value="STANDARD">Standard</option>
                           <option value="PICK_UP">Pick Up</option>
                           <option value="COD">COD</option>
-                          <option value="DELIVERY">Delivery</option>
                       </select>
                   </div>
               </div>
@@ -606,6 +605,23 @@
                   <div class="col-md-12">
                       <label class="form-label">Address / Location <span style="font-size:11px;color:var(--text-muted);">(optional)</span></label>
                       <input type="text" class="form-control" id="field-address" placeholder="Delivery address or pickup location">
+                  </div>
+              </div>
+
+              <!-- Row 3b: Deferred delivery — records nothing until delivered (V93) -->
+              <div class="row mb-3">
+                  <div class="col-md-12">
+                      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0;">
+                          <input type="checkbox" id="field-schedule-delivery" onchange="toggleScheduleDelivery()">
+                          <span style="font-size:13px;font-weight:600;">Schedule for later delivery</span>
+                      </label>
+                      <div style="font-size:11px;color:var(--text-muted);margin-top:3px;margin-left:24px;line-height:1.4;">
+                          Records nothing now — stock, sale &amp; commission are applied on the delivery day when you mark it delivered. Manage from the <strong>Delivery Schedule</strong> tab.
+                      </div>
+                      <div id="schedule-delivery-date-wrap" style="display:none;margin-top:8px;margin-left:24px;max-width:260px;">
+                          <label class="form-label" style="font-size:12px;">Delivery date <span style="color:#EF4444;">*</span></label>
+                          <input type="date" class="form-control" id="field-schedule-delivery-date" autocomplete="off">
+                      </div>
                   </div>
               </div>
 
@@ -1632,9 +1648,22 @@
              ==================================================== -->
         <section class="view" id="view-delivery-schedule">
           <div class="card">
-            <div class="card-header">
-              <div class="card-title">Stock Moves</div>
-              <div style="font-size:12px;color:var(--text-muted);">Scheduled inter-warehouse stock transfers</div>
+            <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+              <div>
+                <div class="card-title">Stock Moves</div>
+                <div style="font-size:12px;color:var(--text-muted);">Scheduled inter-warehouse stock transfers</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <select id="stock-moves-filter" class="form-control" style="width:auto;font-size:12px;padding:4px 8px;" onchange="loadStockMoves()">
+                  <option value="">All statuses</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="REJECTED">Rejected</option>
+                  <option value="CANCELLED">Cancelled</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="openStockMoveModal()"><i class="ti ti-plus"></i> New Stock Move</button>
+              </div>
             </div>
             <div id="delivery-stock-moves-body"></div>
           </div>
@@ -2373,7 +2402,6 @@
                       <option value="STANDARD">Standard</option>
                       <option value="PICK_UP">Pick Up</option>
                       <option value="COD">COD</option>
-                      <option value="DELIVERY">Delivery</option>
                     </select>
                   </div>
                 </div>
@@ -5162,6 +5190,102 @@
   </div>
 
   <!-- ============================================================
+       MODAL: STOCK MOVE REQUEST — multi-line inter-warehouse transfer
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-stock-move">
+    <div class="modal-box" style="max-width:840px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;"><i class="ti ti-arrows-exchange" style="margin-right:6px;color:#D4860A;"></i>New Stock Move</div>
+        <button class="icon-btn" onclick="closeModal('modal-stock-move')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;max-height:74vh;">
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+          Request one or more products to move between warehouses. Stock changes only when an approver marks the move
+          <strong>Complete</strong> on arrival — not at approval.
+        </p>
+        <div id="sm-lines-container"></div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addStockMoveLine()" style="margin-top:6px;">
+          <i class="ti ti-plus"></i> Add product line
+        </button>
+        <div class="row mt-3">
+          <div class="col-md-5">
+            <label class="form-label">Scheduled date <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+            <input type="date" class="form-control" id="sm-scheduled-date" autocomplete="off">
+          </div>
+          <div class="col-md-7">
+            <label class="form-label">Notes <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+            <input type="text" class="form-control" id="sm-notes" maxlength="500" autocomplete="off" placeholder="e.g. Restock Balagtas branch">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-stock-move')">Cancel</button>
+        <button class="btn btn-primary" onclick="submitStockMove()"><i class="ti ti-send"></i> Submit Request</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: STOCK MOVE ACTION — approve / complete / reject / reschedule / cancel
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-stock-move-action">
+    <div class="modal-box" style="max-width:460px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;" id="sm-action-title"><i class="ti ti-checks" style="margin-right:6px;color:#D4860A;"></i>Confirm</div>
+        <button class="icon-btn" onclick="closeModal('modal-stock-move-action')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-primary);margin-bottom:12px;" id="sm-action-summary"></p>
+        <div class="form-group" id="sm-action-date-group" style="display:none;">
+          <label class="form-label">New scheduled date</label>
+          <input type="date" class="form-control" id="sm-action-date" autocomplete="off">
+        </div>
+        <div class="form-group" id="sm-action-reason-group" style="display:none;">
+          <label class="form-label">Reason <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+          <textarea class="form-control" id="sm-action-reason" rows="2" autocomplete="off" placeholder="Why is this move being rejected?"></textarea>
+        </div>
+        <div class="form-group" id="sm-action-key-group" style="display:none;">
+          <label class="form-label"><i class="ti ti-lock" style="margin-right:4px;color:#D4860A;"></i>Admin security key <span style="color:#EF4444;">*</span></label>
+          <input type="password" class="form-control" id="sm-action-key" placeholder="Admin security key" autocomplete="off">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-stock-move-action')">Cancel</button>
+        <button class="btn btn-primary" id="sm-action-confirm-btn" onclick="confirmStockMoveAction()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: DELIVERY ACTION — deliver / reschedule / cancel a scheduled delivery
+       No security key: a scheduled delivery has recorded nothing until it resolves.
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-delivery-action">
+    <div class="modal-box" style="max-width:460px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;" id="dlv-action-title"><i class="ti ti-truck-delivery" style="margin-right:6px;color:#D4860A;"></i>Confirm</div>
+        <button class="icon-btn" onclick="closeModal('modal-delivery-action')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-primary);margin-bottom:12px;" id="dlv-action-summary"></p>
+        <div id="dlv-action-oversell" style="display:none;font-size:12px;color:#B45309;background:rgba(217,119,6,0.10);border:1px solid rgba(217,119,6,0.35);border-radius:8px;padding:8px 10px;margin-bottom:12px;"></div>
+        <div class="form-group" id="dlv-action-date-group" style="display:none;">
+          <label class="form-label">New delivery date <span style="color:#EF4444;">*</span></label>
+          <input type="date" class="form-control" id="dlv-action-date" autocomplete="off">
+        </div>
+        <div class="form-group" id="dlv-action-reason-group" style="display:none;">
+          <label class="form-label">Cancellation reason <span style="color:#EF4444;">*</span></label>
+          <textarea class="form-control" id="dlv-action-reason" rows="2" autocomplete="off" placeholder="Why is this scheduled delivery being cancelled?"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-delivery-action')">Cancel</button>
+        <button class="btn btn-primary" id="dlv-action-confirm-btn" onclick="confirmDeliveryAction()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        SLIDE-OUT PANEL: AGENT DETAILS
        ============================================================ -->
   <div class="slide-panel-overlay" id="agent-panel-overlay" onclick="closeAgentPanel()"></div>
@@ -5181,6 +5305,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u12"></script>
+  <script src="js/app.js?v=u15"></script>
 </body>
 </html>

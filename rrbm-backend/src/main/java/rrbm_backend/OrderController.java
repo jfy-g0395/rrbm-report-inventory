@@ -109,10 +109,14 @@ public class OrderController {
             // Create order
             Order savedOrder = orderService.createOrder(order, userId);
 
-            // Best-effort commission entry creation — does not affect order response
-            try {
-                commissionService.createEntriesForOrder(savedOrder, userId);
-            } catch (Exception ignored) {}
+            // Best-effort commission entry creation — does not affect order response.
+            // Skip for deferred deliveries: they record nothing (incl. commission) until
+            // fulfilled; fulfillScheduledDelivery creates the entries on the delivery day.
+            if (!"SCHEDULED_DELIVERY".equals(savedOrder.getStatus())) {
+                try {
+                    commissionService.createEntriesForOrder(savedOrder, userId);
+                } catch (Exception ignored) {}
+            }
 
             // Convert to response DTO
             OrderResponse response = convertToResponse(savedOrder);
@@ -458,6 +462,21 @@ public class OrderController {
     }
 
     /**
+     * GET /api/orders/scheduled-deliveries
+     * Returns all inert SCHEDULED_DELIVERY orders (V93), newest-first. Feeds the
+     * "Order Deliveries" card under the Delivery Schedule tab. The frontend derives
+     * the "overdue" flag from scheduledDeliveryDate &lt; today.
+     */
+    @GetMapping("/scheduled-deliveries")
+    public ResponseEntity<?> getScheduledDeliveries() {
+        List<Order> orders = orderRepository.findByStatusOrderByCreatedAtDesc("SCHEDULED_DELIVERY");
+        List<OrderResponse> response = orders.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * GET /api/orders/collections/history?start=YYYY-MM-DD&end=YYYY-MM-DD
      * Already-collected payments in the date range (by collection date), newest-first.
      * Feeds the Collections History tab. Defaults to the last 30 days when params are omitted.
@@ -711,6 +730,104 @@ public class OrderController {
 
             return ResponseEntity.ok(response);
 
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/orders/{id}/fulfill-delivery
+     *
+     * Deferred delivery (V93) — "Mark Delivered" and "Deliver now" both call this.
+     * Records the order on the delivery day (stock + SALE dated today + commission +
+     * cash-if-CASH) and moves it to DELIVERED. No security key required — recording a
+     * delivery is no more privileged than creating a normal order (which also records
+     * a SALE immediately). Gated to the orders page via PageAccessInterceptor.
+     */
+    @PostMapping("/{id}/fulfill-delivery")
+    public ResponseEntity<?> fulfillDelivery(@PathVariable String id,
+                                             @RequestHeader("Authorization") String authHeader) {
+        try {
+            Long userId = userIdFromHeader(authHeader);
+            if (userId == null)
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("message", "Invalid or missing authentication token"));
+
+            Order delivered = orderService.fulfillScheduledDelivery(id, userId);
+            return ResponseEntity.ok(convertToResponse(delivered));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/orders/{id}/reschedule-delivery
+     * Body: { "scheduledDeliveryDate": "YYYY-MM-DD" }
+     *
+     * Deferred delivery (V93) — move a scheduled order to a new date. Repeatable
+     * indefinitely; records nothing. No security key required.
+     */
+    @PostMapping("/{id}/reschedule-delivery")
+    public ResponseEntity<?> rescheduleDelivery(@PathVariable String id,
+                                                @RequestBody Map<String, String> body,
+                                                @RequestHeader("Authorization") String authHeader) {
+        try {
+            Long userId = userIdFromHeader(authHeader);
+            if (userId == null)
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("message", "Invalid or missing authentication token"));
+
+            LocalDate newDate;
+            try {
+                String d = body.get("scheduledDeliveryDate");
+                if (d == null || d.trim().isEmpty())
+                    return ResponseEntity.badRequest().body(Map.of("message", "A new delivery date is required"));
+                newDate = LocalDate.parse(d.trim());
+            } catch (Exception ex) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Invalid delivery date"));
+            }
+
+            Order updated = orderService.rescheduleDelivery(id, newDate, userId);
+            return ResponseEntity.ok(convertToResponse(updated));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/orders/{id}/cancel-delivery
+     * Body: { "reason": "..." }
+     *
+     * Deferred delivery (V93) — drop an inert SCHEDULED_DELIVERY order. Because nothing
+     * was ever recorded (no stock, no SALE, no cash), this is a lightweight cancel: no
+     * admin security key and no void-cancel-orders permission (unlike the full cancel
+     * endpoint, which reverses recorded money/stock). Only SCHEDULED_DELIVERY orders are
+     * accepted here; any other status is rejected and must use the normal cancel flow.
+     */
+    @PostMapping("/{id}/cancel-delivery")
+    public ResponseEntity<?> cancelDelivery(@PathVariable String id,
+                                            @RequestBody Map<String, String> body,
+                                            @RequestHeader("Authorization") String authHeader) {
+        try {
+            Long userId = userIdFromHeader(authHeader);
+            if (userId == null)
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("message", "Invalid or missing authentication token"));
+
+            String reason = body.get("reason");
+            if (reason == null || reason.isBlank())
+                return ResponseEntity.badRequest().body(Map.of("message", "Cancellation reason is required"));
+
+            Order order = orderRepository.findById(id).orElse(null);
+            if (order == null)
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Order not found: " + id));
+            if (!"SCHEDULED_DELIVERY".equals(order.getStatus()))
+                return ResponseEntity.badRequest().body(Map.of("message",
+                        "This endpoint only cancels scheduled-delivery orders (status: " + order.getStatus()
+                        + "). Use the standard cancel for recorded orders."));
+
+            Order cancelled = orderService.cancelOrder(id, userId, reason);
+            return ResponseEntity.ok(convertToResponse(cancelled));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
@@ -1208,7 +1325,10 @@ public class OrderController {
             order.getCancellationType(),
             order.getAgentId(),
             order.isImported(),
-            order.getImportRef()
+            order.getImportRef(),
+            order.getScheduledDeliveryDate(),
+            order.getDeliveredAt(),
+            order.getDeliveryChangeLog()
         );
     }
 }

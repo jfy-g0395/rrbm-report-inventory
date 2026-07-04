@@ -45,6 +45,7 @@ public class PageAccessInterceptor implements HandlerInterceptor {
         new Rule("/api/orders/collections",          "collections"),
         new Rule("/api/orders/batch-mark-collected", "collections"),
         new Rule("/api/orders",                   "orders"),
+        new Rule("/api/stock-transfers",          "delivery-schedule"),
         new Rule("/api/products",                 "inventory"),
         new Rule("/api/purchase-orders",          "purchase-orders"),
         new Rule("/api/suppliers",                "suppliers"),

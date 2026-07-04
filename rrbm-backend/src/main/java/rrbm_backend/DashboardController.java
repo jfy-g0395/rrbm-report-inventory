@@ -93,7 +93,7 @@ public class DashboardController {
                 : orderRepository.findByDateRange(periodStart, today);
 
         List<Order> billed = periodOrders.stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .filter(o -> isBillable(o))
                 .collect(Collectors.toList());
 
         BigDecimal totalSales   = billed.stream()
@@ -108,7 +108,7 @@ public class DashboardController {
                 ? periodOrders
                 : orderRepository.findByCreatedAtDate(today);
         List<Order> todayBilled = todayOrders.stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .filter(o -> isBillable(o))
                 .collect(Collectors.toList());
 
         long activeOrders  = todayBilled.stream().filter(o -> "ACTIVE".equals(o.getStatus())).count();
@@ -148,7 +148,7 @@ public class DashboardController {
                 ? orderRepository.findByCreatedAtDateWithItems(today)
                 : orderRepository.findByDateRangeWithItems(periodStart, today);
         List<OrderItem> periodItems = periodWithItems.stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .filter(o -> isBillable(o))
                 .flatMap(o -> o.getItems().stream())
                 .collect(Collectors.toList());
 
@@ -177,7 +177,7 @@ public class DashboardController {
 
         // Pizza split: direct (non-ecommerce) vs ecommerce
         long directPizzaQty = periodWithItems.stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus()) && !"ECOMMERCE".equals(o.getSource()))
+                .filter(o -> isBillable(o) && !"ECOMMERCE".equals(o.getSource()))
                 .flatMap(o -> o.getItems().stream())
                 .filter(item -> {
                     if (item.getProductId() != null) {
@@ -302,7 +302,7 @@ public class DashboardController {
         // agg[name] = [ totalQty, totalRevenue ]
 
         todayOrders.stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .filter(o -> isBillable(o))
                 .flatMap(o -> o.getItems().stream())
                 .forEach(item -> {
                     String name    = item.getProductName() != null ? item.getProductName() : "Unknown";
@@ -354,7 +354,7 @@ public class DashboardController {
                 ? orderRepository.findByCreatedAtDateWithItems(today)
                 : orderRepository.findByDateRangeWithItems(periodStart, today);
         List<Order> billedPeriod = periodWithItems.stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .filter(o -> isBillable(o))
                 .collect(Collectors.toList());
 
         // Product → category map for pizza detection (batch load, no N+1)
@@ -413,7 +413,7 @@ public class DashboardController {
                 : orderRepository.findByCreatedAtDateWithItems(today);
         long codPending = todayOrders.stream()
                 .filter(o -> "COD".equals(o.getPaymentMode())
-                        && !List.of("DELIVERED", "CLOSED", "CANCELLED").contains(o.getStatus()))
+                        && !List.of("DELIVERED", "CLOSED", "CANCELLED", "SCHEDULED_DELIVERY").contains(o.getStatus()))
                 .count();
 
         // ── Payables (balance-sheet — no period filter) ───────────────
@@ -469,7 +469,7 @@ public class DashboardController {
         }
 
         List<Order> billed = periodOrders.stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .filter(o -> isBillable(o))
                 .collect(Collectors.toList());
 
         // Batch-load products for category lookup
@@ -600,6 +600,16 @@ public class DashboardController {
         return new String[]{"Packaging Supplies", sub.isEmpty() ? "Other" : sub};
     }
 
+    /**
+     * Orders that count toward dashboard sales/analytics. Excludes CANCELLED and —
+     * deferred delivery (V93) — inert SCHEDULED_DELIVERY orders, which record nothing
+     * until fulfilled. Mirrors the daily-report / monthly-report status exclusions.
+     */
+    private static boolean isBillable(Order o) {
+        String s = o.getStatus();
+        return !"CANCELLED".equals(s) && !"SCHEDULED_DELIVERY".equals(s);
+    }
+
     /** Previous-month closed pizza-box total; null if no data. */
     private Double previousMonthPizzaTotal(LocalDate today) {
         LocalDate prevMonthStart = today.minusMonths(1).withDayOfMonth(1);
@@ -610,7 +620,7 @@ public class DashboardController {
         if (closed.isEmpty()) return null;
 
         List<Order> orders = orderRepository.findByDateRangeWithItems(prevMonthStart, prevMonthEnd).stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus())
+                .filter(o -> isBillable(o)
                         && o.getCreatedAt() != null
                         && closed.contains(o.getCreatedAt().toLocalDate()))
                 .collect(Collectors.toList());

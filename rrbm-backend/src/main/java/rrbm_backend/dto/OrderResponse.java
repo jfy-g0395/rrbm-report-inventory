@@ -3,6 +3,7 @@ package rrbm_backend.dto;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -55,6 +56,13 @@ public class OrderResponse {
     // Import tracking (U1 — CSV upload pipeline)
     private boolean imported;
     private String importRef;
+
+    // Deferred delivery (V93) — set only for SCHEDULED_DELIVERY / delivered scheduled orders.
+    // Frontend derives the "overdue" flag from scheduledDeliveryDate < today; the change log
+    // holds the created/rescheduled/delivered audit trail (reschedule count = its line count − 1).
+    private LocalDate scheduledDeliveryDate;
+    private OffsetDateTime deliveredAt;
+    private String deliveryChangeLog;
 
     @Data
     @AllArgsConstructor

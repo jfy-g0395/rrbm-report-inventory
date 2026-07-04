@@ -146,29 +146,30 @@ public class DailyReportService {
         @SuppressWarnings("unchecked")
         List<Object[]> orderStats = em.createNativeQuery(
             "SELECT " +
-            "  COUNT(*) FILTER (WHERE status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS active_count, " +
+            "  COUNT(*) FILTER (WHERE status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS active_count, " +
             "  COUNT(*) FILTER (WHERE status = 'CANCELLED')                  AS cancelled_count, " +
-            "  COUNT(*) FILTER (WHERE source = 'WALK_IN'      AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS walk_in, " +
-            "  COUNT(*) FILTER (WHERE source = 'AGENT'        AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS agent, " +
-            "  COUNT(*) FILTER (WHERE source = 'ECOMMERCE'    AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS ecommerce, " +
-            "  COUNT(*) FILTER (WHERE source = 'FACEBOOK_PAGE' AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS fb_page " +
+            "  COUNT(*) FILTER (WHERE source = 'WALK_IN'      AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS walk_in, " +
+            "  COUNT(*) FILTER (WHERE source = 'AGENT'        AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS agent, " +
+            "  COUNT(*) FILTER (WHERE source = 'ECOMMERCE'    AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS ecommerce, " +
+            "  COUNT(*) FILTER (WHERE source = 'FACEBOOK_PAGE' AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS fb_page " +
             "FROM orders WHERE id LIKE :prefix"
         ).setParameter("prefix", datePrefix + "-%").getResultList();
 
         Object itemsSoldResult = em.createNativeQuery(
             "SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi " +
             "JOIN orders o ON oi.order_id = o.id " +
-            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')"
+            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
         // Total pizza boxes DISPATCHED (V92) — quantity for products in the "Pizza Box" category
-        // across all orders except cancelled/voided (a full void sets status = 'CANCELLED').
+        // across all orders except cancelled/voided (a full void sets status = 'CANCELLED') and
+        // SCHEDULED_DELIVERY (booked for a future date — hasn't actually dispatched yet).
         // Deliberately includes PENDING and PENDING_COLLECTION: execs want dispatched, not sold.
         Object pizzaBoxesResult = em.createNativeQuery(
             "SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi " +
             "JOIN orders o ON oi.order_id = o.id " +
             "JOIN products p ON oi.product_id = p.id " +
-            "WHERE o.id LIKE :prefix AND o.status <> 'CANCELLED' " +
+            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','SCHEDULED_DELIVERY') " +
             "AND p.category = 'Pizza Box'"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
@@ -176,7 +177,7 @@ public class DailyReportService {
         List<Object[]> topProductResult = em.createNativeQuery(
             "SELECT oi.product_name, SUM(oi.quantity) AS total_qty FROM order_items oi " +
             "JOIN orders o ON oi.order_id = o.id " +
-            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION') " +
+            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY') " +
             "GROUP BY oi.product_name ORDER BY total_qty DESC LIMIT 1"
         ).setParameter("prefix", datePrefix + "-%").getResultList();
 
@@ -399,29 +400,30 @@ public class DailyReportService {
         @SuppressWarnings("unchecked")
         List<Object[]> orderStats = em.createNativeQuery(
             "SELECT " +
-            "  COUNT(*) FILTER (WHERE status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS active_count, " +
+            "  COUNT(*) FILTER (WHERE status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS active_count, " +
             "  COUNT(*) FILTER (WHERE status = 'CANCELLED')                  AS cancelled_count, " +
-            "  COUNT(*) FILTER (WHERE source = 'WALK_IN'      AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS walk_in, " +
-            "  COUNT(*) FILTER (WHERE source = 'AGENT'        AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS agent, " +
-            "  COUNT(*) FILTER (WHERE source = 'ECOMMERCE'    AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS ecommerce, " +
-            "  COUNT(*) FILTER (WHERE source = 'FACEBOOK_PAGE' AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')) AS fb_page " +
+            "  COUNT(*) FILTER (WHERE source = 'WALK_IN'      AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS walk_in, " +
+            "  COUNT(*) FILTER (WHERE source = 'AGENT'        AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS agent, " +
+            "  COUNT(*) FILTER (WHERE source = 'ECOMMERCE'    AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS ecommerce, " +
+            "  COUNT(*) FILTER (WHERE source = 'FACEBOOK_PAGE' AND status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')) AS fb_page " +
             "FROM orders WHERE id LIKE :prefix"
         ).setParameter("prefix", datePrefix + "-%").getResultList();
 
         Object itemsSoldResult = em.createNativeQuery(
             "SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi " +
             "JOIN orders o ON oi.order_id = o.id " +
-            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION')"
+            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
         // Total pizza boxes DISPATCHED (V92) — quantity for products in the "Pizza Box" category
-        // across all orders except cancelled/voided (a full void sets status = 'CANCELLED').
+        // across all orders except cancelled/voided (a full void sets status = 'CANCELLED') and
+        // SCHEDULED_DELIVERY (booked for a future date — hasn't actually dispatched yet).
         // Deliberately includes PENDING and PENDING_COLLECTION: execs want dispatched, not sold.
         Object pizzaBoxesResult = em.createNativeQuery(
             "SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi " +
             "JOIN orders o ON oi.order_id = o.id " +
             "JOIN products p ON oi.product_id = p.id " +
-            "WHERE o.id LIKE :prefix AND o.status <> 'CANCELLED' " +
+            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','SCHEDULED_DELIVERY') " +
             "AND p.category = 'Pizza Box'"
         ).setParameter("prefix", datePrefix + "-%").getSingleResult();
 
@@ -429,7 +431,7 @@ public class DailyReportService {
         List<Object[]> topProductResult = em.createNativeQuery(
             "SELECT oi.product_name, SUM(oi.quantity) AS total_qty FROM order_items oi " +
             "JOIN orders o ON oi.order_id = o.id " +
-            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION') " +
+            "WHERE o.id LIKE :prefix AND o.status NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY') " +
             "GROUP BY oi.product_name ORDER BY total_qty DESC LIMIT 1"
         ).setParameter("prefix", datePrefix + "-%").getResultList();
 
