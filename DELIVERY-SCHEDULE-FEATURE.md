@@ -30,10 +30,12 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 - Frontend: `navigateTo` (app.js:5505); list load/render (`loadDailyReports`/`renderDailyReportsList` ~10295); modal `openModal/closeModal` (app.js:325); **product type-ahead `renderProductDropdown` (app.js:5964)** already shows `WH1:x · WH2:y · Balagtas:z` from `appState.cachedProducts` — reuse for the move modal; security-key gate `POST /api/auth/verify-security-key` (app.js:2925); order form type select (index.html:592); employee role selects (index.html ~3741/3902/4049); "Santan" label to fix: `ProductController.java:361/365`.
 - Next Flyway version: **V95** (V90 = Reject-Management `chk_role` widening; V91 = roles→page-access task; **V92 was claimed by an unrelated branch — `feat/daily-report-pizza-boxes-dispatched` — merged + deployed 2026-07-04**, so Session 1's stock-transfers migration was renumbered **V92 → V94** to avoid a clash; V93 = Session 3's `order_scheduled_delivery` migration, already drafted; V94 = Session 1's `stock_transfers` migration, already drafted).
 
-## ⚠️ Where the Session 1 / Session 3 code actually lives (2026-07-04)
-Sessions 1 and 3 below are **drafted in full** (all files written) but the checkboxes still read `[ ]` because none of it has been verified on an ephemeral clone yet. The code is **not lost** — it's parked in a git stash on this machine so it wouldn't get swept into the pizza-boxes-dispatched deploy:
+## ⚠️ Where the Session 1–4 code actually lives (2026-07-04)
+**All four of Sessions 1, 2, 3, and 4 are drafted in full** (backend AND frontend, all files written) but the checkboxes still read `[ ]`/partial because none of it has been verified on an ephemeral clone yet. The code is **not lost** — it's parked in a git stash on this machine so it wouldn't get swept into the pizza-boxes-dispatched deploy:
 - `git stash list` → `stash@{0}`: "delivery-schedule WIP: order-scheduled-delivery + stock-transfers (holding out of pizza-boxes deploy)"
-- Contains: `StockTransfer.java`, `StockTransferController.java`, `StockTransferItem.java`, `StockTransferRepository.java`, `StockTransferService.java`, `V94__stock_transfers.sql`, `Order.java`/`OrderController.java`/`OrderService.java`/`OrderResponse.java`/`CreateOrderRequest.java` changes, `V93__order_scheduled_delivery.sql`, `DashboardController.java`/`InventoryService.java`/`PageAccessInterceptor.java`/`ReportsController.java` changes, and this doc's own in-progress edits.
+- **Backend (Sessions 1 & 3):** `StockTransfer.java`, `StockTransferController.java`, `StockTransferItem.java`, `StockTransferRepository.java`, `StockTransferService.java`, `V94__stock_transfers.sql`, `Order.java`/`OrderController.java`/`OrderService.java`/`OrderResponse.java`/`CreateOrderRequest.java` changes, `V93__order_scheduled_delivery.sql`, `DashboardController.java`/`InventoryService.java`/`PageAccessInterceptor.java`/`ReportsController.java` changes.
+- **Frontend (Sessions 2 & 4):** `index.html` (+136 lines) — "New Stock Move" button + status filter + `modal-stock-move` (multi-line request) + `modal-stock-move-action` (approve/complete/reject/reschedule/cancel); order-form "Schedule for later delivery" checkbox + date picker (old `DELIVERY` option removed) + `modal-delivery-action` (deliver/reschedule/cancel); cache-bust bumped to `?v=u14` in the stash (⚠️ **reconcile before redeploying** — live is currently `u12`, so this needs to become `u15`, not `u14`, since `u13` never shipped). `app.js` (+620 lines) — full JS for both: `loadStockMoves`, `openStockMoveModal`, `addStockMoveLine`, `submitStockMove`, `askApproveMove`/`askCompleteMove`/`askRejectMove`/`askRescheduleMove`/`askCancelMove`, `confirmStockMoveAction`, product autocomplete for move lines; `toggleScheduleDelivery`, `loadOrderDeliveries`, `askFulfillDelivery`/`askRescheduleDelivery`/`askCancelDelivery`, `confirmDeliveryAction`, oversell-warning helpers.
+- Also in the stash: this doc's own in-progress edits.
 - **Before resuming Session 1/2/3/4:** `git stash pop` (or `git stash apply stash@{0}` to keep the stash as a backup) to restore this code to the working tree. Don't delete the stash or treat the missing files as "cleaned up" — they're intentionally parked, not abandoned.
 
 ---
@@ -41,9 +43,9 @@ Sessions 1 and 3 below are **drafted in full** (all files written) but the check
 ## STATUS OVERVIEW
 - [x] **Session 0** — Foundations: `DELIVERY_MANAGEMENT` role + Balagtas rename + empty Delivery Schedule tab (code-only, no migration)
 - [ ] **Session 1** — Stock Move backend (migration **V94**, renumbered from V92 — see clash note above; **code drafted, parked in `stash@{0}`, not yet clone-verified**)
-- [ ] **Session 2** — Stock Move frontend (request modal + approval actions) → **Phase A shippable**
+- [ ] **Session 2** — Stock Move frontend (request modal + approval actions) → **Phase A shippable**; **code drafted, parked in `stash@{0}`, not yet clone-verified**
 - [ ] **Session 3** — Deferred Delivery backend (migration V93 + defer/fulfill/reschedule/cancel + report exclusion; **code drafted, parked in `stash@{0}`, not yet clone-verified**)
-- [ ] **Session 4** — Deferred Delivery frontend (order-form option + tab management) → **Phase B shippable**
+- [ ] **Session 4** — Deferred Delivery frontend (order-form option + tab management) → **Phase B shippable**; **code drafted, parked in `stash@{0}`, not yet clone-verified**
 - [ ] **Session 5** — Full E2E verification + deploy + commit
 
 ---
@@ -75,12 +77,13 @@ Sessions 1 and 3 below are **drafted in full** (all files written) but the check
 
 ## Session 2 — Stock Move frontend (→ Phase A ships)
 **Goal:** usable request + approval UI.
-- [ ] Request modal: multi-line; product type-ahead via `renderProductDropdown` (shows per-WH stock); from/to selects (defaults at top, editable per line); qty; submit `POST /api/stock-transfers`.
-- [ ] "Stock Moves" card: list requests by status; admin actions Approve/Reschedule/Reject/Complete behind the security-key modal (reuse app.js:2915 pattern); show live per-WH stock per line.
-- [ ] Empty/error/loading states; toasts.
+- [x] Request modal (`modal-stock-move`): multi-line via `addStockMoveLine`/product autocomplete (`setupSmProductAutocomplete`/`renderSmProductDropdown`, shows per-WH stock via `smUpdateLineStock`); from/to selects (`smWhOptions`); qty; scheduled date + notes; submit via `submitStockMove` → `POST /api/stock-transfers` — **drafted**, parked in `stash@{0}`.
+- [x] "Stock Moves" card: `loadStockMoves`/`renderStockMoves` list by status (`stock-moves-filter` select), status badges (`smStatusBadge`); admin actions `askApproveMove`/`askCompleteMove`/`askRejectMove`/`askRescheduleMove`/`askCancelMove` → `modal-stock-move-action` (security-key gate for approve/complete, reason field for reject, date field for reschedule) → `confirmStockMoveAction` — **drafted**, parked in `stash@{0}`.
+- [x] `isMoveApprover()` role gate; `openStockMoveModal` for the "New Stock Move" button — **drafted**, parked in `stash@{0}`.
+- [ ] **Not yet done:** clone verification (below) — no end-to-end UI test has happened. Also unresolved: the stashed `index.html` cache-bust is `?v=u14`, but live is `u12` (see WIP-location note above) — must become `u15` when this lands, not `u14`.
 **Verify (clone):** end-to-end via UI (or asset+API checks): request as normal user, approve+complete as admin, see quantities update.
 **Done when:** Phase A works end-to-end on the clone.
-**State after this session:** _(fill in)_
+**State after this session:** 🟡 **Code drafted, not verified.** Full request + approval UI written (see "Where the Session 1–4 code lives" note above) but never exercised end-to-end — no clone test has happened, and nothing from this session is live in production. To resume: `git stash pop` (or `apply`), fix the cache-bust token, then run the clone-verify steps above before checking this off.
 **Next session:** Session 3.
 
 ## Session 3 — Deferred Delivery backend
@@ -99,12 +102,13 @@ Sessions 1 and 3 below are **drafted in full** (all files written) but the check
 
 ## Session 4 — Deferred Delivery frontend (→ Phase B ships)
 **Goal:** create + manage scheduled deliveries.
-- [ ] Order form (index.html:592–597 and Add-Records :2265): remove `<option value="DELIVERY">`; add "Schedule for delivery" checkbox → reveals date picker; submit includes `scheduledDeliveryDate`.
-- [ ] "Order Deliveries" card: list SCHEDULED_DELIVERY orders (id, customer, total, date, reschedule count, **overdue flag**); actions Mark Delivered / Reschedule / Deliver now / Cancel.
-- [ ] Oversell hint: per-product "scheduled/committed qty"; warn (non-blocking) at fulfillment if short.
+- [x] Order form (index.html:592–597 and Add-Records :2402): removed `<option value="DELIVERY">`; added "Schedule for later delivery" checkbox (`field-schedule-delivery`) → `toggleScheduleDelivery()` reveals date picker (`field-schedule-delivery-date`); submit includes `scheduledDeliveryDate` — **drafted**, parked in `stash@{0}`.
+- [x] "Order Deliveries" card: `loadOrderDeliveries`/`renderOrderDeliveries` list SCHEDULED_DELIVERY orders (id, customer, total, date, `_odRescheduleCount`, `_odOverdue` flag); actions `askFulfillDelivery`/`askRescheduleDelivery`/`askCancelDelivery` → `modal-delivery-action` (no security key — nothing recorded yet) → `confirmDeliveryAction` — **drafted**, parked in `stash@{0}`.
+- [x] Oversell hint: `_odOversell` computes per-product scheduled/committed qty vs stock; shown as a non-blocking warning (`dlv-action-oversell`) in the action modal — **drafted**, parked in `stash@{0}`.
+- [ ] **Not yet done:** clone verification (below) — no end-to-end UI test has happened.
 **Verify (clone):** create via form (no stock/sale), reschedule, fulfill, cancel, deliver-now — all reflected correctly.
 **Done when:** Phase B works end-to-end on the clone.
-**State after this session:** _(fill in)_
+**State after this session:** 🟡 **Code drafted, not verified.** Full order-form + Order Deliveries UI written (see "Where the Session 1–4 code lives" note above) but never exercised end-to-end — no clone test has happened, and nothing from this session is live in production. To resume: `git stash pop` (or `apply`), then run the clone-verify steps above before checking this off.
 **Next session:** Session 5.
 
 ## Session 5 — Integration, verification & deploy
