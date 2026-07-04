@@ -1,5 +1,13 @@
 # Runbook — Daily report: pizza boxes = "dispatched" not "sold"
 
+## ✅ STATUS: DEPLOYED — 2026-07-04
+Merged into `main` (merge commit `c90e5b6`), pushed to `origin/main`, and deployed via
+`docker compose up -d --build`. `flyway_schema_history` confirms **V92** applied successfully
+(`daily report pizza boxes dispatched`, success=t, 2026-07-04 06:46:12). Daily-report card verified
+reading "Pizza Boxes Dispatched"; Pizza Quota tile confirmed untouched (still "Pizza Boxes Sold
+Today" / 5,000 pcs quota, separate feature per §4). **Do not re-run §2 deploy steps — this is done.**
+Everything below is kept for reference/rollback only.
+
 **Branch:** `feat/daily-report-pizza-boxes-dispatched` (based on latest `main`)
 **Audience:** Claude Code (or engineer) on the **live server**
 **Type:** Reporting definition change — deploy + verify (no build work; code is written).

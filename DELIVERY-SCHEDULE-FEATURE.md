@@ -28,15 +28,21 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 - `orders.chk_status` CHECK constraint (widen like V88 did for `chk_source`).
 - Roles: `UserController.VALID_ROLES` + `ROLE_DEFAULT_PAGES` + `ALL_PAGES` (L24–43) → `allowedPages`; frontend `PAGE_PERMISSIONS` (app.js:188), role badge (app.js:212), `viewToPageKey` (app.js:379), `canAccessPage` (app.js:411).
 - Frontend: `navigateTo` (app.js:5505); list load/render (`loadDailyReports`/`renderDailyReportsList` ~10295); modal `openModal/closeModal` (app.js:325); **product type-ahead `renderProductDropdown` (app.js:5964)** already shows `WH1:x · WH2:y · Balagtas:z` from `appState.cachedProducts` — reuse for the move modal; security-key gate `POST /api/auth/verify-security-key` (app.js:2925); order form type select (index.html:592); employee role selects (index.html ~3741/3902/4049); "Santan" label to fix: `ProductController.java:361/365`.
-- Next Flyway version: **V92** (V90 = Reject-Management `chk_role` widening; **V91 = the separate roles→page-access task** — retiring REJECT_MANAGEMENT/ACCOUNTING_PLUS, `V91__rejectmgmt_accountingplus_to_permissions.sql`).
+- Next Flyway version: **V95** (V90 = Reject-Management `chk_role` widening; V91 = roles→page-access task; **V92 was claimed by an unrelated branch — `feat/daily-report-pizza-boxes-dispatched` — merged + deployed 2026-07-04**, so Session 1's stock-transfers migration was renumbered **V92 → V94** to avoid a clash; V93 = Session 3's `order_scheduled_delivery` migration, already drafted; V94 = Session 1's `stock_transfers` migration, already drafted).
+
+## ⚠️ Where the Session 1 / Session 3 code actually lives (2026-07-04)
+Sessions 1 and 3 below are **drafted in full** (all files written) but the checkboxes still read `[ ]` because none of it has been verified on an ephemeral clone yet. The code is **not lost** — it's parked in a git stash on this machine so it wouldn't get swept into the pizza-boxes-dispatched deploy:
+- `git stash list` → `stash@{0}`: "delivery-schedule WIP: order-scheduled-delivery + stock-transfers (holding out of pizza-boxes deploy)"
+- Contains: `StockTransfer.java`, `StockTransferController.java`, `StockTransferItem.java`, `StockTransferRepository.java`, `StockTransferService.java`, `V94__stock_transfers.sql`, `Order.java`/`OrderController.java`/`OrderService.java`/`OrderResponse.java`/`CreateOrderRequest.java` changes, `V93__order_scheduled_delivery.sql`, `DashboardController.java`/`InventoryService.java`/`PageAccessInterceptor.java`/`ReportsController.java` changes, and this doc's own in-progress edits.
+- **Before resuming Session 1/2/3/4:** `git stash pop` (or `git stash apply stash@{0}` to keep the stash as a backup) to restore this code to the working tree. Don't delete the stash or treat the missing files as "cleaned up" — they're intentionally parked, not abandoned.
 
 ---
 
 ## STATUS OVERVIEW
 - [x] **Session 0** — Foundations: `DELIVERY_MANAGEMENT` role + Balagtas rename + empty Delivery Schedule tab (code-only, no migration)
-- [ ] **Session 1** — Stock Move backend (migration V92 + entities/service/controller)
+- [ ] **Session 1** — Stock Move backend (migration **V94**, renumbered from V92 — see clash note above; **code drafted, parked in `stash@{0}`, not yet clone-verified**)
 - [ ] **Session 2** — Stock Move frontend (request modal + approval actions) → **Phase A shippable**
-- [ ] **Session 3** — Deferred Delivery backend (migration V93 + defer/fulfill/reschedule/cancel + report exclusion)
+- [ ] **Session 3** — Deferred Delivery backend (migration V93 + defer/fulfill/reschedule/cancel + report exclusion; **code drafted, parked in `stash@{0}`, not yet clone-verified**)
 - [ ] **Session 4** — Deferred Delivery frontend (order-form option + tab management) → **Phase B shippable**
 - [ ] **Session 5** — Full E2E verification + deploy + commit
 
@@ -52,18 +58,19 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 - [x] Cache-bust — `app.js?v=u11 → u12` (the token had advanced to u11 via the interim collections/cancel deploys; bumped to u12 when landing this session).
 **Verify (clone):** new role assignable + user gets the tab; tab renders empty; edit-product activity log shows "StockBalagtas".
 **Done when:** builds, tab visible to admins + Delivery Management, role saves.
-**State after this session:** ✅ **DEPLOYED to production.** Landed via `feat/delivery-schedule-session0` (reconstructed cleanly from the original stash — no conflicts), merged to `main` (merge `aba1db0`), and rebuilt with `docker compose up -d --build`. Verified on live: backend healthy, Flyway still at **V91** (no migration ran, as expected), `db` container untouched; frontend serving `?v=u12` with the Delivery Schedule nav + `loadDeliverySchedule` stub. No DB migration; changes additive/low-risk. **Not yet pushed to GitHub** — `main` is 1 merge ahead of `origin` (prod ahead of remote). Original stash dropped (fully captured in the deployed commit). Pending manual UI confirmation by user: role assignable, DELIVERY_MANAGEMENT user sees the empty tab, edit-product log reads "StockBalagtas". Note: frontend uses `ROLE_DEFAULT_PAGES` (not `PAGE_PERMISSIONS` as the reuse map said).
+**State after this session:** ✅ **DEPLOYED to production AND pushed to GitHub.** Landed via `feat/delivery-schedule-session0` (reconstructed cleanly from the original stash — no conflicts), merged to `main` (merge `aba1db0`), and rebuilt with `docker compose up -d --build`. Verified on live: backend healthy, Flyway still at **V91** (no migration ran, as expected), `db` container untouched; frontend serving `?v=u12` with the Delivery Schedule nav + `loadDeliverySchedule` stub. No DB migration; changes additive/low-risk. **2026-07-04: pushed to `origin/main`** together with the pizza-boxes-dispatched merge (`c90e5b6`) — `main` and `origin/main` are now in sync. Original stash dropped (fully captured in the deployed commit). Pending manual UI confirmation by user: role assignable, DELIVERY_MANAGEMENT user sees the empty tab, edit-product log reads "StockBalagtas". Note: frontend uses `ROLE_DEFAULT_PAGES` (not `PAGE_PERMISSIONS` as the reuse map said).
 **Next session:** Session 1 (Stock Move backend, migration **V92**).
 
 ## Session 1 — Stock Move backend
 **Goal:** full API for inter-warehouse moves; stock changes only on complete.
-- [ ] Migration **V92__stock_transfers.sql**: `stock_transfers` (status PENDING/APPROVED/COMPLETED/REJECTED/CANCELLED, scheduled_date, requested_by(+name), approved_by(+name), approved_at, completed_at, reject_reason, notes, change_log, created_at) + `stock_transfer_items` (transfer_id FK, product_id, from_warehouse, to_warehouse, quantity>0).
-- [ ] `StockTransfer.java`, `StockTransferItem.java`, `StockTransferRepository.java`, `StockTransferService.java`, `StockTransferController.java` (`/api/stock-transfers`).
-- [ ] Endpoints: `POST /` (create), `GET /?status=`, `GET /{id}`, `POST /{id}/approve`, `/reschedule`, `/reject`, `/complete`, `/cancel`.
-- [ ] `complete`: `@Transactional`, guard status==APPROVED, per line re-check source stock, `deductWhStock(from)`+`addWhStock(to)`+save+`logMovement('TRANSFER',…)`×2 → COMPLETED. Approver-gated (role set).
+- [x] Migration **V94__stock_transfers.sql** (renumbered from V92 — V92 was claimed by `feat/daily-report-pizza-boxes-dispatched`, deployed 2026-07-04): `stock_transfers` (status PENDING/APPROVED/COMPLETED/REJECTED/CANCELLED, scheduled_date, requested_by(+name), approved_by(+name), approved_at, completed_at, reject_reason, notes, change_log, created_at) + `stock_transfer_items` (transfer_id FK, product_id, from_warehouse, to_warehouse, quantity>0). **Drafted, not yet applied to any DB.**
+- [x] `StockTransfer.java`, `StockTransferItem.java`, `StockTransferRepository.java`, `StockTransferService.java`, `StockTransferController.java` (`/api/stock-transfers`) — **drafted**, parked in `stash@{0}`.
+- [x] Endpoints: `POST /` (create), `GET /?status=`, `GET /{id}`, `POST /{id}/approve`, `/reschedule`, `/reject`, `/complete`, `/cancel` — **drafted**, parked in `stash@{0}`.
+- [x] `complete`: `@Transactional`, guard status==APPROVED, per line re-check source stock, `deductWhStock(from)`+`addWhStock(to)`+save+`logMovement('TRANSFER',…)`×2 → COMPLETED. Approver-gated (role set) — **drafted**, parked in `stash@{0}`.
+- [ ] **Not yet done:** clone verification (below) — nothing in this session has been tested against a DB yet.
 **Verify (clone):** create→approve→complete moves exact qty, two TRANSFER rows/line; short-stock at complete errors; reject/reschedule/cancel work; non-approver 403; live reports untouched.
 **Done when:** all endpoints pass clone checks.
-**State after this session:** _(fill in)_
+**State after this session:** 🟡 **Code drafted, not verified.** All files written (see "Where the Session 1/Session 3 code lives" note above) but never run against a database — no clone test has happened. Migration renumbered V92→V94 on 2026-07-04 to avoid clashing with the unrelated pizza-boxes-dispatched deploy which took V92. To resume: `git stash pop` (or `apply`) to restore the code, then run the clone-verify steps above before checking this off.
 **Next session:** Session 2.
 
 ## Session 2 — Stock Move frontend (→ Phase A ships)
@@ -78,15 +85,16 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 
 ## Session 3 — Deferred Delivery backend
 **Goal:** an order can be created deferred and fulfilled later, recording only on delivery day; safe cancel/reschedule.
-- [ ] Migration **V93__order_scheduled_delivery.sql**: add `orders.scheduled_delivery_date DATE`, `orders.delivery_change_log TEXT`, `orders.delivered_at TIMESTAMPTZ` (if absent); **widen `chk_status`** to include `'SCHEDULED_DELIVERY'`.
-- [ ] `OrderService.createOrder`: if `scheduledDeliveryDate` present → save as `SCHEDULED_DELIVERY`, **skip** stock/sale/commission.
-- [ ] `fulfillScheduledDelivery(orderId,userId)` (model on `batchMarkAsCollected`): deduct stock + `recordSale` dated today + commission + cash-if-CASH + status `DELIVERED` + `delivered_at`.
-- [ ] `POST /{id}/reschedule-delivery` (update date, append change_log, repeatable) + `POST /{id}/fulfill-delivery` (covers "Mark Delivered" and "Deliver now").
-- [ ] `cancelOrder`: for `SCHEDULED_DELIVERY`, skip stock restore (nothing deducted).
-- [ ] Add `'SCHEDULED_DELIVERY'` to every daily-report/dashboard `status NOT IN (...)` filter.
+- [x] Migration **V93__order_scheduled_delivery.sql**: add `orders.scheduled_delivery_date DATE`, `orders.delivery_change_log TEXT`, `orders.delivered_at TIMESTAMPTZ` (if absent); **widen `chk_status`** to include `'SCHEDULED_DELIVERY'`. **Drafted, not yet applied to any DB.**
+- [x] `OrderService.createOrder`: if `scheduledDeliveryDate` present → save as `SCHEDULED_DELIVERY`, **skip** stock/sale/commission — **drafted**, parked in `stash@{0}`.
+- [x] `fulfillScheduledDelivery(orderId,userId)` (model on `batchMarkAsCollected`): deduct stock + `recordSale` dated today + commission + cash-if-CASH + status `DELIVERED` + `delivered_at` — **drafted**, parked in `stash@{0}`.
+- [x] `POST /{id}/reschedule-delivery` (update date, append change_log, repeatable) + `POST /{id}/fulfill-delivery` (covers "Mark Delivered" and "Deliver now") — **drafted**, parked in `stash@{0}`.
+- [x] `cancelOrder`: for `SCHEDULED_DELIVERY`, skip stock restore (nothing deducted) — **drafted**, parked in `stash@{0}`.
+- [x] Added `'SCHEDULED_DELIVERY'` to daily-report/dashboard `status NOT IN (...)` filters — **drafted**, parked in `stash@{0}`. Note: during the pizza-boxes-dispatched merge on 2026-07-04, the pizza-box query specifically had a conflict between this session's `NOT IN ('CANCELLED','PENDING','PENDING_COLLECTION','SCHEDULED_DELIVERY')` and the incoming branch's `<> 'CANCELLED'`. It was resolved as a blend (`NOT IN ('CANCELLED','SCHEDULED_DELIVERY')`) but that blend was then **re-stashed before deploy**, so it never shipped — the live pizza-box query today is the branch's plain `status <> 'CANCELLED'`, with no SCHEDULED_DELIVERY awareness at all. When this session's stash is popped, that pizza-box line will need the blended resolution re-applied (or re-decided) — it will not come back automatically.
+- [ ] **Not yet done:** clone verification (below) — nothing in this session has been tested against a DB yet.
 **Verify (clone):** create scheduled → 0 stock/sale, absent from daily report; reschedule ×2; fulfill → recorded today + DELIVERED; cancel → clean; deliver-now → recorded today; never appears in totals pre-resolution.
 **Done when:** cancellation matrix + report-exclusion all pass.
-**State after this session:** _(fill in)_
+**State after this session:** 🟡 **Code drafted, not verified.** All files written (see "Where the Session 1/Session 3 code lives" note above) but never run against a database — no clone test has happened, and nothing from this session is live in production. To resume: `git stash pop` (or `apply`) to restore the code — remember to re-apply the pizza-box query blend noted above, since a plain pop will conflict there again — then run the clone-verify steps above before checking this off.
 **Next session:** Session 4.
 
 ## Session 4 — Deferred Delivery frontend (→ Phase B ships)
