@@ -124,6 +124,9 @@ public class OrderService {
         order.setDiscount(request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO);
         order.setDeliveryFee(request.getDeliveryFee() != null ? request.getDeliveryFee() : BigDecimal.ZERO);
         order.setNotes(request.getNotes());
+        // Deferred delivery (V93): presence of a scheduled date makes createOrder route
+        // this into the inert SCHEDULED_DELIVERY flow (records nothing until fulfilled).
+        order.setScheduledDeliveryDate(request.getScheduledDeliveryDate());
 
         // ── A2: Agent linking — look up registered agent if agentId is supplied ──
         final Agent linkedAgent;
@@ -201,6 +204,14 @@ public class OrderService {
         // Calculate subtotal, discount, total
         order.calculateTotals();
 
+        // Deferred delivery (V93): record NOTHING now — no stock, no sale, no commission,
+        // no cash. The order sits inert as SCHEDULED_DELIVERY until it is fulfilled (recorded
+        // on the delivery day) or cancelled (nothing recorded). Takes precedence over the COD
+        // routing below so a scheduled COD order is still SCHEDULED_DELIVERY, not PENDING.
+        if (order.getScheduledDeliveryDate() != null) {
+            return createScheduledDelivery(order, creator, createdByUserId);
+        }
+
         // COD orders start as PENDING — admin must confirm before fulfilment
         if ("COD".equalsIgnoreCase(order.getPaymentMode())) {
             order.setStatus("PENDING");
@@ -231,6 +242,131 @@ public class OrderService {
         inventoryService.deductStockForOrder(savedOrder, createdByUserId);
 
         return savedOrder;
+    }
+
+    /**
+     * Persist a deferred-delivery order (V93) without recording anything.
+     *
+     * Called from {@link #createOrder} when the request carries a scheduledDeliveryDate.
+     * The order is saved with status SCHEDULED_DELIVERY and an opening change-log line, but
+     * NO stock is deducted, NO SALE is posted, NO commission is created, and NO cash is
+     * booked. All of that happens later in {@link #fulfillScheduledDelivery} on the delivery
+     * day. The controller must likewise skip its post-create commission call for this status.
+     */
+    private Order createScheduledDelivery(Order order, User creator, Long createdByUserId) {
+        LocalDate date = order.getScheduledDeliveryDate();
+        if (date.isBefore(LocalDate.now())) {
+            throw new RuntimeException("Scheduled delivery date cannot be in the past");
+        }
+        order.setStatus("SCHEDULED_DELIVERY");
+        order.appendDeliveryLog(LocalDate.now() + " — scheduled for delivery on " + date
+                + " by " + creator.getFullName());
+
+        Order savedOrder = orderRepository.save(order);
+
+        activityLogService.log(createdByUserId, creator.getFullName(), "CREATE_ORDER",
+                "Created scheduled-delivery order " + savedOrder.getId() + " for "
+                        + savedOrder.getCustomerName() + " — ₱" + savedOrder.getTotal()
+                        + " — delivery " + date + " (records nothing until delivered)",
+                "ORDER", savedOrder.getId());
+
+        return savedOrder;
+    }
+
+    /**
+     * Fulfil a SCHEDULED_DELIVERY order (V93) — "Mark Delivered" and "Deliver now" both land here.
+     *
+     * This is the moment a deferred order becomes real: recorded on the delivery day (today).
+     * Modelled on {@link #batchMarkAsCollected} / the collect endpoint — deduct stock, post a
+     * SALE dated today, create commission, book cash if paid in cash, and move to DELIVERED with
+     * a delivered_at timestamp. Stock deduction is last so a short-stock failure rolls the whole
+     * fulfilment back (nothing is half-recorded).
+     *
+     * Revenue is recognised on the delivery day via the transaction ledger (getGrossSalesForDate),
+     * so today's live report and the eventual close snapshot both pick it up without any manual
+     * daily-report patch (unlike collections, which book to a past, already-closed day).
+     */
+    @Transactional
+    public Order fulfillScheduledDelivery(String orderId, Long userId) {
+        Order order = orderRepository.findByIdForUpdateWithItems(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
+
+        if (!"SCHEDULED_DELIVERY".equals(order.getStatus())) {
+            throw new RuntimeException("Order is not a scheduled delivery (status: " + order.getStatus() + ")");
+        }
+
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found: " + userId));
+
+        final LocalDate today = LocalDate.now();
+
+        // Flip to a real, recorded order — on the delivery day.
+        order.setStatus("DELIVERED");
+        order.setDeliveredAt(OffsetDateTime.now());
+        order.appendDeliveryLog(today + " — delivered & recorded by " + actor.getFullName());
+        orderRepository.save(order);
+
+        // SALE dated today (revenue recognised on the delivery day).
+        transactionService.recordSale(order, userId, today);
+
+        // Commission — idempotent; no-op when the order has no agent / no opAmount.
+        try { commissionService.createEntriesForOrder(order, userId); }
+        catch (Exception e) {
+            log.warn("Failed to create commission entries for delivered order {}: {}",
+                     order.getId(), e.getMessage());
+        }
+
+        // Cash on hand: only cash-paid orders add to the drawer, booked on the delivery day.
+        if ("CASH".equalsIgnoreCase(order.getPaymentMode())) {
+            cashLedgerService.recordOrderCashSale(order, userId, actor.getFullName(), today);
+        }
+
+        // Deduct stock last — short stock throws → whole fulfilment rolls back.
+        inventoryService.deductStockForOrder(order, userId);
+
+        activityLogService.log(userId, actor.getFullName(), "ORDER_DELIVERED",
+                "Delivered scheduled order " + orderId + " — ₱" + order.getTotal()
+                        + " recorded on " + today,
+                "ORDER", orderId);
+
+        return order;
+    }
+
+    /**
+     * Reschedule a SCHEDULED_DELIVERY order (V93) to a new date. Repeatable indefinitely;
+     * records nothing (no stock/sale/cash) — only moves the date and appends the change log.
+     */
+    @Transactional
+    public Order rescheduleDelivery(String orderId, LocalDate newDate, Long userId) {
+        if (newDate == null) {
+            throw new RuntimeException("New delivery date is required");
+        }
+        if (newDate.isBefore(LocalDate.now())) {
+            throw new RuntimeException("New delivery date cannot be in the past");
+        }
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
+
+        if (!"SCHEDULED_DELIVERY".equals(order.getStatus())) {
+            throw new RuntimeException("Only scheduled-delivery orders can be rescheduled (status: "
+                    + order.getStatus() + ")");
+        }
+
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found: " + userId));
+
+        LocalDate old = order.getScheduledDeliveryDate();
+        order.setScheduledDeliveryDate(newDate);
+        order.appendDeliveryLog(LocalDate.now() + " — rescheduled " + old + " → " + newDate
+                + " by " + actor.getFullName());
+        orderRepository.save(order);
+
+        activityLogService.log(userId, actor.getFullName(), "ORDER_RESCHEDULE_DELIVERY",
+                "Rescheduled delivery for order " + orderId + ": " + old + " → " + newDate,
+                "ORDER", orderId);
+
+        return order;
     }
 
     /**
@@ -483,6 +619,11 @@ public class OrderService {
         User cancelledBy = userRepository.findById(cancelledByUserId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        // Deferred delivery (V93): a SCHEDULED_DELIVERY order recorded nothing (no stock, no
+        // SALE, no cash), so cancelling must NOT restore stock or write a VOID — that would
+        // fabricate a phantom stock-in and a negative ledger entry. Captured before the flip.
+        final boolean wasScheduledDelivery = "SCHEDULED_DELIVERY".equals(order.getStatus());
+
         // Update order status
         order.setStatus("CANCELLED");
         order.setCancellationType("STANDARD");
@@ -495,6 +636,11 @@ public class OrderService {
         activityLogService.log(cancelledByUserId, cancelledBy.getFullName(), "CANCEL_ORDER",
             "Cancelled order " + orderId + " — Reason: " + reason,
             "ORDER", orderId);
+
+        // Deferred delivery: nothing was ever recorded — drop it clean, no ledger/cash/stock work.
+        if (wasScheduledDelivery) {
+            return savedOrder;
+        }
 
         // M-26: Skip the VOID ledger entry for force-closed, uncollected orders.
         //

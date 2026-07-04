@@ -82,7 +82,8 @@ public class ReportsController {
         // the ledger (net = ₱0) so they must not be counted as billed revenue or sold items.
         List<Order> billed = allOrders.stream()
                 .filter(o -> !"CANCELLED".equals(o.getStatus())
-                          && !"PENDING_COLLECTION".equals(o.getStatus()))
+                          && !"PENDING_COLLECTION".equals(o.getStatus())
+                          && !"SCHEDULED_DELIVERY".equals(o.getStatus()))
                 .collect(Collectors.toList());
 
         long totalOrders = billed.size();
@@ -169,7 +170,8 @@ public class ReportsController {
         List<Order> prevOrders = orderRepository.findByDateRangeWithItems(prevStart, prevEnd)
                 .stream()
                 .filter(o -> !"CANCELLED".equals(o.getStatus())
-                          && !"PENDING_COLLECTION".equals(o.getStatus()))
+                          && !"PENDING_COLLECTION".equals(o.getStatus())
+                          && !"SCHEDULED_DELIVERY".equals(o.getStatus()))
                 .collect(Collectors.toList());
 
         long       prevMonthOrders  = prevOrders.size();
@@ -984,7 +986,7 @@ public class ReportsController {
         // ── Orders (billed = not CANCELLED, not PENDING_COLLECTION) ─────────────
         long totalOrders = ((Number) entityManager.createNativeQuery(
                 "SELECT COUNT(*) FROM orders " +
-                "WHERE status NOT IN ('CANCELLED','PENDING_COLLECTION') " +
+                "WHERE status NOT IN ('CANCELLED','PENDING_COLLECTION','SCHEDULED_DELIVERY') " +
                 "  AND created_at::date BETWEEN :start AND :end")
                 .setParameter("start", start).setParameter("end", end)
                 .getSingleResult()).longValue();
@@ -992,7 +994,7 @@ public class ReportsController {
         long totalItemsSold = ((Number) entityManager.createNativeQuery(
                 "SELECT COALESCE(SUM(oi.quantity),0) FROM order_items oi " +
                 "JOIN orders o ON oi.order_id = o.id " +
-                "WHERE o.status NOT IN ('CANCELLED','PENDING_COLLECTION') " +
+                "WHERE o.status NOT IN ('CANCELLED','PENDING_COLLECTION','SCHEDULED_DELIVERY') " +
                 "  AND o.created_at::date BETWEEN :start AND :end")
                 .setParameter("start", start).setParameter("end", end)
                 .getSingleResult()).longValue();
@@ -1058,7 +1060,7 @@ public class ReportsController {
         @SuppressWarnings("unchecked")
         List<Object[]> cntRows = entityManager.createNativeQuery(
                 "SELECT CASE WHEN source='ECOMMERCE' THEN COALESCE(ecommerce_platform,'UNKNOWN') ELSE 'DIRECT' END AS ch, COUNT(*) " +
-                "FROM orders WHERE status NOT IN ('CANCELLED','PENDING_COLLECTION') " +
+                "FROM orders WHERE status NOT IN ('CANCELLED','PENDING_COLLECTION','SCHEDULED_DELIVERY') " +
                 "  AND created_at::date BETWEEN :start AND :end GROUP BY ch")
                 .setParameter("start", start).setParameter("end", end)
                 .getResultList();
@@ -1113,7 +1115,7 @@ public class ReportsController {
     /** Pizza-box gross sales by category (qty + subtotal), split Direct/Ecommerce + per platform,
      *  plus pizza-vs-rest share of gross item sales. Gross because the ledger has no item detail. */
     private Map<String, Object> computePizzaGross(LocalDate start, LocalDate end) {
-        String billed = "o.status NOT IN ('CANCELLED','PENDING_COLLECTION') AND o.created_at::date BETWEEN :start AND :end";
+        String billed = "o.status NOT IN ('CANCELLED','PENDING_COLLECTION','SCHEDULED_DELIVERY') AND o.created_at::date BETWEEN :start AND :end";
 
         Object[] tot = (Object[]) entityManager.createNativeQuery(
                 "SELECT " +

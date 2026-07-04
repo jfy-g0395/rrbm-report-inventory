@@ -93,6 +93,7 @@
       'CANCELLED':           { dot: 'dot-cancelled',   label: 'Cancelled' },
       'CLOSED':              { dot: 'dot-cancelled',   label: 'Closed' },
       'PENDING_COLLECTION':  { dot: 'dot-collection',  label: 'Pending Collection' },
+      'SCHEDULED_DELIVERY':  { dot: 'dot-pending',     label: 'Scheduled Delivery' },
     };
     const info = map[st] || { dot: '', label: st };
     return '<span class="status-dot ' + info.dot + '"></span>' + info.label;
@@ -339,7 +340,7 @@
                      'edit-emp-security-key', 'edit-emp-security-key-confirm',
                      'payable-paid-key', 'delete-emp-key',
                      'cp-current-pw', 'cp-new-pw', 'cp-confirm-pw',
-                     'ivm-security-key', 'ivm-master-key'];
+                     'ivm-security-key', 'ivm-master-key', 'sm-action-key'];
     secFields.forEach(function (fid) { var f = $(fid); if (f) f.value = ''; });
   };
 
@@ -5809,17 +5810,598 @@
   };
 
   // ================================================================
-  // Delivery Schedule (stock moves + order deliveries)
+  // Delivery Schedule — Stock Moves (Phase A) + Order Deliveries (Phase B stub)
   // ================================================================
-  // Session 0 stub — the two cards render empty; wired up in Sessions 1–4.
+  var _stockMoves = [];
+  var _smLineCounter = 0;
+  var _smAction = null; // { id, type } for the pending approver action
+
+  /** Roles allowed to approve/reschedule/reject/complete a stock move (mirrors the backend set). */
+  function isMoveApprover() {
+    return ['SUPER_ADMIN', 'ADMINISTRATOR', 'DELIVERY_MANAGEMENT'].indexOf(currentUserRole()) !== -1;
+  }
+
+  /** Warehouse code → user-facing label (wh3 shows as "Balagtas"). */
+  function smWhLabel(wh) {
+    if (wh === 'wh1') return 'WH1';
+    if (wh === 'wh2') return 'WH2';
+    if (wh === 'wh3') return 'Balagtas';
+    return wh || '?';
+  }
+
+  function smWhOptions(selected) {
+    return ['wh1', 'wh2', 'wh3'].map(function (w) {
+      return '<option value="' + w + '"' + (w === selected ? ' selected' : '') + '>' + smWhLabel(w) + '</option>';
+    }).join('');
+  }
+
+  function smStatusBadge(status) {
+    var map = {
+      PENDING:   ['#B45309', 'rgba(217,119,6,0.12)'],
+      APPROVED:  ['#1D4ED8', 'rgba(37,99,235,0.12)'],
+      COMPLETED: ['#047857', 'rgba(5,150,105,0.12)'],
+      REJECTED:  ['#B91C1C', 'rgba(220,38,38,0.12)'],
+      CANCELLED: ['#6B7280', 'rgba(107,114,128,0.14)'],
+    };
+    var c = map[status] || ['#6B7280', 'rgba(107,114,128,0.14)'];
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;color:'
+      + c[0] + ';background:' + c[1] + ';">' + status + '</span>';
+  }
+
   window.loadDeliverySchedule = function () {
-    var stockMovesBody = $('delivery-stock-moves-body');
-    if (stockMovesBody && !stockMovesBody.dataset.wired) {
-      stockMovesBody.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No stock moves yet.</div>';
+    loadStockMoves();
+    loadOrderDeliveries();
+  };
+
+  window.loadStockMoves = async function () {
+    var body = $('delivery-stock-moves-body');
+    if (!body) return;
+    body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">Loading…</div>';
+    // Live per-warehouse stock shown on each line comes from the product cache.
+    if (!appState.cachedProducts || !appState.cachedProducts.length) { await loadProducts(); }
+    var status = (($('stock-moves-filter') || {}).value || '').trim();
+    try {
+      var res = await fetch(API_BASE + '/api/stock-transfers' + (status ? '?status=' + encodeURIComponent(status) : ''),
+        { headers: authHeaders() });
+      if (!res.ok) {
+        body.innerHTML = '<div style="padding:24px;text-align:center;color:#EF4444;">Failed to load stock moves (HTTP ' + res.status + ').</div>';
+        return;
+      }
+      _stockMoves = await res.json();
+      renderStockMoves();
+    } catch (e) {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:#EF4444;">Connection error loading stock moves.</div>';
     }
-    var orderDeliveriesBody = $('delivery-order-deliveries-body');
-    if (orderDeliveriesBody && !orderDeliveriesBody.dataset.wired) {
-      orderDeliveriesBody.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No scheduled deliveries yet.</div>';
+  };
+
+  function smLineHtml(item) {
+    var prod = (appState.cachedProducts || []).find(function (p) { return p.id === item.productId; });
+    var live = null;
+    if (prod) {
+      if (item.fromWarehouse === 'wh1') live = prod.stockWh1 || 0;
+      else if (item.fromWarehouse === 'wh2') live = prod.stockWh2 || 0;
+      else if (item.fromWarehouse === 'wh3') live = prod.stockWh3 || 0;
+    }
+    var stockNote = '';
+    if (live != null) {
+      var short = live < item.quantity;
+      stockNote = ' <span style="color:' + (short ? '#EF4444;font-weight:600' : 'var(--text-muted)') + ';">('
+        + live.toLocaleString() + ' now in ' + smWhLabel(item.fromWarehouse) + ')</span>';
+    }
+    return '<div style="font-size:12px;padding:2px 0;">'
+      + '<strong>' + escapeHtml(item.productName || '') + '</strong> · '
+      + smWhLabel(item.fromWarehouse) + ' <i class="ti ti-arrow-right" style="font-size:11px;"></i> ' + smWhLabel(item.toWarehouse)
+      + ' · <strong>' + item.quantity + '</strong> pcs' + stockNote
+      + '</div>';
+  }
+
+  function smActionsHtml(t) {
+    var btns = [];
+    var approver = isMoveApprover();
+    var isRequester = t.requestedBy != null && String(t.requestedBy) === String(currentUserId());
+    if (t.status === 'PENDING') {
+      if (approver) {
+        btns.push('<button class="btn btn-sm btn-primary" onclick="askApproveMove(' + t.id + ')"><i class="ti ti-check"></i> Approve</button>');
+        btns.push('<button class="btn btn-sm btn-outline-secondary" onclick="askRescheduleMove(' + t.id + ')">Reschedule</button>');
+        btns.push('<button class="btn btn-sm btn-outline-danger" onclick="askRejectMove(' + t.id + ')">Reject</button>');
+      }
+      if (approver || isRequester) btns.push('<button class="btn btn-sm btn-outline-secondary" onclick="askCancelMove(' + t.id + ')">Cancel</button>');
+    } else if (t.status === 'APPROVED') {
+      if (approver) {
+        btns.push('<button class="btn btn-sm btn-success" onclick="askCompleteMove(' + t.id + ')"><i class="ti ti-checks"></i> Complete</button>');
+        btns.push('<button class="btn btn-sm btn-outline-secondary" onclick="askRescheduleMove(' + t.id + ')">Reschedule</button>');
+      }
+      if (approver || isRequester) btns.push('<button class="btn btn-sm btn-outline-secondary" onclick="askCancelMove(' + t.id + ')">Cancel</button>');
+    }
+    return btns.length ? btns.join(' ') : '<span style="color:var(--text-muted);font-size:11px;">—</span>';
+  }
+
+  function renderStockMoves() {
+    var body = $('delivery-stock-moves-body');
+    if (!body) return;
+    if (!_stockMoves || !_stockMoves.length) {
+      var filtered = (($('stock-moves-filter') || {}).value) ? ' with this status' : ' yet';
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No stock moves' + filtered + '.</div>';
+      return;
+    }
+    var rows = _stockMoves.map(function (t) {
+      var lines = (t.items || []).map(smLineHtml).join('');
+      var reqBy = escapeHtml(t.requestedByName || ('user #' + t.requestedBy));
+      var reqOn = t.createdAt ? formatDate(t.createdAt) : '';
+      var sched = t.scheduledDate ? formatDate(t.scheduledDate) : '<span style="color:var(--text-muted);">—</span>';
+      var meta = '';
+      if (t.status === 'APPROVED' && t.approvedByName)
+        meta += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Approved by ' + escapeHtml(t.approvedByName) + '</div>';
+      if (t.status === 'REJECTED' && t.rejectReason)
+        meta += '<div style="font-size:11px;color:#B91C1C;margin-top:2px;">Reason: ' + escapeHtml(t.rejectReason) + '</div>';
+      if (t.notes)
+        meta += '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;"><i class="ti ti-note"></i> ' + escapeHtml(t.notes) + '</div>';
+      return '<tr>'
+        + '<td style="vertical-align:top;font-weight:600;">#' + t.id + '</td>'
+        + '<td style="vertical-align:top;">' + lines + meta + '</td>'
+        + '<td style="vertical-align:top;font-size:12px;">' + reqBy + '<div style="color:var(--text-muted);font-size:11px;">' + reqOn + '</div></td>'
+        + '<td style="vertical-align:top;font-size:12px;">' + sched + '</td>'
+        + '<td style="vertical-align:top;">' + smStatusBadge(t.status) + '</td>'
+        + '<td style="vertical-align:top;"><div style="display:flex;flex-wrap:wrap;gap:4px;">' + smActionsHtml(t) + '</div></td>'
+        + '</tr>';
+    }).join('');
+    body.innerHTML = '<div style="overflow-x:auto;"><table class="table"><thead><tr>'
+      + '<th>#</th><th>Details</th><th>Requested</th><th>Scheduled</th><th>Status</th><th>Actions</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  // ── Request modal (multi-line) ─────────────────────────────────────────────
+  window.openStockMoveModal = async function () {
+    if (!appState.cachedProducts || !appState.cachedProducts.length) { await loadProducts(); }
+    var container = $('sm-lines-container');
+    if (container) container.innerHTML = '';
+    _smLineCounter = 0;
+    if ($('sm-scheduled-date')) $('sm-scheduled-date').value = '';
+    if ($('sm-notes')) $('sm-notes').value = '';
+    addStockMoveLine();
+    openModal('modal-stock-move');
+  };
+
+  window.addStockMoveLine = function () {
+    var container = $('sm-lines-container');
+    if (!container) return;
+    var n = ++_smLineCounter;
+    var rowId = 'sm-line-' + n;
+    container.insertAdjacentHTML('beforeend',
+      '<div class="order-item-row" id="' + rowId + '"><div class="row align-items-end g-2">'
+      + '<div class="col-md-4"><label class="form-label" style="font-size:11px;">Product <span class="text-danger">*</span></label>'
+        + '<div class="product-autocomplete-wrapper" style="position:relative;">'
+        + '<input type="text" class="form-control product-input" id="sm-prod-input-' + n + '" placeholder="Type to search…" autocomplete="off">'
+        + '<input type="hidden" id="sm-prod-id-' + n + '" value="">'
+        + '<div class="product-dropdown" id="sm-prod-dropdown-' + n + '"></div>'
+        + '<div id="sm-prod-status-' + n + '" style="display:none;font-size:11px;margin-top:3px;"></div></div></div>'
+      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;">From &rarr; To</label>'
+        + '<div style="display:flex;align-items:center;gap:4px;">'
+        + '<select class="form-control" id="sm-from-' + n + '" style="font-size:12px;padding:4px;">' + smWhOptions('wh1') + '</select>'
+        + '<i class="ti ti-arrow-right" style="color:var(--text-muted);"></i>'
+        + '<select class="form-control" id="sm-to-' + n + '" style="font-size:12px;padding:4px;">' + smWhOptions('wh3') + '</select></div></div>'
+      + '<div class="col-md-2"><label class="form-label" style="font-size:11px;">Qty <span class="text-danger">*</span></label>'
+        + '<input type="number" class="form-control" id="sm-qty-' + n + '" min="1" value="1"></div>'
+      + '<div class="col-md-2"><label class="form-label" style="font-size:11px;">Source stock</label>'
+        + '<div id="sm-stock-' + n + '" style="font-size:11px;padding:6px 8px;background:var(--bg-secondary);border-radius:6px;min-height:32px;display:flex;align-items:center;color:var(--text-muted);">Select a product</div></div>'
+      + '<div class="col-md-1 text-center"><label class="form-label">&nbsp;</label>'
+        + '<button type="button" class="remove-item-btn d-block" onclick="removeSmLine(\'' + rowId + '\')"><i class="ti ti-trash"></i></button></div>'
+      + '</div></div>');
+    setupSmProductAutocomplete(n);
+    var fromSel = $('sm-from-' + n);
+    if (fromSel) fromSel.addEventListener('change', function () { smUpdateLineStock(n); });
+    var qtyEl = $('sm-qty-' + n);
+    if (qtyEl) qtyEl.addEventListener('input', function () { smUpdateLineStock(n); });
+  };
+
+  window.removeSmLine = function (rowId) {
+    var row = $(rowId);
+    if (row) row.remove();
+  };
+
+  function setupSmProductAutocomplete(n) {
+    var input = $('sm-prod-input-' + n), dropdown = $('sm-prod-dropdown-' + n);
+    if (!input || !dropdown) return;
+    function show() {
+      var t = input.value.toLowerCase().trim();
+      var list = t.length === 0 ? appState.cachedProducts
+        : (appState.cachedProducts || []).filter(function (p) { return p.name.toLowerCase().includes(t); });
+      renderSmProductDropdown(dropdown, list, n);
+    }
+    input.addEventListener('input', function () {
+      var pid = $('sm-prod-id-' + n); if (pid) pid.value = '';
+      var ps = $('sm-prod-status-' + n);
+      if (ps) {
+        if (this.value.trim()) { ps.style.display = ''; ps.style.color = '#D97706'; ps.textContent = '⚠ Select from catalog'; }
+        else { ps.style.display = 'none'; ps.textContent = ''; }
+      }
+      smUpdateLineStock(n);
+      show();
+    });
+    input.addEventListener('focus', show);
+    document.addEventListener('click', function (e) {
+      if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show');
+    });
+  }
+
+  function renderSmProductDropdown(dropdown, products, n) {
+    // SET products are rejected server-side (move their components instead); hide them here.
+    products = (products || []).filter(function (p) { return !p.isSet; });
+    if (!products.length) {
+      dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>';
+      dropdown.classList.add('show');
+      return;
+    }
+    var html = '';
+    products.forEach(function (p) {
+      var wh1 = p.stockWh1 || 0, wh2 = p.stockWh2 || 0, wh3 = p.stockWh3 || 0, total = wh1 + wh2 + wh3;
+      var parts = [];
+      if (wh1 > 0) parts.push('WH1:' + wh1.toLocaleString());
+      if (wh2 > 0) parts.push('WH2:' + wh2.toLocaleString());
+      if (wh3 > 0) parts.push('Balagtas:' + wh3.toLocaleString());
+      var primary = 'wh1';
+      if (wh2 > wh1 && wh2 >= wh3) primary = 'wh2';
+      if (wh3 > wh1 && wh3 > wh2) primary = 'wh3';
+      html += '<div class="product-dropdown-item" data-id="' + p.id + '" data-name="' + escapeHtml(p.name)
+        + '" data-primary="' + primary + '" data-n="' + n + '"><div style="flex:1;"><div class="product-name">'
+        + escapeHtml(p.name) + '</div><div style="font-size:10px;color:#888;">' + (parts.join(' · ') || 'No stock')
+        + '</div></div><div style="text-align:right;"><span class="product-stock ' + (total <= 0 ? 'critical' : 'ok') + '">'
+        + total.toLocaleString() + ' pcs</span></div></div>';
+    });
+    dropdown.innerHTML = html;
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var nn = this.getAttribute('data-n');
+        $('sm-prod-input-' + nn).value = this.getAttribute('data-name');
+        $('sm-prod-id-' + nn).value = this.getAttribute('data-id');
+        var ps = $('sm-prod-status-' + nn);
+        if (ps) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = '✓ Catalog product'; }
+        // Default the source to the warehouse holding the most stock; keep destination distinct.
+        var primary = this.getAttribute('data-primary');
+        var fromSel = $('sm-from-' + nn), toSel = $('sm-to-' + nn);
+        if (fromSel) fromSel.value = primary;
+        if (toSel && toSel.value === primary) toSel.value = (primary === 'wh3') ? 'wh1' : 'wh3';
+        smUpdateLineStock(nn);
+        dropdown.classList.remove('show');
+      });
+    });
+  }
+
+  function smUpdateLineStock(n) {
+    var box = $('sm-stock-' + n);
+    if (!box) return;
+    var pid = parseInt(($('sm-prod-id-' + n) || {}).value, 10);
+    if (!pid) { box.innerHTML = 'Select a product'; box.style.color = 'var(--text-muted)'; return; }
+    var p = (appState.cachedProducts || []).find(function (x) { return x.id === pid; });
+    if (!p) { box.innerHTML = '—'; return; }
+    var from = ($('sm-from-' + n) || {}).value;
+    var live = from === 'wh1' ? (p.stockWh1 || 0) : from === 'wh2' ? (p.stockWh2 || 0) : (p.stockWh3 || 0);
+    var qty = parseInt(($('sm-qty-' + n) || {}).value, 10) || 0;
+    var short = qty > live;
+    box.style.color = '';
+    box.innerHTML = '<span style="color:' + (short ? '#EF4444' : '#10B981') + ';font-weight:600;">'
+      + live.toLocaleString() + '</span>&nbsp;<span style="color:var(--text-muted);">in ' + smWhLabel(from) + '</span>';
+  }
+
+  window.submitStockMove = async function () {
+    var container = $('sm-lines-container');
+    if (!container) return;
+    var rows = container.querySelectorAll('.order-item-row');
+    var items = [];
+    for (var i = 0; i < rows.length; i++) {
+      var n = rows[i].id.replace('sm-line-', '');
+      var pid = parseInt(($('sm-prod-id-' + n) || {}).value, 10);
+      if (!pid) { showToast('Select a catalog product on every line', 'error'); return; }
+      var from = ($('sm-from-' + n) || {}).value, to = ($('sm-to-' + n) || {}).value;
+      if (from === to) { showToast('Source and destination must differ on every line', 'error'); return; }
+      var qty = parseInt(($('sm-qty-' + n) || {}).value, 10) || 0;
+      if (qty < 1) { showToast('Quantity must be at least 1 on every line', 'error'); return; }
+      items.push({ productId: pid, fromWarehouse: from, toWarehouse: to, quantity: qty });
+    }
+    if (!items.length) { showToast('Add at least one product line', 'error'); return; }
+    var body = {
+      items: items,
+      scheduledDate: (($('sm-scheduled-date') || {}).value) || null,
+      notes: (($('sm-notes') || {}).value || '').trim() || null,
+    };
+    try {
+      var res = await fetch(API_BASE + '/api/stock-transfers',
+        { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      if (!res.ok) {
+        var d = await res.json().catch(function () { return {}; });
+        showToast(d.message || 'Failed to submit stock move', 'error');
+        return;
+      }
+      showToast('Stock move request submitted', 'success');
+      closeModal('modal-stock-move');
+      loadStockMoves();
+    } catch (e) {
+      showToast('Connection error', 'error');
+    }
+  };
+
+  // ── Approver actions (security-key gated, mirrors the delivery-edit pattern) ─
+  function _findMove(id) { return (_stockMoves || []).find(function (t) { return t.id === id; }) || {}; }
+
+  window.askApproveMove    = function (id) { _openSmAction(id, 'approve'); };
+  window.askCompleteMove   = function (id) { _openSmAction(id, 'complete'); };
+  window.askRejectMove     = function (id) { _openSmAction(id, 'reject'); };
+  window.askRescheduleMove = function (id) { _openSmAction(id, 'reschedule'); };
+  window.askCancelMove     = function (id) { _openSmAction(id, 'cancel'); };
+
+  function _openSmAction(id, type) {
+    _smAction = { id: id, type: type };
+    var t = _findMove(id);
+    var lineCount = (t.items || []).length;
+    var cfg = {
+      approve:    { title: 'Approve Stock Move', icon: 'check', btn: 'Approve', key: true,
+                    summary: 'Approve move #' + id + ' (' + lineCount + ' line(s))? Stock does not change until you mark it Complete on arrival.' },
+      complete:   { title: 'Complete Stock Move', icon: 'checks', btn: 'Complete', key: true,
+                    summary: 'Complete move #' + id + '? This moves the stock now for ' + lineCount + ' line(s) and cannot be undone.' },
+      reject:     { title: 'Reject Stock Move', icon: 'x', btn: 'Reject', key: true, reason: true,
+                    summary: 'Reject move #' + id + '? No stock is affected.' },
+      reschedule: { title: 'Reschedule Stock Move', icon: 'calendar', btn: 'Reschedule', key: true, date: true,
+                    summary: 'Set a new scheduled date for move #' + id + '.' },
+      cancel:     { title: 'Cancel Stock Move', icon: 'ban', btn: 'Cancel move', key: false,
+                    summary: 'Cancel move #' + id + '? Nothing has been moved, so no stock is affected.' },
+    }[type];
+    if (!cfg) return;
+    $('sm-action-title').innerHTML = '<i class="ti ti-' + cfg.icon + '" style="margin-right:6px;color:#D4860A;"></i>' + cfg.title;
+    $('sm-action-summary').textContent = cfg.summary;
+    $('sm-action-date-group').style.display = cfg.date ? '' : 'none';
+    $('sm-action-reason-group').style.display = cfg.reason ? '' : 'none';
+    $('sm-action-key-group').style.display = cfg.key ? '' : 'none';
+    if ($('sm-action-date')) $('sm-action-date').value = cfg.date ? (t.scheduledDate || '') : '';
+    if ($('sm-action-reason')) $('sm-action-reason').value = '';
+    if ($('sm-action-key')) $('sm-action-key').value = '';
+    $('sm-action-confirm-btn').textContent = cfg.btn;
+    openModal('modal-stock-move-action');
+  }
+
+  window.confirmStockMoveAction = async function () {
+    if (!_smAction) return;
+    var id = _smAction.id, type = _smAction.type;
+    var needsKey = type !== 'cancel';
+    if (type === 'reschedule' && !(($('sm-action-date') || {}).value)) {
+      showToast('Pick a new scheduled date', 'error'); return;
+    }
+    var key = (($('sm-action-key') || {}).value || '').trim();
+    if (needsKey && !key) { showToast('Admin security key is required', 'error'); return; }
+    if (needsKey) {
+      try {
+        var vRes = await fetch(API_BASE + '/api/auth/verify-security-key',
+          { method: 'POST', headers: authHeaders(), body: JSON.stringify({ securityKey: key }) });
+        if (!vRes.ok) {
+          var vd = await vRes.json().catch(function () { return {}; });
+          showToast(vd.message || 'Incorrect security key', 'error');
+          return;
+        }
+      } catch (e) { showToast('Connection error', 'error'); return; }
+    }
+    var url = API_BASE + '/api/stock-transfers/' + id + '/' + type;
+    var payload = null;
+    if (type === 'reschedule') payload = { scheduledDate: (($('sm-action-date') || {}).value) || null };
+    if (type === 'reject') payload = { reason: (($('sm-action-reason') || {}).value || '').trim() || null };
+    try {
+      var res = await fetch(url, {
+        method: 'POST', headers: authHeaders(),
+        body: payload ? JSON.stringify(payload) : undefined,
+      });
+      if (!res.ok) {
+        var d = await res.json().catch(function () { return {}; });
+        showToast(d.message || ('Failed to ' + type + ' move'), 'error');
+        return;
+      }
+      var labels = { approve: 'approved', complete: 'completed', reject: 'rejected', reschedule: 'rescheduled', cancel: 'cancelled' };
+      showToast('Stock move ' + labels[type], 'success');
+      closeModal('modal-stock-move-action');
+      _smAction = null;
+      loadStockMoves();
+    } catch (e) {
+      showToast('Connection error', 'error');
+    }
+  };
+
+  // ── Order Deliveries (Phase B — deferred/scheduled delivery, V93) ───────────
+  var _orderDeliveries = [];
+  var _dlvAction = null; // { id, type } for the pending delivery action
+
+  /** Local today as YYYY-MM-DD (for date-string comparisons + min= on pickers). */
+  function _todayStr() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1, 2) + '-' + pad(d.getDate(), 2);
+  }
+
+  /** Reveal/hide the delivery-date picker on the New Order form. */
+  window.toggleScheduleDelivery = function () {
+    var on = ($('field-schedule-delivery') || {}).checked;
+    var wrap = $('schedule-delivery-date-wrap');
+    if (wrap) wrap.style.display = on ? '' : 'none';
+    var dt = $('field-schedule-delivery-date');
+    if (dt) {
+      dt.min = _todayStr();
+      if (on && !dt.value) dt.value = _todayStr();
+    }
+  };
+
+  function _pesos(v) {
+    return '₱' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  /** Number of times a scheduled order has been rescheduled (from the change log). */
+  function _odRescheduleCount(o) {
+    if (!o.deliveryChangeLog) return 0;
+    return (o.deliveryChangeLog.match(/rescheduled/gi) || []).length;
+  }
+
+  function _odOverdue(o) {
+    return !!o.scheduledDeliveryDate && o.scheduledDeliveryDate < _todayStr();
+  }
+
+  /**
+   * Non-blocking oversell pre-flight: for each line, compare the product's live per-warehouse
+   * stock (from the product cache) against the ordered qty. Returns short-stock warning strings.
+   * Backend still deducts stock atomically at fulfilment and rolls back on a true shortfall.
+   */
+  function _odOversell(o) {
+    var warns = [];
+    (o.items || []).forEach(function (it) {
+      var wh = it.warehouse;
+      if (!wh) return; // sets / unassigned — backend allocates
+      var p = (appState.cachedProducts || []).find(function (x) { return String(x.id) === String(it.productId); });
+      if (!p) return;
+      var live = wh === 'wh1' ? (p.stockWh1 || 0) : wh === 'wh2' ? (p.stockWh2 || 0) : wh === 'wh3' ? (p.stockWh3 || 0) : null;
+      if (live == null) return;
+      if (it.quantity > live) {
+        warns.push((it.productName || 'item') + ': need ' + it.quantity + ', only ' + live + ' in ' + smWhLabel(wh));
+      }
+    });
+    return warns;
+  }
+
+  window.loadOrderDeliveries = async function () {
+    var body = $('delivery-order-deliveries-body');
+    if (!body) return;
+    body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">Loading…</div>';
+    // Live per-warehouse stock (oversell hint) comes from the product cache.
+    if (!appState.cachedProducts || !appState.cachedProducts.length) { await loadProducts(); }
+    try {
+      var res = await fetch(API_BASE + '/api/orders/scheduled-deliveries', { headers: authHeaders() });
+      if (!res.ok) {
+        body.innerHTML = '<div style="padding:24px;text-align:center;color:#EF4444;">Failed to load scheduled deliveries (HTTP ' + res.status + ').</div>';
+        return;
+      }
+      _orderDeliveries = await res.json();
+      renderOrderDeliveries();
+    } catch (e) {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:#EF4444;">Connection error loading scheduled deliveries.</div>';
+    }
+  };
+
+  function _odActionsHtml(o) {
+    var due = !o.scheduledDeliveryDate || o.scheduledDeliveryDate <= _todayStr();
+    // "Mark Delivered" (on/after the scheduled day) and "Deliver Now" (early) both fulfil today.
+    var fulfilLabel = due ? '<i class="ti ti-checks"></i> Mark Delivered' : '<i class="ti ti-truck-delivery"></i> Deliver Now';
+    return '<button class="btn btn-sm btn-success" onclick="askFulfillDelivery(\'' + o.id + '\')">' + fulfilLabel + '</button>'
+      + ' <button class="btn btn-sm btn-outline-secondary" onclick="askRescheduleDelivery(\'' + o.id + '\')">Reschedule</button>'
+      + ' <button class="btn btn-sm btn-outline-danger" onclick="askCancelDelivery(\'' + o.id + '\')">Cancel</button>';
+  }
+
+  function renderOrderDeliveries() {
+    var body = $('delivery-order-deliveries-body');
+    if (!body) return;
+    if (!_orderDeliveries || !_orderDeliveries.length) {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No scheduled deliveries.</div>';
+      return;
+    }
+    var rows = _orderDeliveries.map(function (o) {
+      var overdue = _odOverdue(o);
+      var rc = _odRescheduleCount(o);
+      var lines = (o.items || []).map(function (it) {
+        return '<div style="font-size:11px;color:var(--text-muted);">' + escapeHtml(it.productName || '') + ' · ' + it.quantity + ' pcs</div>';
+      }).join('');
+      var schedCell = (o.scheduledDeliveryDate ? formatDate(o.scheduledDeliveryDate) : '—')
+        + (overdue ? ' <span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#B91C1C;background:rgba(220,38,38,0.12);">OVERDUE</span>' : '')
+        + (rc > 0 ? '<div style="font-size:10.5px;color:var(--text-muted);">rescheduled ' + rc + '×</div>' : '');
+      var oversell = _odOversell(o).length
+        ? '<div style="font-size:10.5px;color:#B45309;margin-top:2px;"><i class="ti ti-alert-triangle"></i> low stock for delivery</div>' : '';
+      return '<tr>'
+        + '<td style="vertical-align:top;font-weight:600;">' + escapeHtml(o.id) + '<div style="font-size:10.5px;color:var(--text-muted);font-weight:400;">' + (o.createdAt ? formatDate(o.createdAt) : '') + '</div></td>'
+        + '<td style="vertical-align:top;font-size:12px;">' + escapeHtml(o.customerName || '') + lines + oversell + '</td>'
+        + '<td style="vertical-align:top;font-size:12px;">' + _pesos(o.total) + '</td>'
+        + '<td style="vertical-align:top;font-size:12px;">' + schedCell + '</td>'
+        + '<td style="vertical-align:top;"><div style="display:flex;flex-wrap:wrap;gap:4px;">' + _odActionsHtml(o) + '</div></td>'
+        + '</tr>';
+    }).join('');
+    body.innerHTML = '<div style="overflow-x:auto;"><table class="table"><thead><tr>'
+      + '<th>Order</th><th>Customer / items</th><th>Total</th><th>Scheduled</th><th>Actions</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function _findDelivery(id) { return (_orderDeliveries || []).find(function (o) { return String(o.id) === String(id); }) || {}; }
+
+  window.askFulfillDelivery   = function (id) { _openDeliveryAction(id, 'fulfill'); };
+  window.askRescheduleDelivery = function (id) { _openDeliveryAction(id, 'reschedule'); };
+  window.askCancelDelivery    = function (id) { _openDeliveryAction(id, 'cancel'); };
+
+  function _openDeliveryAction(id, type) {
+    _dlvAction = { id: id, type: type };
+    var o = _findDelivery(id);
+    var due = !o.scheduledDeliveryDate || o.scheduledDeliveryDate <= _todayStr();
+    var cfg = {
+      fulfill:    { title: (due ? 'Mark Delivered' : 'Deliver Now'), icon: 'checks', btn: (due ? 'Mark Delivered' : 'Deliver Now'), date: false, reason: false,
+                    summary: 'Record order ' + id + ' as delivered today? This deducts stock, books the sale (' + _pesos(o.total) + ') and any commission on today’s date.' },
+      reschedule: { title: 'Reschedule Delivery', icon: 'calendar', btn: 'Reschedule', date: true, reason: false,
+                    summary: 'Move order ' + id + ' to a new delivery date. Nothing is recorded until it is delivered.' },
+      cancel:     { title: 'Cancel Scheduled Delivery', icon: 'ban', btn: 'Cancel delivery', date: false, reason: true,
+                    summary: 'Cancel order ' + id + '? It recorded nothing, so no stock or sale is affected.' },
+    }[type];
+    if (!cfg) return;
+    $('dlv-action-title').innerHTML = '<i class="ti ti-' + cfg.icon + '" style="margin-right:6px;color:#D4860A;"></i>' + cfg.title;
+    $('dlv-action-summary').textContent = cfg.summary;
+    $('dlv-action-date-group').style.display = cfg.date ? '' : 'none';
+    $('dlv-action-reason-group').style.display = cfg.reason ? '' : 'none';
+    // Oversell warning only matters when we are about to deduct stock (fulfil).
+    var ov = $('dlv-action-oversell');
+    if (ov) {
+      var warns = (type === 'fulfill') ? _odOversell(o) : [];
+      if (warns.length) {
+        ov.style.display = '';
+        ov.innerHTML = '<strong><i class="ti ti-alert-triangle"></i> Stock looks short (you can still proceed):</strong><br>' + warns.map(escapeHtml).join('<br>');
+      } else {
+        ov.style.display = 'none';
+        ov.innerHTML = '';
+      }
+    }
+    if ($('dlv-action-date')) {
+      $('dlv-action-date').min = _todayStr();
+      $('dlv-action-date').value = cfg.date ? (o.scheduledDeliveryDate || _todayStr()) : '';
+    }
+    if ($('dlv-action-reason')) $('dlv-action-reason').value = '';
+    $('dlv-action-confirm-btn').textContent = cfg.btn;
+    openModal('modal-delivery-action');
+  }
+
+  window.confirmDeliveryAction = async function () {
+    if (!_dlvAction) return;
+    var id = _dlvAction.id, type = _dlvAction.type;
+    var url, payload = null;
+    if (type === 'fulfill') {
+      url = API_BASE + '/api/orders/' + id + '/fulfill-delivery';
+    } else if (type === 'reschedule') {
+      var nd = (($('dlv-action-date') || {}).value || '').trim();
+      if (!nd) { showToast('Pick a new delivery date', 'error'); return; }
+      if (nd < _todayStr()) { showToast('Delivery date cannot be in the past', 'error'); return; }
+      url = API_BASE + '/api/orders/' + id + '/reschedule-delivery';
+      payload = { scheduledDeliveryDate: nd };
+    } else if (type === 'cancel') {
+      var reason = (($('dlv-action-reason') || {}).value || '').trim();
+      if (!reason) { showToast('A cancellation reason is required', 'error'); return; }
+      url = API_BASE + '/api/orders/' + id + '/cancel-delivery';
+      payload = { reason: reason };
+    } else { return; }
+
+    var btn = $('dlv-action-confirm-btn');
+    if (btn) btn.disabled = true;
+    try {
+      var res = await fetch(url, { method: 'POST', headers: authHeaders(), body: payload ? JSON.stringify(payload) : undefined });
+      if (!res.ok) {
+        var d = await res.json().catch(function () { return {}; });
+        showToast(d.message || ('Failed to ' + type + ' delivery'), 'error');
+        return;
+      }
+      var labels = { fulfill: 'Delivery recorded', reschedule: 'Delivery rescheduled', cancel: 'Scheduled delivery cancelled' };
+      showToast(labels[type], 'success');
+      closeModal('modal-delivery-action');
+      _dlvAction = null;
+      // Fulfilment moves stock — refresh the product cache so the next oversell hint is accurate.
+      if (type === 'fulfill') { try { await loadProducts(); } catch (e) {} }
+      loadOrderDeliveries();
+    } catch (e) {
+      showToast('Connection error', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
     }
   };
 
@@ -6574,6 +7156,16 @@
     });
     if (hasError) return;
 
+    // Deferred delivery (V93): when scheduled, the order records NOTHING until it is
+    // delivered on the chosen day. Presence of scheduledDeliveryDate flips the backend
+    // into the SCHEDULED_DELIVERY flow.
+    let scheduledDeliveryDate = null;
+    if (($('field-schedule-delivery') || {}).checked) {
+      scheduledDeliveryDate = (($('field-schedule-delivery-date') || {}).value || '').trim();
+      if (!scheduledDeliveryDate) { showToast('Pick a delivery date, or uncheck "Schedule for later delivery"', 'error'); return; }
+      if (scheduledDeliveryDate < _todayStr()) { showToast('Delivery date cannot be in the past', 'error'); return; }
+    }
+
     const orderRequest = {
       customerName, source,
       agentId:          agentId,
@@ -6582,7 +7174,8 @@
       ecommercePlatform,
       paymentMode, orderType,
       address:          address || null,
-      discount, deliveryFee, notes, items
+      discount, deliveryFee, notes, items,
+      scheduledDeliveryDate: scheduledDeliveryDate || null
     };
 
     // M-20: Double-submit lock — all validation early-returns have already fired above.
@@ -6598,7 +7191,9 @@
       const res = await fetch('' + API_BASE + '/api/orders', { method: 'POST', headers: authHeaders(), body: JSON.stringify(orderRequest) });
       if (!res.ok) { let msg = 'Failed to create order'; try { const d = await res.json(); msg = d.message || d.error || msg; } catch (e) {} showToast('Error: ' + msg, 'error'); return; }
       const created = await res.json();
-      showToast('Order created: ' + created.id, 'success');
+      showToast(created.status === 'SCHEDULED_DELIVERY'
+        ? 'Scheduled for delivery ' + formatDate(created.scheduledDeliveryDate) + ' — order ' + created.id + ' (records nothing until delivered)'
+        : 'Order created: ' + created.id, 'success');
       clearOrderForm();
       // Refresh the product cache so set availability reflects the just-deducted components
       try { await loadProducts(); } catch (e) {}
@@ -6620,6 +7215,9 @@
     if ($('field-fb'))               $('field-fb').value = '';
     if ($('field-payment'))          $('field-payment').value = '';
     if ($('field-order-type'))       $('field-order-type').value = 'STANDARD';
+    if ($('field-schedule-delivery')) $('field-schedule-delivery').checked = false;
+    if ($('field-schedule-delivery-date')) $('field-schedule-delivery-date').value = '';
+    if ($('schedule-delivery-date-wrap')) $('schedule-delivery-date-wrap').style.display = 'none';
     if ($('field-address'))          $('field-address').value = '';
     if ($('orderDiscount'))          $('orderDiscount').value = '0';
     if ($('orderDeliveryFee'))       $('orderDeliveryFee').value = '0';

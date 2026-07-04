@@ -2,6 +2,7 @@ package rrbm_backend.dto;
 
 import lombok.Data;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Data
@@ -18,6 +19,9 @@ public class CreateOrderRequest {
     private BigDecimal discount;
     private BigDecimal deliveryFee;
     private String notes;
+    // Deferred delivery (V93) — when present the order is created as
+    // SCHEDULED_DELIVERY and records nothing until fulfilled on the delivery day.
+    private LocalDate scheduledDeliveryDate;
     private List<OrderItemRequest> items;
 
     @Data

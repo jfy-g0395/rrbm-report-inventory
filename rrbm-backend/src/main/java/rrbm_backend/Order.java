@@ -3,6 +3,7 @@ package rrbm_backend;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -143,6 +144,28 @@ public class Order {
 
     public boolean isRecordingOnly() { return recordingOnly; }
     public void setRecordingOnly(boolean recordingOnly) { this.recordingOnly = recordingOnly; }
+
+    // Deferred delivery (V93). When set at creation the order is inert
+    // (status SCHEDULED_DELIVERY) and records nothing until it resolves to
+    // DELIVERED (recorded on the delivery day) or CANCELLED (nothing recorded).
+    @Column(name = "scheduled_delivery_date")
+    private LocalDate scheduledDeliveryDate;
+
+    // Human-readable audit trail of scheduled-delivery lifecycle events
+    // (created / rescheduled / delivered), one line per event.
+    @Column(name = "delivery_change_log", columnDefinition = "TEXT")
+    private String deliveryChangeLog;
+
+    // Timestamp the scheduled delivery was actually delivered & recorded.
+    @Column(name = "delivered_at")
+    private OffsetDateTime deliveredAt;
+
+    /** Append one timestamped line to the delivery change log (audit trail). */
+    public void appendDeliveryLog(String line) {
+        this.deliveryChangeLog = (this.deliveryChangeLog == null || this.deliveryChangeLog.isBlank())
+                ? line
+                : this.deliveryChangeLog + "\n" + line;
+    }
 
     // One order has many items
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
