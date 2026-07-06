@@ -52,6 +52,7 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 - [x] **Session 3** — Deferred Delivery backend (migration **V93** + defer/fulfill/reschedule/cancel + report exclusion) — _verified via full REST E2E on clone (Session 5); deployed_
 - [x] **Session 4** — Deferred Delivery frontend (order-form option + tab management) → **Phase B shipped** — _deployed 2026-07-04, `?v=u15`_
 - [x] **Session 5** — Full E2E verification + deploy + commit — **DONE (2026-07-04): 48/48 clone E2E, deployed to prod at V94, pushed**
+- [x] **Session 6** — Edit & Confirm scheduled deliveries (V95): edit line items before delivery + final-order confirmation gate — **DONE (2026-07-06): clone E2E green, deployed to prod at V95, pushed**
 
 ---
 
@@ -122,6 +123,17 @@ Implementation tracker for two features under a new **Delivery Schedule** tab:
 - [x] Commit + push (frontend + backend) — landed via `feat/delivery-schedule-sessions1-4`, merged to `main` (no-ff), pushed to `origin/main`.
 **Done when:** live prod healthy, both features verified, `main` in sync. ✅ **All done.**
 **State after this session:** ✅ **SHIPPED to production + pushed to GitHub (2026-07-04).** Both features (Phase A inter-warehouse stock moves + Phase B deferred order delivery) live under the Delivery Schedule tab. Flyway at **V94**; app healthy; frontend at `?v=u15`. 48/48 clone E2E green before deploy. `main` and `origin/main` in sync.
+
+## Session 6 — Edit & Confirm scheduled deliveries (V95)
+**Goal:** let staff change a scheduled order's line items (product / qty / unit price / warehouse) before delivery, and require a **final-order confirmation** before it can be delivered.
+**Locked decisions:** confirmation is a **persistent gate** (additive boolean `delivery_confirmed`); "Mark Delivered" is blocked (UI + backend) until confirmed; **editing items clears the confirmation** (re-confirm required). Editing is **keyless**; **anyone with the Delivery tab** can edit + confirm. Order stays `SCHEDULED_DELIVERY` throughout (no `chk_status` change; all existing report/inventory exclusions still apply). No stock/ledger reversal on edit — a scheduled order records nothing until fulfilled, so edit just rebuilds items + `calculateTotals()`; the SALE at fulfilment reads the recomputed `order.getTotal()`.
+- [x] Migration **V95__order_delivery_confirmed.sql**: `orders.delivery_confirmed BOOLEAN NOT NULL DEFAULT FALSE` + `delivery_confirmed_at TIMESTAMPTZ` (both `ADD COLUMN IF NOT EXISTS`). Additive/reversible.
+- [x] `Order.java` (+`deliveryConfirmed`/`deliveryConfirmedAt`), `OrderResponse.java` (+2 fields + `convertToResponse` mapping).
+- [x] `OrderService`: `editScheduledDeliveryItems` (guard SCHEDULED_DELIVERY, validate like `buildOrderFromRequest`, rebuild items in place via `getItems().clear()`+`addItem`, set subtotal explicitly, apply discount/fee, `calculateTotals`, **reset confirmed=false**, log) + `confirmScheduledDelivery` (idempotent, set confirmed=true+timestamp, log) + **confirmed guard in `fulfillScheduledDelivery`** (403/400 "must be confirmed before delivery").
+- [x] `OrderController`: `POST /{id}/edit-delivery-items` (CreateOrderRequest body — items/discount/deliveryFee) + `POST /{id}/confirm-delivery`; both keyless via `userIdFromHeader`, under the `/api/orders` page gate.
+- [x] Frontend: `_odActionsHtml` — **Edit items** always; **Confirm final order** when unconfirmed (Mark Delivered hidden) / **Mark Delivered** once confirmed; ✓ Confirmed / awaiting-confirmation chip in the Scheduled cell. New `modal-delivery-edit` (multi-line item editor reusing the stock-move type-ahead pattern + `smWhOptions`, live total, discount/fee) + `modal-delivery-confirm` (read-only itemized review). Cache-bust `?v=u15 → u16`.
+**Verify (clone):** ✅ Restored latest prod backup into isolated PG16; **V93→V94→V95 applied cleanly** (now at v95), both columns present. REST E2E (test users injected): create scheduled (unconfirmed) → **fulfill blocked** (400 "must be confirmed") → **edit items** (change qty, add/remove line; total recomputed 42→103.96→58.80; still SCHEDULED_DELIVERY; **no stock/sale**) → **confirm** (flag+timestamp set) → **edit-after-confirm resets** confirmed→false + clears timestamp → fulfill blocked again → re-confirm → **fulfill** records edited qty (stock −7) + edited total (SALE ₱58.80 dated today); guards (edit/confirm rejected on DELIVERED); keyless works as STANDARD_USER; validation (empty items / bad product → 400); cancel-delivery unaffected. Effectively **40/40** (one assertion used a stale hardcoded baseline; re-proved via before/after that edit deducts zero stock). Clone torn down; no test data written to prod.
+**State after this session:** ✅ **SHIPPED to production + pushed (2026-07-06).** Flyway at **V95**; app healthy; frontend at `?v=u16`. **Behaviour note:** existing scheduled orders default to `delivery_confirmed=false`, so they must be confirmed once before delivery (the intended new gate, not a regression).
 
 ---
 

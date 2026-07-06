@@ -160,6 +160,16 @@ public class Order {
     @Column(name = "delivered_at")
     private OffsetDateTime deliveredAt;
 
+    // Final-order confirmation gate (V95). A SCHEDULED_DELIVERY order must be
+    // confirmed before it can be fulfilled; editing its items clears this back to
+    // false (re-confirmation required). Purely a pre-delivery gate — the order
+    // still records nothing until fulfilled.
+    @Column(name = "delivery_confirmed", nullable = false)
+    private boolean deliveryConfirmed = false;
+
+    @Column(name = "delivery_confirmed_at")
+    private OffsetDateTime deliveryConfirmedAt;
+
     /** Append one timestamped line to the delivery change log (audit trail). */
     public void appendDeliveryLog(String line) {
         this.deliveryChangeLog = (this.deliveryChangeLog == null || this.deliveryChangeLog.isBlank())

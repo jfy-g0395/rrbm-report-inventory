@@ -295,6 +295,12 @@ public class OrderService {
             throw new RuntimeException("Order is not a scheduled delivery (status: " + order.getStatus() + ")");
         }
 
+        // Final-order confirmation gate (V95): the order must be confirmed before it can
+        // be delivered. Editing the items clears this flag, forcing a re-confirmation.
+        if (!order.isDeliveryConfirmed()) {
+            throw new RuntimeException("This order must be confirmed before delivery. Review the final items and confirm first.");
+        }
+
         User actor = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found: " + userId));
 
@@ -364,6 +370,114 @@ public class OrderService {
 
         activityLogService.log(userId, actor.getFullName(), "ORDER_RESCHEDULE_DELIVERY",
                 "Rescheduled delivery for order " + orderId + ": " + old + " → " + newDate,
+                "ORDER", orderId);
+
+        return order;
+    }
+
+    /**
+     * Edit the line items of a SCHEDULED_DELIVERY order (V95) before it is delivered.
+     *
+     * Safe with no stock/ledger reversal: a scheduled order records nothing until fulfilled,
+     * so we simply rebuild the item list and recompute the order total (the SALE at
+     * fulfilment reads order.getTotal()). Editing always CLEARS the confirmation gate —
+     * the final list must be re-confirmed before delivery. Repeatable; records nothing.
+     */
+    @Transactional
+    public Order editScheduledDeliveryItems(String orderId,
+                                            java.util.List<CreateOrderRequest.OrderItemRequest> items,
+                                            BigDecimal discount, BigDecimal deliveryFee, Long userId) {
+        Order order = orderRepository.findByIdForUpdateWithItems(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
+
+        if (!"SCHEDULED_DELIVERY".equals(order.getStatus())) {
+            throw new RuntimeException("Only scheduled-delivery orders can be edited (status: "
+                    + order.getStatus() + ")");
+        }
+
+        // Validate items with the same rules as order creation (buildOrderFromRequest).
+        if (items == null || items.isEmpty())
+            throw new RuntimeException("Order must have at least one item");
+        for (CreateOrderRequest.OrderItemRequest it : items) {
+            if (it.getQuantity() == null || it.getQuantity() <= 0)
+                throw new RuntimeException("Item quantity must be at least 1");
+            if (it.getUnitPrice() == null || it.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("Item unit price must be greater than 0 for: "
+                    + (it.getProductName() != null ? it.getProductName() : "unknown"));
+            if (it.getProductId() == null)
+                throw new RuntimeException("Item \"" + (it.getProductName() != null ? it.getProductName() : "unknown")
+                    + "\" must be selected from the product catalog");
+            if (!productRepository.existsById(it.getProductId()))
+                throw new RuntimeException("Product \"" + (it.getProductName() != null ? it.getProductName() : "ID " + it.getProductId())
+                    + "\" no longer exists in the catalog");
+        }
+
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found: " + userId));
+
+        // Rebuild the item list in place so orphanRemoval drops the old rows.
+        order.getItems().clear();
+        for (CreateOrderRequest.OrderItemRequest itemReq : items) {
+            OrderItem item = new OrderItem();
+            item.setProductId(itemReq.getProductId());
+            item.setProductName(itemReq.getProductName());
+            item.setQuantity(itemReq.getQuantity());
+            item.setUnitPrice(itemReq.getUnitPrice());
+            item.setWarehouse(itemReq.getWarehouse());
+            // Compute subtotal explicitly (calculateTotals only fills a null subtotal).
+            item.setSubtotal(itemReq.getUnitPrice().multiply(new BigDecimal(itemReq.getQuantity())));
+            order.addItem(item);
+        }
+
+        // Optional order-level adjustments — preserve existing values when not supplied.
+        if (discount != null)    order.setDiscount(discount);
+        if (deliveryFee != null) order.setDeliveryFee(deliveryFee);
+        order.calculateTotals();
+
+        // Editing clears the confirmation gate — the new list must be re-confirmed.
+        order.setDeliveryConfirmed(false);
+        order.setDeliveryConfirmedAt(null);
+        order.appendDeliveryLog(LocalDate.now() + " — items edited by " + actor.getFullName()
+                + " (total now ₱" + order.getTotal() + "; re-confirmation required)");
+        orderRepository.save(order);
+
+        activityLogService.log(userId, actor.getFullName(), "EDIT_DELIVERY_ITEMS",
+                "Edited items on scheduled order " + orderId + " — new total ₱" + order.getTotal()
+                        + " (re-confirmation required)",
+                "ORDER", orderId);
+
+        return order;
+    }
+
+    /**
+     * Confirm the final order for a SCHEDULED_DELIVERY order (V95). Only after this may the
+     * order be fulfilled. Records nothing (still inert) — just flips the confirmation gate.
+     * Idempotent: confirming an already-confirmed order is a no-op.
+     */
+    @Transactional
+    public Order confirmScheduledDelivery(String orderId, Long userId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
+
+        if (!"SCHEDULED_DELIVERY".equals(order.getStatus())) {
+            throw new RuntimeException("Only scheduled-delivery orders can be confirmed (status: "
+                    + order.getStatus() + ")");
+        }
+
+        if (order.isDeliveryConfirmed()) {
+            return order; // already confirmed — idempotent
+        }
+
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found: " + userId));
+
+        order.setDeliveryConfirmed(true);
+        order.setDeliveryConfirmedAt(OffsetDateTime.now());
+        order.appendDeliveryLog(LocalDate.now() + " — final order confirmed by " + actor.getFullName());
+        orderRepository.save(order);
+
+        activityLogService.log(userId, actor.getFullName(), "CONFIRM_DELIVERY",
+                "Confirmed final order for scheduled delivery " + orderId + " — ₱" + order.getTotal(),
                 "ORDER", orderId);
 
         return order;
