@@ -6283,7 +6283,13 @@
     var due = !o.scheduledDeliveryDate || o.scheduledDeliveryDate <= _todayStr();
     // "Mark Delivered" (on/after the scheduled day) and "Deliver Now" (early) both fulfil today.
     var fulfilLabel = due ? '<i class="ti ti-checks"></i> Mark Delivered' : '<i class="ti ti-truck-delivery"></i> Deliver Now';
-    return '<button class="btn btn-sm btn-success" onclick="askFulfillDelivery(\'' + o.id + '\')">' + fulfilLabel + '</button>'
+    var editBtn = '<button class="btn btn-sm btn-outline-primary" onclick="openDeliveryEditModal(\'' + o.id + '\')"><i class="ti ti-edit"></i> Edit items</button>';
+    // V95: a scheduled order must be CONFIRMED before it can be delivered. Editing items
+    // clears the confirmation, so "Mark Delivered" only appears once deliveryConfirmed is true.
+    var mid = o.deliveryConfirmed
+      ? ' <button class="btn btn-sm btn-success" onclick="askFulfillDelivery(\'' + o.id + '\')">' + fulfilLabel + '</button>'
+      : ' <button class="btn btn-sm btn-warning" onclick="askConfirmDelivery(\'' + o.id + '\')"><i class="ti ti-clipboard-check"></i> Confirm final order</button>';
+    return editBtn + mid
       + ' <button class="btn btn-sm btn-outline-secondary" onclick="askRescheduleDelivery(\'' + o.id + '\')">Reschedule</button>'
       + ' <button class="btn btn-sm btn-outline-danger" onclick="askCancelDelivery(\'' + o.id + '\')">Cancel</button>';
   }
@@ -6301,9 +6307,13 @@
       var lines = (o.items || []).map(function (it) {
         return '<div style="font-size:11px;color:var(--text-muted);">' + escapeHtml(it.productName || '') + ' · ' + it.quantity + ' pcs</div>';
       }).join('');
+      var confirmChip = o.deliveryConfirmed
+        ? '<div style="font-size:10.5px;margin-top:2px;"><span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#047857;background:rgba(16,185,129,0.14);">✓ Confirmed</span></div>'
+        : '<div style="font-size:10.5px;color:#B45309;margin-top:2px;"><i class="ti ti-clock"></i> awaiting confirmation</div>';
       var schedCell = (o.scheduledDeliveryDate ? formatDate(o.scheduledDeliveryDate) : '—')
         + (overdue ? ' <span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#B91C1C;background:rgba(220,38,38,0.12);">OVERDUE</span>' : '')
-        + (rc > 0 ? '<div style="font-size:10.5px;color:var(--text-muted);">rescheduled ' + rc + '×</div>' : '');
+        + (rc > 0 ? '<div style="font-size:10.5px;color:var(--text-muted);">rescheduled ' + rc + '×</div>' : '')
+        + confirmChip;
       var oversell = _odOversell(o).length
         ? '<div style="font-size:10.5px;color:#B45309;margin-top:2px;"><i class="ti ti-alert-triangle"></i> low stock for delivery</div>' : '';
       return '<tr>'
@@ -6397,6 +6407,241 @@
       _dlvAction = null;
       // Fulfilment moves stock — refresh the product cache so the next oversell hint is accurate.
       if (type === 'fulfill') { try { await loadProducts(); } catch (e) {} }
+      loadOrderDeliveries();
+    } catch (e) {
+      showToast('Connection error', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  // ── Edit scheduled-delivery items (V95) ─────────────────────────────────────
+  var _deEditId = null;
+  var _deLineCounter = 0;
+
+  window.openDeliveryEditModal = async function (id) {
+    if (!appState.cachedProducts || !appState.cachedProducts.length) { await loadProducts(); }
+    var o = _findDelivery(id);
+    _deEditId = id;
+    _deLineCounter = 0;
+    var lbl = $('de-order-id-label'); if (lbl) lbl.textContent = id;
+    var container = $('de-lines-container');
+    if (container) container.innerHTML = '';
+    (o.items || []).forEach(function (it) { addDeliveryEditLine(it); });
+    if (!(o.items || []).length) addDeliveryEditLine();
+    if ($('de-discount')) $('de-discount').value = Number(o.discount || 0).toFixed(2);
+    if ($('de-delivery-fee')) $('de-delivery-fee').value = Number(o.deliveryFee || 0).toFixed(2);
+    deRecalcTotal();
+    openModal('modal-delivery-edit');
+  };
+
+  window.addDeliveryEditLine = function (prefill) {
+    var container = $('de-lines-container');
+    if (!container) return;
+    var n = ++_deLineCounter;
+    var rowId = 'de-line-' + n;
+    container.insertAdjacentHTML('beforeend',
+      '<div class="order-item-row" id="' + rowId + '"><div class="row align-items-end g-2">'
+      + '<div class="col-md-4"><label class="form-label" style="font-size:11px;">Product <span class="text-danger">*</span></label>'
+        + '<div class="product-autocomplete-wrapper" style="position:relative;">'
+        + '<input type="text" class="form-control product-input" id="de-prod-input-' + n + '" placeholder="Type to search…" autocomplete="off">'
+        + '<input type="hidden" id="de-prod-id-' + n + '" value="">'
+        + '<div class="product-dropdown" id="de-prod-dropdown-' + n + '"></div>'
+        + '<div id="de-prod-status-' + n + '" style="display:none;font-size:11px;margin-top:3px;"></div></div></div>'
+      + '<div class="col-md-2"><label class="form-label" style="font-size:11px;">Qty <span class="text-danger">*</span></label>'
+        + '<input type="number" class="form-control" id="de-qty-' + n + '" min="1" value="1"></div>'
+      + '<div class="col-md-2"><label class="form-label" style="font-size:11px;">Unit price (₱) <span class="text-danger">*</span></label>'
+        + '<input type="number" class="form-control" id="de-price-' + n + '" min="0" step="0.01" value="0"></div>'
+      + '<div class="col-md-2"><label class="form-label" style="font-size:11px;">Warehouse</label>'
+        + '<select class="form-control" id="de-wh-' + n + '" style="font-size:12px;padding:4px;">' + smWhOptions((prefill && prefill.warehouse) || 'wh1') + '</select></div>'
+      + '<div class="col-md-1"><label class="form-label" style="font-size:11px;">Subtotal</label>'
+        + '<div id="de-sub-' + n + '" style="font-size:12px;padding:6px 4px;color:var(--text-muted);">₱0.00</div></div>'
+      + '<div class="col-md-1 text-center"><label class="form-label">&nbsp;</label>'
+        + '<button type="button" class="remove-item-btn d-block" onclick="removeDeLine(\'' + rowId + '\')"><i class="ti ti-trash"></i></button></div>'
+      + '</div></div>');
+    setupDeProductAutocomplete(n);
+    var qtyEl = $('de-qty-' + n); if (qtyEl) qtyEl.addEventListener('input', function () { deRecalcLine(n); });
+    var prEl = $('de-price-' + n); if (prEl) prEl.addEventListener('input', function () { deRecalcLine(n); });
+    if (prefill) {
+      if ($('de-prod-input-' + n)) $('de-prod-input-' + n).value = prefill.productName || '';
+      if ($('de-prod-id-' + n)) $('de-prod-id-' + n).value = prefill.productId || '';
+      if ($('de-qty-' + n)) $('de-qty-' + n).value = prefill.quantity || 1;
+      if ($('de-price-' + n)) $('de-price-' + n).value = Number(prefill.unitPrice || 0).toFixed(2);
+      var ps = $('de-prod-status-' + n);
+      if (ps && prefill.productId) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = '✓ Catalog product'; }
+      deRecalcLine(n);
+    }
+  };
+
+  window.removeDeLine = function (rowId) {
+    var row = $(rowId); if (row) row.remove();
+    deRecalcTotal();
+  };
+
+  function setupDeProductAutocomplete(n) {
+    var input = $('de-prod-input-' + n), dropdown = $('de-prod-dropdown-' + n);
+    if (!input || !dropdown) return;
+    function show() {
+      var t = input.value.toLowerCase().trim();
+      var list = t.length === 0 ? appState.cachedProducts
+        : (appState.cachedProducts || []).filter(function (p) { return p.name.toLowerCase().includes(t); });
+      renderDeProductDropdown(dropdown, list, n);
+    }
+    input.addEventListener('input', function () {
+      var pid = $('de-prod-id-' + n); if (pid) pid.value = '';
+      var ps = $('de-prod-status-' + n);
+      if (ps) {
+        if (this.value.trim()) { ps.style.display = ''; ps.style.color = '#D97706'; ps.textContent = '⚠ Select from catalog'; }
+        else { ps.style.display = 'none'; ps.textContent = ''; }
+      }
+      show();
+    });
+    input.addEventListener('focus', show);
+    document.addEventListener('click', function (e) {
+      if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show');
+    });
+  }
+
+  function renderDeProductDropdown(dropdown, products, n) {
+    products = (products || []).filter(function (p) { return !p.isComponent; });
+    if (!products.length) {
+      dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">No products found</div>';
+      dropdown.classList.add('show');
+      return;
+    }
+    var html = '';
+    products.forEach(function (p) {
+      var wh1 = p.stockWh1 || 0, wh2 = p.stockWh2 || 0, wh3 = p.stockWh3 || 0;
+      var parts = [];
+      if (wh1 > 0) parts.push('WH1:' + wh1.toLocaleString());
+      if (wh2 > 0) parts.push('WH2:' + wh2.toLocaleString());
+      if (wh3 > 0) parts.push('Balagtas:' + wh3.toLocaleString());
+      var primary = 'wh1';
+      if (wh2 > wh1 && wh2 >= wh3) primary = 'wh2';
+      if (wh3 > wh1 && wh3 > wh2) primary = 'wh3';
+      html += '<div class="product-dropdown-item" data-id="' + p.id + '" data-name="' + escapeHtml(p.name)
+        + '" data-price="' + p.unitPrice + '" data-primary="' + primary + '" data-n="' + n + '"><div style="flex:1;"><div class="product-name">'
+        + escapeHtml(p.name) + '</div><div style="font-size:10px;color:#888;">' + (parts.join(' · ') || 'No stock')
+        + '</div></div><div style="text-align:right;"><span class="product-price">₱' + parseFloat(p.unitPrice || 0).toFixed(2) + '</span></div></div>';
+    });
+    dropdown.innerHTML = html;
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var nn = this.getAttribute('data-n');
+        $('de-prod-input-' + nn).value = this.getAttribute('data-name');
+        $('de-prod-id-' + nn).value = this.getAttribute('data-id');
+        var ps = $('de-prod-status-' + nn);
+        if (ps) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = '✓ Catalog product'; }
+        var pr = $('de-price-' + nn);
+        if (pr && (!pr.value || parseFloat(pr.value) <= 0)) pr.value = parseFloat(this.getAttribute('data-price') || 0).toFixed(2);
+        var wh = $('de-wh-' + nn); if (wh) wh.value = this.getAttribute('data-primary');
+        deRecalcLine(nn);
+        dropdown.classList.remove('show');
+      });
+    });
+  }
+
+  function deRecalcLine(n) {
+    var qty = parseInt(($('de-qty-' + n) || {}).value, 10) || 0;
+    var price = parseFloat(($('de-price-' + n) || {}).value) || 0;
+    var sub = $('de-sub-' + n);
+    if (sub) sub.textContent = _pesos(qty * price);
+    deRecalcTotal();
+  }
+
+  window.deRecalcTotal = function () {
+    var container = $('de-lines-container');
+    if (!container) return;
+    var rows = container.querySelectorAll('.order-item-row');
+    var subtotal = 0;
+    rows.forEach(function (r) {
+      var n = r.id.replace('de-line-', '');
+      var qty = parseInt(($('de-qty-' + n) || {}).value, 10) || 0;
+      var price = parseFloat(($('de-price-' + n) || {}).value) || 0;
+      subtotal += qty * price;
+    });
+    var disc = parseFloat(($('de-discount') || {}).value) || 0;
+    var fee = parseFloat(($('de-delivery-fee') || {}).value) || 0;
+    var t = $('de-total'); if (t) t.textContent = _pesos(subtotal - disc + fee);
+  };
+
+  window.submitDeliveryEdit = async function () {
+    if (!_deEditId) return;
+    var container = $('de-lines-container');
+    if (!container) return;
+    var rows = container.querySelectorAll('.order-item-row');
+    var items = [];
+    for (var i = 0; i < rows.length; i++) {
+      var n = rows[i].id.replace('de-line-', '');
+      var pid = parseInt(($('de-prod-id-' + n) || {}).value, 10);
+      var name = (($('de-prod-input-' + n) || {}).value || '').trim();
+      if (!pid) { showToast('Select a catalog product on every line', 'error'); return; }
+      var qty = parseInt(($('de-qty-' + n) || {}).value, 10) || 0;
+      if (qty < 1) { showToast('Quantity must be at least 1 on every line', 'error'); return; }
+      var price = parseFloat(($('de-price-' + n) || {}).value) || 0;
+      if (price <= 0) { showToast('Unit price must be greater than 0 on every line', 'error'); return; }
+      items.push({ productId: pid, productName: name, quantity: qty, unitPrice: price, warehouse: (($('de-wh-' + n) || {}).value || 'wh1') });
+    }
+    if (!items.length) { showToast('Add at least one product line', 'error'); return; }
+    var body = {
+      items: items,
+      discount: parseFloat(($('de-discount') || {}).value) || 0,
+      deliveryFee: parseFloat(($('de-delivery-fee') || {}).value) || 0,
+    };
+    var btn = $('de-save-btn'); if (btn) btn.disabled = true;
+    try {
+      var res = await fetch(API_BASE + '/api/orders/' + _deEditId + '/edit-delivery-items',
+        { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      if (!res.ok) {
+        var d = await res.json().catch(function () { return {}; });
+        showToast(d.message || 'Failed to save changes', 'error');
+        return;
+      }
+      showToast('Order items updated — please confirm the final order', 'success');
+      closeModal('modal-delivery-edit');
+      _deEditId = null;
+      loadOrderDeliveries();
+    } catch (e) {
+      showToast('Connection error', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  };
+
+  // ── Confirm final order before delivery (V95) ───────────────────────────────
+  var _dcConfirmId = null;
+
+  window.askConfirmDelivery = function (id) {
+    var o = _findDelivery(id);
+    _dcConfirmId = id;
+    var lbl = $('dc-order-id-label'); if (lbl) lbl.textContent = id;
+    var rows = (o.items || []).map(function (it) {
+      var line = (it.unitPrice != null) ? (Number(it.quantity) * Number(it.unitPrice)) : null;
+      return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border);">'
+        + '<span>' + escapeHtml(it.productName || '') + ' <span style="color:var(--text-muted);">× ' + it.quantity
+        + (it.unitPrice != null ? ' @ ' + _pesos(it.unitPrice) : '') + '</span></span>'
+        + '<span>' + (line != null ? _pesos(line) : '') + '</span></div>';
+    }).join('');
+    var box = $('dc-items'); if (box) box.innerHTML = rows || '<div style="color:var(--text-muted);font-size:12px;">No items.</div>';
+    var t = $('dc-total'); if (t) t.textContent = _pesos(o.total);
+    openModal('modal-delivery-confirm');
+  };
+
+  window.confirmFinalOrder = async function () {
+    if (!_dcConfirmId) return;
+    var btn = $('dc-confirm-btn'); if (btn) btn.disabled = true;
+    try {
+      var res = await fetch(API_BASE + '/api/orders/' + _dcConfirmId + '/confirm-delivery',
+        { method: 'POST', headers: authHeaders() });
+      if (!res.ok) {
+        var d = await res.json().catch(function () { return {}; });
+        showToast(d.message || 'Failed to confirm order', 'error');
+        return;
+      }
+      showToast('Final order confirmed — ready to deliver', 'success');
+      closeModal('modal-delivery-confirm');
+      _dcConfirmId = null;
       loadOrderDeliveries();
     } catch (e) {
       showToast('Connection error', 'error');

@@ -64,6 +64,12 @@ public class OrderResponse {
     private OffsetDateTime deliveredAt;
     private String deliveryChangeLog;
 
+    // Final-order confirmation gate (V95) — a scheduled order must be confirmed
+    // before it can be delivered; editing its items clears this. The frontend
+    // hides "Mark Delivered" until deliveryConfirmed is true.
+    private boolean deliveryConfirmed;
+    private OffsetDateTime deliveryConfirmedAt;
+
     @Data
     @AllArgsConstructor
     public static class OrderItemResponse {

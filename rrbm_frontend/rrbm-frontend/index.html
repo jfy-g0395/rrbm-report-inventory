@@ -5286,6 +5286,59 @@
   </div>
 
   <!-- ============================================================
+       MODAL: EDIT SCHEDULED-DELIVERY ITEMS (V95)
+       Change products / qty / unit price before delivery. Records
+       nothing (order stays inert); saving clears the confirmation.
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-delivery-edit">
+    <div class="modal-box" style="max-width:820px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;"><i class="ti ti-edit" style="margin-right:6px;color:#D4860A;"></i>Edit Order Items — <span id="de-order-id-label"></span></div>
+        <button class="icon-btn" onclick="closeModal('modal-delivery-edit')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Adjust the final order before delivery. Nothing is recorded yet — saving will require the order to be <strong>confirmed</strong> again before it can be delivered.</p>
+        <div id="de-lines-container"></div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addDeliveryEditLine()"><i class="ti ti-plus"></i> Add line</button>
+        <div class="row g-2" style="margin-top:14px;max-width:420px;margin-left:auto;">
+          <div class="col-6"><label class="form-label" style="font-size:11px;">Discount (₱)</label>
+            <input type="number" class="form-control" id="de-discount" min="0" step="0.01" value="0" oninput="deRecalcTotal()"></div>
+          <div class="col-6"><label class="form-label" style="font-size:11px;">Delivery fee (₱)</label>
+            <input type="number" class="form-control" id="de-delivery-fee" min="0" step="0.01" value="0" oninput="deRecalcTotal()"></div>
+        </div>
+        <div style="text-align:right;font-size:15px;font-weight:700;margin-top:12px;">Total: <span id="de-total">₱0.00</span></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-delivery-edit')">Cancel</button>
+        <button class="btn btn-primary" id="de-save-btn" onclick="submitDeliveryEdit()">Save changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: CONFIRM FINAL ORDER BEFORE DELIVERY (V95)
+       Read-only review of the final items; confirming unlocks
+       "Mark Delivered". Records nothing.
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-delivery-confirm">
+    <div class="modal-box" style="max-width:520px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;"><i class="ti ti-clipboard-check" style="margin-right:6px;color:#D4860A;"></i>Confirm Final Order — <span id="dc-order-id-label"></span></div>
+        <button class="icon-btn" onclick="closeModal('modal-delivery-confirm')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Review the final order. Once confirmed it can be delivered. If anything changes later, edit the items — that will require confirming again.</p>
+        <div id="dc-items"></div>
+        <div style="text-align:right;font-size:15px;font-weight:700;margin-top:12px;">Total: <span id="dc-total">₱0.00</span></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-delivery-confirm')">Cancel</button>
+        <button class="btn btn-primary" id="dc-confirm-btn" onclick="confirmFinalOrder()"><i class="ti ti-check"></i> Confirm final order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        SLIDE-OUT PANEL: AGENT DETAILS
        ============================================================ -->
   <div class="slide-panel-overlay" id="agent-panel-overlay" onclick="closeAgentPanel()"></div>
@@ -5305,6 +5358,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u15"></script>
+  <script src="js/app.js?v=u16"></script>
 </body>
 </html>

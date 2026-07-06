@@ -834,6 +834,57 @@ public class OrderController {
     }
 
     /**
+     * POST /api/orders/{id}/edit-delivery-items
+     * Body: a CreateOrderRequest-shaped payload — only items[] (+ optional discount,
+     * deliveryFee) are used.
+     *
+     * Deferred delivery (V95) — replace the line items of a SCHEDULED_DELIVERY order
+     * before it is delivered. Records nothing (order stays inert); recomputes the total
+     * and CLEARS the confirmation gate (the new list must be re-confirmed). No security
+     * key required — nothing was recorded yet.
+     */
+    @PostMapping("/{id}/edit-delivery-items")
+    public ResponseEntity<?> editDeliveryItems(@PathVariable String id,
+                                               @RequestBody CreateOrderRequest body,
+                                               @RequestHeader("Authorization") String authHeader) {
+        try {
+            Long userId = userIdFromHeader(authHeader);
+            if (userId == null)
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("message", "Invalid or missing authentication token"));
+
+            Order updated = orderService.editScheduledDeliveryItems(
+                    id, body.getItems(), body.getDiscount(), body.getDeliveryFee(), userId);
+            return ResponseEntity.ok(convertToResponse(updated));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/orders/{id}/confirm-delivery
+     *
+     * Deferred delivery (V95) — confirm the final order for a SCHEDULED_DELIVERY order.
+     * Only after this may it be fulfilled ("Mark Delivered"). Records nothing; no security
+     * key required. Idempotent.
+     */
+    @PostMapping("/{id}/confirm-delivery")
+    public ResponseEntity<?> confirmDelivery(@PathVariable String id,
+                                             @RequestHeader("Authorization") String authHeader) {
+        try {
+            Long userId = userIdFromHeader(authHeader);
+            if (userId == null)
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("message", "Invalid or missing authentication token"));
+
+            Order confirmed = orderService.confirmScheduledDelivery(id, userId);
+            return ResponseEntity.ok(convertToResponse(confirmed));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
      * POST /api/orders/{id}/void
      *
      * Item-level same-day void.  Removes specific quantities from one or more
@@ -1328,7 +1379,9 @@ public class OrderController {
             order.getImportRef(),
             order.getScheduledDeliveryDate(),
             order.getDeliveredAt(),
-            order.getDeliveryChangeLog()
+            order.getDeliveryChangeLog(),
+            order.isDeliveryConfirmed(),
+            order.getDeliveryConfirmedAt()
         );
     }
 }
