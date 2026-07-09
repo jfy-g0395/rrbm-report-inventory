@@ -5757,7 +5757,7 @@
       agents:         ['Agent Registry',     'View and manage agents'],
       'import':       ['Add Records',        'Add backdated orders & expenses'],
       transactions:   ['Transaction Ledger', 'Accounting ledger entries'],
-      emp:            ['Employee List',      'Manage employees'],
+      emp:            ['User List',          'Manage system users'],
       expenses:       ['Expenses',           'Daily expense tracking'],
       payables:       ['Payables',          'Company payable records'],
       suppliers:      ['Suppliers',         'Manage supplier accounts'],
