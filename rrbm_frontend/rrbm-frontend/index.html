@@ -183,6 +183,9 @@
         <button class="nav-item" id="nav-agents" data-view="agents" onclick="navigateTo('agents')">
           <i class="ti ti-user-shield"></i><span>Agents</span>
         </button>
+        <button class="nav-item" id="nav-resellers" data-view="resellers" onclick="navigateTo('resellers')">
+          <i class="ti ti-building-store"></i><span>Resellers &amp; Distributors</span>
+        </button>
         <button class="nav-item" id="nav-import" data-view="import" onclick="navigateTo('import')">
           <i class="ti ti-file-import"></i><span>Add Records</span>
         </button>
@@ -547,10 +550,14 @@
                         <div class="product-dropdown" id="field-agent-dropdown"></div>
                       </div>
                   </div>
-                  <!-- conditional: Reseller / Distributor name -->
+                  <!-- conditional: Reseller / Distributor picker (registered only) -->
                   <div class="col-md-4" id="field-reseller-wrap" style="display: none;">
                       <label class="form-label" id="label-reseller">Reseller Name</label>
-                      <input type="text" class="form-control" id="field-reseller" placeholder="Enter reseller/distributor name">
+                      <div class="product-autocomplete-wrapper">
+                        <input type="text" class="form-control" id="field-reseller-input" placeholder="Type to search registered..." autocomplete="off">
+                        <input type="hidden" id="field-reseller-id" value="">
+                        <div class="product-dropdown" id="field-reseller-dropdown"></div>
+                      </div>
                   </div>
                   <!-- conditional: Facebook page -->
                   <div class="col-md-4" id="field-fb-wrap" style="display: none;">
@@ -1835,6 +1842,16 @@
                 <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Orders delivered but payment not yet received</div>
               </div>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <select id="collections-source-filter" onchange="filterCollectionsBySource()" style="padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--card-bg);color:var(--text);">
+                  <option value="ALL">All sources</option>
+                  <option value="RESELLER">Resellers</option>
+                  <option value="DISTRIBUTOR">Distributors</option>
+                  <option value="AGENT">Agents</option>
+                  <option value="WALK_IN">Walk-in</option>
+                  <option value="ECOMMERCE">E-Commerce</option>
+                  <option value="FACEBOOK_PAGE">Facebook Page</option>
+                  <option value="IN_HOUSE">In House</option>
+                </select>
                 <button class="btn btn-primary btn-sm" id="btn-batch-collect" style="display:none;" onclick="openBatchCollectModal()">
                   <i class="ti ti-checks"></i> <span id="batch-collect-label">Mark Selected (0)</span>
                 </button>
@@ -2264,6 +2281,29 @@
               </div>
             </div>
             <div class="agent-grid" id="agents-grid">
+              <div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">Loading…</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: RESELLERS & DISTRIBUTORS
+             ==================================================== -->
+        <section class="view" id="view-resellers">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><i class="ti ti-building-store" style="margin-right:6px;"></i>Resellers &amp; Distributors</div>
+              <button class="btn btn-primary btn-sm" onclick="openResellerRegister()"><i class="ti ti-plus"></i> Register</button>
+            </div>
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+              <div style="display:flex;gap:4px;">
+                <button class="btn btn-sm reseller-type-tab active" data-type="ALL" onclick="filterResellers('ALL')" style="font-size:12px;padding:5px 12px;">All</button>
+                <button class="btn btn-sm reseller-type-tab" data-type="RESELLER" onclick="filterResellers('RESELLER')" style="font-size:12px;padding:5px 12px;">Resellers</button>
+                <button class="btn btn-sm reseller-type-tab" data-type="DISTRIBUTOR" onclick="filterResellers('DISTRIBUTOR')" style="font-size:12px;padding:5px 12px;">Distributors</button>
+              </div>
+              <input id="reseller-search" type="text" placeholder="Search name or code…" oninput="filterResellers()" style="padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--card-bg);color:var(--text);width:200px;margin-left:auto;">
+            </div>
+            <div class="agent-grid" id="resellers-grid">
               <div style="text-align:center;color:#999;padding:24px;grid-column:1/-1;">Loading…</div>
             </div>
           </div>
@@ -3963,6 +4003,7 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="cash-flow" checked /> Cash Flow</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="ledger" checked /> Ledger</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="agents" checked /> Agents</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="resellers" checked /> Resellers &amp; Distributors</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="import" checked /> Add Records</label>
           </div>
         </div>
@@ -4127,6 +4168,7 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="cash-flow" /> Cash Flow</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="ledger" /> Ledger</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="agents" /> Agents</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="resellers" /> Resellers &amp; Distributors</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="import" /> Add Records</label>
           </div>
         </div>
@@ -5375,8 +5417,85 @@
     </div>
   </div>
 
+  <!-- ============================================================
+       SLIDE-OUT PANEL: RESELLER / DISTRIBUTOR DETAILS
+       ============================================================ -->
+  <div class="slide-panel-overlay" id="reseller-panel-overlay" onclick="closeResellerPanel()"></div>
+  <div class="slide-panel" id="reseller-slide-panel">
+    <div class="slide-panel-header">
+      <button class="icon-btn" onclick="closeResellerPanel()"><i class="ti ti-x"></i></button>
+      <div class="panel-title" id="reseller-panel-title">Reseller Details</div>
+    </div>
+    <div class="slide-panel-body" id="reseller-panel-body">
+      <div style="text-align:center;color:var(--text-muted);padding:24px;">Select a reseller to view details.</div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: REGISTER / EDIT RESELLER OR DISTRIBUTOR
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-reseller">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-header">
+        <div class="modal-title" id="reseller-modal-title">Register Reseller / Distributor</div>
+        <button class="icon-btn" onclick="closeResellerModal()"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label">Type <span class="text-danger">*</span></label>
+            <select class="form-select" id="reseller-type">
+              <option value="RESELLER">Reseller</option>
+              <option value="DISTRIBUTOR">Distributor</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="reseller-name" placeholder="Business / entity name">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Contact Person <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="reseller-contact-person">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Contact Number <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="reseller-contact-number">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label">Address <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="reseller-address">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label">Notes <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+            <textarea class="form-control" id="reseller-notes" rows="2" placeholder="Special instructions…"></textarea>
+          </div>
+          <div class="col-md-12">
+            <label class="form-label">Delivery Days <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:13px;">
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" class="reseller-day-chk" value="MON"> Mon</label>
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" class="reseller-day-chk" value="TUE"> Tue</label>
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" class="reseller-day-chk" value="WED"> Wed</label>
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" class="reseller-day-chk" value="THU"> Thu</label>
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" class="reseller-day-chk" value="FRI"> Fri</label>
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" class="reseller-day-chk" value="SAT"> Sat</label>
+              <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" class="reseller-day-chk" value="SUN"> Sun</label>
+            </div>
+          </div>
+          <div class="col-md-12">
+            <label class="form-label">Delivery Time Window <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+            <input type="text" class="form-control" id="reseller-delivery-time" placeholder="e.g. 8:00 AM - 12:00 PM">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeResellerModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitReseller()"><i class="ti ti-check"></i> Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u21"></script>
+  <script src="js/app.js?v=u22"></script>
 </body>
 </html>

@@ -185,10 +185,10 @@
 
   const ROLE_DEFAULT_PAGES = {
     'STANDARD_USER':  ['orders','rejected-items','receive-stocks','inventory','delivery-reports'],
-    'ACCOUNTING':     ['dashboard','orders','void-cancel-orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','add-rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'ACCOUNTING':     ['dashboard','orders','void-cancel-orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','add-rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
     'DELIVERY_MANAGEMENT':['dashboard','orders','delivery-schedule','inventory','delivery-reports'],
-    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
-    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
+    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
     'SUPER_ADMIN':    null
   };
 
@@ -391,6 +391,7 @@
       'activity-log': 'activity-log',
       'emp': 'employees',
       'agents': 'agents',
+      'resellers': 'resellers',
       'expenses': 'expenses',
       'payables': 'payables',
       'suppliers': 'suppliers',
@@ -1287,6 +1288,14 @@
     } catch (err) {
       if (tb) tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#EF4444;padding:24px;">Failed to load: ' + (err.message||err) + '</td></tr>';
     }
+  };
+
+  window.filterCollectionsBySource = function () {
+    var src = (($('collections-source-filter') || {}).value) || 'ALL';
+    var all = _collectionsParsed || [];
+    var filtered = src === 'ALL' ? all : all.filter(function (o) { return o.source === src; });
+    renderCollectionRows(filtered);
+    updateCollectionsBadge(filtered.length);
   };
 
   window.renderCollectionRows = function (orders) {
@@ -5755,6 +5764,7 @@
       'delivery-rep': ['Delivery Reports',  'Received stock history'],
       'activity-log': ['Activity Log',      'Admin action history'],
       agents:         ['Agent Registry',     'View and manage agents'],
+      resellers:      ['Resellers & Distributors', 'Registered resellers/distributors, pricing & order tracking'],
       'import':       ['Add Records',        'Add backdated orders & expenses'],
       transactions:   ['Transaction Ledger', 'Accounting ledger entries'],
       emp:            ['Employee List',      'Manage employees'],
@@ -5800,6 +5810,7 @@
     if (view === 'delivery-rep') renderDeliveryReports(true);
     if (view === 'activity-log') renderActivityLog(true);
     if (view === 'agents')       loadAgents();
+    if (view === 'resellers')    loadResellers();
     if (view === 'import')       initAddRecords();
     if (view === 'transactions') loadTransactions();
     if (view === 'expenses')     initExpensesView();
@@ -6829,7 +6840,86 @@
     // Load agent dropdown and show/hide per-item O.P. fields
     if (v === 'AGENT') loadAgentOptions();
     $$('.agent-op-row').forEach(function(r) { r.style.display = v === 'AGENT' ? '' : 'none'; });
+    // Reseller/Distributor: load registered options for the picker; reset any prior price map.
+    _resellerPriceMap = {};
+    if ($('field-reseller-id')) $('field-reseller-id').value = '';
+    if (v === 'RESELLER' || v === 'DISTRIBUTOR') loadResellerOptions(v);
   };
+
+  // ── S-A2: Reseller/Distributor order-form picker (mirrors the agent autocomplete) ──
+  var _cachedResellers = [];
+  var _resellerPriceMap = {};   // productId -> unitPrice for the currently selected reseller
+
+  async function loadResellerOptions(type) {
+    var input = $('field-reseller-input');
+    if (input) input.placeholder = 'Loading…';
+    try {
+      var res = await fetch(API_BASE + '/api/orders/reseller-options?type=' + encodeURIComponent(type), { headers: authHeaders() });
+      if (!res.ok) { if (input) input.placeholder = 'Failed to load'; return; }
+      _cachedResellers = await res.json();
+      if (input) input.placeholder = 'Type to search ' + (type === 'DISTRIBUTOR' ? 'distributors' : 'resellers') + '…';
+      setupResellerAutocomplete();
+    } catch (e) {
+      if (input) input.placeholder = 'Failed to load';
+    }
+  }
+
+  function setupResellerAutocomplete() {
+    var input    = $('field-reseller-input');
+    var dropdown = $('field-reseller-dropdown');
+    if (!input || !dropdown) return;
+    var fresh = input.cloneNode(true);
+    input.parentNode.replaceChild(fresh, input);
+    var filterAndRender = function () {
+      var t = this.value.toLowerCase().trim();
+      renderResellerDropdown(dropdown, t.length === 0 ? _cachedResellers : _cachedResellers.filter(function (r) {
+        return (r.name || '').toLowerCase().includes(t) || (r.resellerCode || '').toLowerCase().includes(t);
+      }));
+    };
+    fresh.addEventListener('input', filterAndRender);
+    fresh.addEventListener('focus', filterAndRender);
+    document.addEventListener('click', function (e) {
+      if (!fresh.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show');
+    });
+  }
+
+  function renderResellerDropdown(dropdown, resellers) {
+    if (!dropdown) return;
+    if (!resellers || resellers.length === 0) {
+      dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">None registered</div>';
+      dropdown.classList.add('show');
+      return;
+    }
+    dropdown.innerHTML = resellers.map(function (r) {
+      return '<div class="product-dropdown-item" data-id="' + r.id + '" data-name="' + escapeHtml(r.name) + '" data-code="' + escapeHtml(r.resellerCode) + '">'
+        + '<strong>' + escapeHtml(r.name) + '</strong>'
+        + ' <span style="font-size:11px;color:var(--text-muted);">(' + escapeHtml(r.resellerCode) + ')</span>'
+        + '</div>';
+    }).join('');
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var rInput  = $('field-reseller-input');
+        var rHidden = $('field-reseller-id');
+        var rid = this.getAttribute('data-id');
+        if (rInput)  rInput.value  = this.getAttribute('data-name') + ' (' + this.getAttribute('data-code') + ')';
+        if (rHidden) rHidden.value = rid;
+        dropdown.classList.remove('show');
+        loadResellerPriceMap(rid);
+      });
+    });
+  }
+
+  // Fetch the chosen reseller's product price map so lines auto-fill their negotiated price.
+  async function loadResellerPriceMap(resellerId) {
+    _resellerPriceMap = {};
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + resellerId + '/prices', { headers: authHeaders() });
+      if (!res.ok) return;
+      var rows = await res.json();
+      (rows || []).forEach(function (p) { _resellerPriceMap[String(p.productId)] = p.unitPrice; });
+    } catch (e) { /* non-fatal — lines just keep the normal price */ }
+  }
 
   var _cachedAgents = [];
 
@@ -7055,6 +7145,13 @@
           if (ab !== '' && ab != null && $('basePrice-' + rn)) $('basePrice-' + rn).value = parseFloat(ab);
           _recomputeOverPrice('unitPrice-' + rn, 'basePrice-' + rn, 'opPerUnit-' + rn);
         }
+        // Reseller/Distributor auto-pricing: if this reseller has a mapped price for the
+        // product, auto-fill it (still editable). Unmapped products keep the normal price.
+        var _srcVal = ($('field-source') || {}).value;
+        if ((_srcVal === 'RESELLER' || _srcVal === 'DISTRIBUTOR')
+            && _resellerPriceMap && _resellerPriceMap[this.getAttribute('data-id')] != null) {
+          $('unitPrice-' + rn).value = parseFloat(_resellerPriceMap[this.getAttribute('data-id')]);
+        }
         const si = $('stockInfo-' + rn);
         const qEl = $('quantity-' + rn);
         if (isSetItem) {
@@ -7154,8 +7251,8 @@
         }
       });
     }
-    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller'))
-      $('field-reseller').value = order.agentName || '';
+    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller-input'))
+      $('field-reseller-input').value = order.agentName || '';
     if (order.source === 'FACEBOOK_PAGE' && $('field-fb'))
       $('field-fb').value       = order.fbPage || '';
     if (order.source === 'ECOMMERCE' && $('ecommercePlatform'))
@@ -7204,8 +7301,8 @@
     if ($('field-customer'))   $('field-customer').value   = order.customerName || '';
     if ($('field-source'))     $('field-source').value     = order.source       || '';
     if (typeof window.onSourceChange === 'function') window.onSourceChange();
-    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller'))
-      $('field-reseller').value = order.agentName || '';
+    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller-input'))
+      $('field-reseller-input').value = order.agentName || '';
     if (order.source === 'FACEBOOK_PAGE' && $('field-fb'))
       $('field-fb').value = order.fbPage || '';
     if (order.source === 'ECOMMERCE' && $('ecommercePlatform'))
@@ -7227,7 +7324,7 @@
     const customerName = (($('field-customer')  || {}).value || '').trim();
     const source       = ($('field-source')     || {}).value;
     const agentId      = source === 'AGENT' ? (parseInt(($('field-agent-id') || {}).value) || null) : null;
-    const resellerName = ($('field-reseller')   || {}).value || '';
+    const resellerId   = (source === 'RESELLER' || source === 'DISTRIBUTOR') ? (parseInt(($('field-reseller-id') || {}).value) || null) : null;
     const fbPage       = ($('field-fb')         || {}).value || '';
     const paymentMode  = ($('field-payment')    || {}).value;
     const orderType    = ($('field-order-type') || {}).value || 'STANDARD';
@@ -7240,6 +7337,7 @@
     if (!source)       { showToast('Please select order source', 'error'); return; }
     if (!paymentMode)  { showToast('Please select payment mode', 'error'); return; }
     if (source === 'AGENT' && !agentId) { showToast('Please select an agent', 'error'); return; }
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && !resellerId) { showToast('Please select a registered reseller/distributor', 'error'); return; }
 
     let ecommercePlatform = null;
     if (source === 'ECOMMERCE') {
@@ -7252,7 +7350,10 @@
     }
 
     let contactName = null;
-    if (source === 'RESELLER' || source === 'DISTRIBUTOR') contactName = resellerName;
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && resellerId) {
+      var _selR = _cachedResellers.find(function (x) { return x.id === resellerId; });
+      contactName = _selR ? _selR.name : null;
+    }
 
     const itemRows = $$('.order-item-row');
     if (itemRows.length === 0) { showToast('Please add at least one item', 'error'); return; }
@@ -7285,6 +7386,7 @@
     const orderRequest = {
       customerName, source,
       agentId:          agentId,
+      resellerId:       resellerId,
       agentName:        contactName || null,
       fbPage:           source === 'FACEBOOK_PAGE' ? fbPage : null,
       ecommercePlatform,
@@ -7339,7 +7441,7 @@
     const customerName = (($('field-customer')  || {}).value || '').trim();
     const source       = ($('field-source')     || {}).value;
     const agentId      = source === 'AGENT' ? (parseInt(($('field-agent-id') || {}).value) || null) : null;
-    const resellerName = ($('field-reseller')   || {}).value || '';
+    const resellerId   = (source === 'RESELLER' || source === 'DISTRIBUTOR') ? (parseInt(($('field-reseller-id') || {}).value) || null) : null;
     const fbPage       = ($('field-fb')         || {}).value || '';
     const paymentMode  = ($('field-payment')    || {}).value;
     const orderType    = ($('field-order-type') || {}).value || 'STANDARD';
@@ -7352,6 +7454,7 @@
     if (!source)       { showToast('Please select order source', 'error'); return; }
     if (!paymentMode)  { showToast('Please select payment mode', 'error'); return; }
     if (source === 'AGENT' && !agentId) { showToast('Please select an agent', 'error'); return; }
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && !resellerId) { showToast('Please select a registered reseller/distributor', 'error'); return; }
 
     let ecommercePlatform = null;
     if (source === 'ECOMMERCE') {
@@ -7364,7 +7467,10 @@
     }
 
     let contactName = null;
-    if (source === 'RESELLER' || source === 'DISTRIBUTOR') contactName = resellerName;
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && resellerId) {
+      var _selR = _cachedResellers.find(function (x) { return x.id === resellerId; });
+      contactName = _selR ? _selR.name : null;
+    }
 
     const itemRows = $$('.order-item-row');
     if (itemRows.length === 0) { showToast('Please add at least one item', 'error'); return; }
@@ -7415,6 +7521,7 @@
     const orderRequest = {
       customerName, source,
       agentId:          agentId,
+      resellerId:       resellerId,
       agentName:        contactName || null,
       fbPage:           source === 'FACEBOOK_PAGE' ? fbPage : null,
       ecommercePlatform,
@@ -7457,7 +7564,8 @@
     if ($('field-source'))           $('field-source').value = '';
     if ($('field-agent-id'))          $('field-agent-id').value    = '';
     if ($('field-agent-input'))       $('field-agent-input').value  = '';
-    if ($('field-reseller'))         $('field-reseller').value = '';
+    if ($('field-reseller-input'))   $('field-reseller-input').value = '';
+    if ($('field-reseller-id'))      $('field-reseller-id').value = '';
     if ($('field-fb'))               $('field-fb').value = '';
     if ($('field-payment'))          $('field-payment').value = '';
     if ($('field-order-type'))       $('field-order-type').value = 'STANDARD';
@@ -13345,6 +13453,275 @@
   };
 
   // ================================================================
+  // Resellers & Distributors (S-A2) — registry page, panel, modal, price map
+  // ================================================================
+  var _resellerTypeFilter = 'ALL';
+  var _currentReseller = null;
+
+  window.filterResellers = function (type) {
+    if (type) _resellerTypeFilter = type;
+    document.querySelectorAll('.reseller-type-tab').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-type') === _resellerTypeFilter);
+    });
+    var q = (($('reseller-search') || {}).value || '').trim();
+    var params = '?type=' + encodeURIComponent(_resellerTypeFilter);
+    if (q) params += '&q=' + encodeURIComponent(q);
+    loadResellers(params);
+  };
+
+  window.loadResellers = async function (queryParams) {
+    var grid = $('resellers-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">Loading…</div>';
+    try {
+      var res = await fetch(API_BASE + '/api/resellers' + (queryParams || ''), { headers: authHeaders() });
+      if (!res.ok) { grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">Failed to load.</div>'; return; }
+      var list = await res.json();
+      if (!Array.isArray(list) || list.length === 0) {
+        grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">No resellers/distributors registered yet.</div>';
+        return;
+      }
+      grid.innerHTML = list.map(function (r) {
+        var isDist   = r.type === 'DISTRIBUTOR';
+        var typeBg   = isDist ? '#EDE9FE' : '#FEF3C7';
+        var typeFg   = isDist ? '#5B21B6' : '#92400E';
+        var statusBg = r.status === 'ACTIVE' ? '#D1FAE5' : '#F3F4F6';
+        var statusFg = r.status === 'ACTIVE' ? '#065F46' : '#6B7280';
+        var outAmt   = '₱' + Number(r.outstandingAmount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return '<div class="agent-card" onclick="openResellerPanel(' + r.id + ')">' +
+          '<div class="agent-card-top">' +
+            '<span class="agent-card-code">' + escapeHtml(r.resellerCode || '') + '</span>' +
+            '<span class="agent-card-status" style="background:' + typeBg + ';color:' + typeFg + ';">' + (isDist ? 'Distributor' : 'Reseller') + '</span>' +
+          '</div>' +
+          '<div class="agent-card-name">' + escapeHtml(r.name || '') + '</div>' +
+          '<div class="agent-card-territory">' + escapeHtml(r.contactPerson || '') + ' · ' + escapeHtml(r.contactNumber || '') + '</div>' +
+          '<div class="agent-card-stats">' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value">' + (r.totalOrders || 0) + '</div><div class="agent-card-stat-label">Orders</div></div>' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value">' + (r.outstandingCount || 0) + '</div><div class="agent-card-stat-label">To Collect</div></div>' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value" style="color:' + ((r.outstandingCount||0) > 0 ? '#DC2626' : '#10B981') + ';">' + outAmt + '</div><div class="agent-card-stat-label">Outstanding</div></div>' +
+          '</div>' +
+          '<div style="margin-top:6px;"><span class="agent-card-status" style="background:' + statusBg + ';color:' + statusFg + ';">' + escapeHtml(r.status || '') + '</span></div>' +
+        '</div>';
+      }).join('');
+    } catch (err) {
+      grid.innerHTML = '<div style="text-align:center;color:red;padding:24px;grid-column:1/-1;">Error loading resellers.</div>';
+    }
+  };
+
+  // ── Register / edit modal ──
+  window.openResellerRegister = function (id) {
+    _currentReseller = null;
+    ['reseller-name','reseller-contact-person','reseller-contact-number','reseller-address','reseller-notes','reseller-delivery-time']
+      .forEach(function (f) { if ($(f)) $(f).value = ''; });
+    document.querySelectorAll('.reseller-day-chk').forEach(function (c) { c.checked = false; });
+    if ($('reseller-type')) { $('reseller-type').value = 'RESELLER'; $('reseller-type').disabled = false; }
+    if ($('reseller-modal-title')) $('reseller-modal-title').textContent = 'Register Reseller / Distributor';
+
+    if (id) {
+      fetch(API_BASE + '/api/resellers/' + id, { headers: authHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          _currentReseller = r;
+          if ($('reseller-type'))            { $('reseller-type').value = r.type; $('reseller-type').disabled = true; }
+          if ($('reseller-name'))            $('reseller-name').value = r.name || '';
+          if ($('reseller-contact-person'))  $('reseller-contact-person').value = r.contactPerson || '';
+          if ($('reseller-contact-number'))  $('reseller-contact-number').value = r.contactNumber || '';
+          if ($('reseller-address'))         $('reseller-address').value = r.address || '';
+          if ($('reseller-notes'))           $('reseller-notes').value = r.notes || '';
+          if ($('reseller-delivery-time'))   $('reseller-delivery-time').value = r.deliveryTimeWindow || '';
+          var days = (r.deliveryDays || '').split(',');
+          document.querySelectorAll('.reseller-day-chk').forEach(function (c) { c.checked = days.indexOf(c.value) !== -1; });
+          if ($('reseller-modal-title')) $('reseller-modal-title').textContent = 'Edit ' + (r.name || 'Reseller');
+        });
+    }
+    if ($('modal-reseller')) $('modal-reseller').classList.add('open');
+  };
+
+  window.closeResellerModal = function () { if ($('modal-reseller')) $('modal-reseller').classList.remove('open'); };
+
+  window.submitReseller = async function () {
+    var payload = {
+      type:               ($('reseller-type') || {}).value,
+      name:               (($('reseller-name') || {}).value || '').trim(),
+      contactPerson:      (($('reseller-contact-person') || {}).value || '').trim(),
+      contactNumber:      (($('reseller-contact-number') || {}).value || '').trim(),
+      address:            (($('reseller-address') || {}).value || '').trim(),
+      notes:              (($('reseller-notes') || {}).value || '').trim(),
+      deliveryTimeWindow: (($('reseller-delivery-time') || {}).value || '').trim(),
+      deliveryDays:       Array.prototype.slice.call(document.querySelectorAll('.reseller-day-chk:checked')).map(function (c) { return c.value; }).join(',')
+    };
+    if (!payload.name)          { showToast('Name is required', 'error'); return; }
+    if (!payload.contactPerson) { showToast('Contact person is required', 'error'); return; }
+    if (!payload.contactNumber) { showToast('Contact number is required', 'error'); return; }
+    if (!payload.address)       { showToast('Address is required', 'error'); return; }
+
+    var editing = _currentReseller && _currentReseller.id;
+    try {
+      var res = await fetch(API_BASE + '/api/resellers' + (editing ? '/' + _currentReseller.id : ''), {
+        method: editing ? 'PUT' : 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(payload)
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast('Error: ' + (data.error || data.message || res.status), 'error'); return; }
+      showToast(editing ? 'Reseller updated' : (data.resellerCode || 'Reseller') + ' registered', 'success');
+      closeResellerModal();
+      filterResellers();
+      if (editing && $('reseller-panel-overlay') && $('reseller-panel-overlay').classList.contains('open')) openResellerPanel(_currentReseller.id);
+    } catch (e) { showToast('Connection error', 'error'); }
+  };
+
+  window.toggleResellerStatus = async function (id, currentStatus) {
+    var newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    if (!confirm(newStatus === 'INACTIVE' ? 'Deactivate? They will not appear in the order form picker.' : 'Reactivate this reseller/distributor?')) return;
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + id + '/status', {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) { showToast('Failed to update status', 'error'); return; }
+      showToast('Status updated', 'success');
+      openResellerPanel(id);
+      filterResellers();
+    } catch (e) { showToast('Error updating status', 'error'); }
+  };
+
+  // ── Slide-out panel: details + Orders / Price Mapping tabs ──
+  window.openResellerPanel = async function (id) {
+    var body = $('reseller-panel-body');
+    var title = $('reseller-panel-title');
+    if (!body) return;
+    body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</div>';
+    if ($('reseller-panel-overlay')) $('reseller-panel-overlay').classList.add('open');
+    if ($('reseller-slide-panel'))   $('reseller-slide-panel').classList.add('open');
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + id, { headers: authHeaders() });
+      if (!res.ok) { body.innerHTML = '<div style="color:red;padding:16px;">Failed to load.</div>'; return; }
+      var r = await res.json();
+      _currentReseller = r;
+      if (title) title.textContent = r.name || 'Reseller';
+      var statusBg = r.status === 'ACTIVE' ? '#D1FAE5' : '#F3F4F6';
+      var statusFg = r.status === 'ACTIVE' ? '#065F46' : '#6B7280';
+      var outAmt = '₱' + Number(r.outstandingAmount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      body.innerHTML =
+        '<div class="slide-panel-info">' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Code</span><span class="slide-panel-info-value" style="font-family:monospace;">' + escapeHtml(r.resellerCode || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Type</span><span class="slide-panel-info-value">' + escapeHtml(r.type || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Contact Person</span><span class="slide-panel-info-value">' + escapeHtml(r.contactPerson || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Contact No.</span><span class="slide-panel-info-value">' + escapeHtml(r.contactNumber || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Address</span><span class="slide-panel-info-value">' + escapeHtml(r.address || '') + '</span></div>' +
+          (r.deliveryDays ? '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Delivery Days</span><span class="slide-panel-info-value">' + escapeHtml(r.deliveryDays) + (r.deliveryTimeWindow ? ' · ' + escapeHtml(r.deliveryTimeWindow) : '') + '</span></div>' : '') +
+          (r.notes ? '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Notes</span><span class="slide-panel-info-value">' + escapeHtml(r.notes) + '</span></div>' : '') +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Status</span><span class="slide-panel-info-value"><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + statusBg + ';color:' + statusFg + ';">' + escapeHtml(r.status || '') + '</span></span></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin:10px 0;">' +
+          '<button class="btn btn-sm btn-outline" onclick="openResellerRegister(' + r.id + ')"><i class="ti ti-edit"></i> Edit</button>' +
+          '<button class="btn btn-sm btn-outline" onclick="toggleResellerStatus(' + r.id + ',\'' + r.status + '\')">' + (r.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate') + '</button>' +
+        '</div>' +
+        '<div class="slide-panel-stats">' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + (r.totalOrders || 0) + '</div><div class="slide-panel-stat-label">Orders</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + (r.outstandingCount || 0) + '</div><div class="slide-panel-stat-label">To Collect</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value" style="color:' + ((r.outstandingCount||0) > 0 ? '#DC2626' : '#10B981') + ';">' + outAmt + '</div><div class="slide-panel-stat-label">Outstanding</div></div>' +
+        '</div>' +
+        '<div class="slide-panel-tabs">' +
+          '<button class="slide-panel-tab active" onclick="switchResellerTab(\'orders\')">Order History</button>' +
+          '<button class="slide-panel-tab" onclick="switchResellerTab(\'prices\')">Price Mapping</button>' +
+        '</div>' +
+        '<div id="reseller-tab-content"><div style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</div></div>';
+      switchResellerTab('orders');
+    } catch (e) {
+      body.innerHTML = '<div style="color:red;padding:16px;">Error loading reseller.</div>';
+    }
+  };
+
+  window.closeResellerPanel = function () {
+    if ($('reseller-panel-overlay')) $('reseller-panel-overlay').classList.remove('open');
+    if ($('reseller-slide-panel'))   $('reseller-slide-panel').classList.remove('open');
+    _currentReseller = null;
+  };
+
+  window.switchResellerTab = function (tab) {
+    var tabs = document.querySelectorAll('#reseller-panel-body .slide-panel-tab');
+    tabs.forEach(function (t) { t.classList.remove('active'); });
+    if (tab === 'orders') { if (tabs[0]) tabs[0].classList.add('active'); loadResellerOrdersTab(); }
+    else                  { if (tabs[1]) tabs[1].classList.add('active'); loadResellerPricesTab(); }
+  };
+
+  async function loadResellerOrdersTab() {
+    var c = $('reseller-tab-content');
+    if (!c || !_currentReseller) return;
+    c.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading orders…</div>';
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + _currentReseller.id + '/orders', { headers: authHeaders() });
+      var data = await res.json();
+      var orders = (data && data.orders) || [];
+      if (orders.length === 0) { c.innerHTML = '<div style="color:var(--text-muted);padding:12px;font-size:13px;">No orders yet.</div>'; return; }
+      var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+      var rows = orders.map(function (o) {
+        var payFg = o.status === 'PENDING_COLLECTION' ? '#DC2626' : (o.status === 'DELIVERED' ? '#059669' : '#6B7280');
+        var payLabel = o.status === 'PENDING_COLLECTION' ? 'TO COLLECT' : (o.paymentStatus || o.status || '');
+        var items = (o.items || []).slice(0, 2).map(function (i) { return (i.quantity || 1) + '× ' + (i.productName || ''); }).join(', ');
+        return '<tr>' +
+          '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(o.orderId || '') + '</td>' +
+          '<td style="font-size:11px;">' + escapeHtml(o.date || '') + '</td>' +
+          '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(items) + '</td>' +
+          '<td style="text-align:right;font-weight:600;">' + fmt(o.total) + '</td>' +
+          '<td style="text-align:right;font-size:11px;font-weight:600;color:' + payFg + ';">' + escapeHtml(payLabel) + '</td>' +
+          '</tr>';
+      }).join('');
+      c.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+        '<thead><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:4px;">Order</th><th style="text-align:left;padding:4px;">Date</th><th style="text-align:left;padding:4px;">Items</th><th style="text-align:right;padding:4px;">Total</th><th style="text-align:right;padding:4px;">Status</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table>';
+    } catch (e) { c.innerHTML = '<div style="color:red;padding:12px;">Error loading orders.</div>'; }
+  }
+
+  async function loadResellerPricesTab() {
+    var c = $('reseller-tab-content');
+    if (!c || !_currentReseller) return;
+    c.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</div>';
+    try {
+      var prodRes = await fetch(API_BASE + '/api/products', { headers: authHeaders() });
+      var products = await prodRes.json();
+      var priceRes = await fetch(API_BASE + '/api/resellers/' + _currentReseller.id + '/prices', { headers: authHeaders() });
+      var prices = await priceRes.json();
+      var priceById = {};
+      (prices || []).forEach(function (p) { priceById[String(p.productId)] = p.unitPrice; });
+      _resellerPriceEditProducts = products || [];
+      var rows = (products || []).map(function (p) {
+        var mapped = priceById[String(p.id)];
+        return '<tr>' +
+          '<td style="font-size:12px;padding:3px 4px;">' + escapeHtml(p.name || '') + '</td>' +
+          '<td style="text-align:right;font-size:11px;color:var(--text-muted);padding:3px 4px;">₱' + Number(p.unitPrice || 0).toFixed(2) + '</td>' +
+          '<td style="padding:3px 4px;"><input type="number" min="0" step="0.01" class="form-control form-control-sm reseller-price-in" data-pid="' + p.id + '" value="' + (mapped != null ? Number(mapped) : '') + '" placeholder="—" style="width:110px;padding:3px 6px;font-size:12px;"></td>' +
+          '</tr>';
+      }).join('');
+      c.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Set a custom unit price per product. Blank = use the normal price. Auto-fills (editable) at order entry.</div>' +
+        '<div style="max-height:340px;overflow:auto;"><table style="width:100%;border-collapse:collapse;">' +
+        '<thead><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:4px;font-size:11px;">Product</th><th style="text-align:right;padding:4px;font-size:11px;">Normal</th><th style="text-align:left;padding:4px;font-size:11px;">Mapped ₱</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div>' +
+        '<button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="saveResellerPrices()"><i class="ti ti-device-floppy"></i> Save Price Mapping</button>';
+    } catch (e) { c.innerHTML = '<div style="color:red;padding:12px;">Error loading price map.</div>'; }
+  }
+  var _resellerPriceEditProducts = [];
+
+  window.saveResellerPrices = async function () {
+    if (!_currentReseller) return;
+    var prices = [];
+    document.querySelectorAll('.reseller-price-in').forEach(function (inp) {
+      var v = inp.value.trim();
+      if (v !== '' && !isNaN(parseFloat(v)) && parseFloat(v) >= 0) {
+        prices.push({ productId: parseInt(inp.getAttribute('data-pid')), unitPrice: parseFloat(v) });
+      }
+    });
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + _currentReseller.id + '/prices', {
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify({ prices: prices })
+      });
+      if (!res.ok) { showToast('Failed to save price map', 'error'); return; }
+      showToast('Price mapping saved (' + prices.length + ' products)', 'success');
+    } catch (e) { showToast('Connection error', 'error'); }
+  };
+
+  // ================================================================
   // Agent Slide-out Panel
   // ================================================================
 
@@ -14251,6 +14628,7 @@
     if (!source)       { showToast('Please select order source', 'error'); return; }
     if (!paymentMode)  { showToast('Please select payment mode', 'error'); return; }
     if (source === 'AGENT' && !agentId) { showToast('Please select an agent', 'error'); return; }
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && !resellerId) { showToast('Please select a registered reseller/distributor', 'error'); return; }
 
     var ecommercePlatform = null;
     if (source === 'ECOMMERCE') {
