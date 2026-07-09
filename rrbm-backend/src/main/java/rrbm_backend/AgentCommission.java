@@ -30,16 +30,16 @@ public class AgentCommission {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
-    @Column(name = "total_op", nullable = false, precision = 10, scale = 2)
+    @Column(name = "total_op", nullable = false, precision = 13, scale = 5)
     private BigDecimal totalOp = BigDecimal.ZERO;
 
-    @Column(name = "total_bonus", nullable = false, precision = 10, scale = 2)
+    @Column(name = "total_bonus", nullable = false, precision = 13, scale = 5)
     private BigDecimal totalBonus = BigDecimal.ZERO;
 
-    @Column(name = "total_deduction", nullable = false, precision = 10, scale = 2)
+    @Column(name = "total_deduction", nullable = false, precision = 13, scale = 5)
     private BigDecimal totalDeduction = BigDecimal.ZERO;
 
-    @Column(name = "net_commission", nullable = false, precision = 10, scale = 2)
+    @Column(name = "net_commission", nullable = false, precision = 13, scale = 5)
     private BigDecimal netCommission = BigDecimal.ZERO;
 
     @Column(name = "released_at", nullable = false)

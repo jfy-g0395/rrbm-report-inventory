@@ -21,7 +21,7 @@ public class DailyExpenseLog {
     @Column(name = "report_date", nullable = false, unique = true)
     private LocalDate reportDate;
 
-    @Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
+    @Column(name = "total_amount", nullable = false, precision = 15, scale = 5)
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
     @Column(name = "entry_count", nullable = false)

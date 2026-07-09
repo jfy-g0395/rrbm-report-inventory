@@ -764,6 +764,11 @@ public class InventoryService {
         movement.setReferenceId(referenceId);
         movement.setReason(reason);
         movement.setUserId(userId);
+        // Stamp the product's grand total AFTER this movement. logMovement is
+        // always called once the stock change has been applied, so this fresh
+        // sum (which auto-flushes pending entity mutations and reflects atomic
+        // in-DB updates) is the running total as of this movement.
+        movement.setBalanceAfter(productRepository.sumStockById(productId));
         movementRepository.save(movement);
     }
 }

@@ -21,7 +21,7 @@ public class CommissionAdjustment {
     @Column(name = "adjustment_type", nullable = false, length = 20)
     private String adjustmentType;
 
-    @Column(nullable = false, precision = 10, scale = 2)
+    @Column(nullable = false, precision = 13, scale = 5)
     private BigDecimal amount;
 
     @Column(nullable = false, columnDefinition = "TEXT")

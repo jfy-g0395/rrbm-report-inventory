@@ -38,11 +38,11 @@ public class OrderItem {
     @Column(nullable = false)
     private Integer quantity;
 
-    @Column(name = "unit_price", nullable = false, precision = 10, scale = 2)
+    @Column(name = "unit_price", nullable = false, precision = 13, scale = 5)
     private BigDecimal unitPrice;
 
     // quantity × unitPrice — calculated before saving
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(nullable = false, precision = 15, scale = 5)
     private BigDecimal subtotal;
 
     // Which warehouse this item ships from (wh1, wh2, wh3)
@@ -56,17 +56,17 @@ public class OrderItem {
     private Integer voidedQuantity = 0;
 
     // A2 + U15: O.P. (Over Price) fields — nullable; only set for agent-linked orders.
-    @Column(name = "base_price", precision = 10, scale = 2)
+    @Column(name = "base_price", precision = 13, scale = 5)
     private BigDecimal basePrice;
 
     @Column(name = "op_rate", precision = 5, scale = 4)
     private BigDecimal opRate;
 
     // U15: Flat per-unit overprice; commission = op_per_unit * qty.
-    @Column(name = "op_per_unit", precision = 10, scale = 2)
+    @Column(name = "op_per_unit", precision = 13, scale = 5)
     private BigDecimal opPerUnit;
 
     // base_price * op_rate * qty (legacy) OR op_per_unit * qty (current).
-    @Column(name = "op_amount", precision = 10, scale = 2)
+    @Column(name = "op_amount", precision = 13, scale = 5)
     private BigDecimal opAmount;
 }

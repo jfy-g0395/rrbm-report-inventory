@@ -158,7 +158,7 @@ public class OrderService {
                 item.setOpAmount(
                     itemReq.getOpPerUnit()
                            .multiply(new BigDecimal(itemReq.getQuantity()))
-                           .setScale(2, RoundingMode.HALF_UP)
+                           .setScale(5, RoundingMode.HALF_UP)
                 );
             }
             order.addItem(item);

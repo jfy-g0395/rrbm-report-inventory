@@ -34,16 +34,16 @@ public class CommissionEntry {
     @Column(nullable = false)
     private Integer quantity = 1;
 
-    @Column(name = "base_price", precision = 10, scale = 2)
+    @Column(name = "base_price", precision = 13, scale = 5)
     private BigDecimal basePrice;
 
     @Column(name = "op_rate", precision = 5, scale = 4)
     private BigDecimal opRate;
 
-    @Column(name = "op_per_unit", precision = 10, scale = 2)
+    @Column(name = "op_per_unit", precision = 13, scale = 5)
     private BigDecimal opPerUnit;
 
-    @Column(name = "op_amount", nullable = false, precision = 10, scale = 2)
+    @Column(name = "op_amount", nullable = false, precision = 13, scale = 5)
     private BigDecimal opAmount;
 
     @Column(nullable = false, length = 20)

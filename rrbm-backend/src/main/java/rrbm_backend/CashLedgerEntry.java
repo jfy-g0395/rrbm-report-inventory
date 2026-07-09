@@ -31,7 +31,7 @@ public class CashLedgerEntry {
     private String entryType;
 
     /** Signed: positive for inflow, negative for outflow. */
-    @Column(precision = 14, scale = 2, nullable = false)
+    @Column(precision = 17, scale = 5, nullable = false)
     private BigDecimal amount;
 
     /** Business date this movement counts towards. */

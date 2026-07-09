@@ -636,11 +636,11 @@
                         <button type="button" class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 7px;" onclick="applyDiscountPreset(50)">50%</button>
                         <button type="button" class="btn btn-secondary btn-sm" style="font-size:11px;padding:2px 7px;" onclick="applyDiscountPreset(0)">Clear</button>
                       </div>
-                      <input type="number" class="form-control" id="orderDiscount" value="0" min="0" step="0.01">
+                      <input type="number" class="form-control" id="orderDiscount" value="0" min="0" step="0.00001">
                   </div>
                   <div class="col-md-3">
                       <label class="form-label">Delivery Fee (₱)</label>
-                      <input type="number" class="form-control" id="orderDeliveryFee" value="0" min="0" step="0.01">
+                      <input type="number" class="form-control" id="orderDeliveryFee" value="0" min="0" step="0.00001">
                   </div>
                   <div class="col-md-6">
                       <label class="form-label">Notes</label>
@@ -888,11 +888,11 @@
                     <thead>
                       <tr>
                         <th>Time</th><th>Product</th><th>Type</th><th style="text-align:center;">Dir</th>
-                        <th>WH</th><th style="text-align:right;">Qty</th><th>Reason</th><th>Order Ref</th>
+                        <th>WH</th><th style="text-align:right;">Qty</th><th style="text-align:right;">New Total</th><th>Reason</th><th>Order Ref</th>
                       </tr>
                     </thead>
                     <tbody id="invmov-tbody">
-                      <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>
+                      <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -1989,7 +1989,7 @@
               <div id="exp-items-container">
                 <div class="exp-item-row" style="display:grid;grid-template-columns:1fr 140px 36px;gap:8px;margin-bottom:8px;">
                   <input type="text" class="form-control exp-item-desc" placeholder="Item description" />
-                  <input type="number" class="form-control exp-item-amount" placeholder="Amount" min="0" step="0.01" oninput="updateExpenseTotal()" />
+                  <input type="number" class="form-control exp-item-amount" placeholder="Amount" min="0" step="0.00001" oninput="updateExpenseTotal()" />
                   <button class="btn btn-secondary btn-sm" onclick="removeExpenseRow(this)" title="Remove" style="padding:0 10px;">×</button>
                 </div>
               </div>
@@ -2414,11 +2414,11 @@
                   </div>
                   <div>
                     <label class="form-label">Discount (₱)</label>
-                    <input type="number" class="form-control" id="addrec-ord-discount" value="0" min="0" step="0.01">
+                    <input type="number" class="form-control" id="addrec-ord-discount" value="0" min="0" step="0.00001">
                   </div>
                   <div>
                     <label class="form-label">Delivery Fee (₱)</label>
-                    <input type="number" class="form-control" id="addrec-ord-delivery-fee" value="0" min="0" step="0.01">
+                    <input type="number" class="form-control" id="addrec-ord-delivery-fee" value="0" min="0" step="0.00001">
                   </div>
                   <div style="grid-column:1/-1;">
                     <label class="form-label">Notes</label>
@@ -2485,7 +2485,7 @@
                 <div id="addrec-exp-items">
                   <div class="addrec-exp-item-row" style="display:grid;grid-template-columns:1fr 140px 36px;gap:8px;margin-bottom:8px;">
                     <input type="text" class="form-control addrec-exp-item-desc" placeholder="Item description">
-                    <input type="number" class="form-control addrec-exp-item-amount" placeholder="Amount" min="0" step="0.01">
+                    <input type="number" class="form-control addrec-exp-item-amount" placeholder="Amount" min="0" step="0.00001">
                     <button class="btn btn-secondary btn-sm" onclick="removeAddRecExpenseRow(this)" title="Remove" style="padding:0 10px;">×</button>
                   </div>
                 </div>
@@ -2603,7 +2603,7 @@
               <div style="display:flex;gap:12px;flex-wrap:wrap;">
                 <div style="flex:1;min-width:160px;">
                   <label class="form-label">Amount <span style="color:#6B7280;font-size:11px;">(negative to deduct)</span></label>
-                  <input type="number" step="0.01" class="form-control" id="adj-amount" placeholder="e.g. -500.00" />
+                  <input type="number" step="0.00001" class="form-control" id="adj-amount" placeholder="e.g. -500.00" />
                 </div>
                 <div style="flex:2;min-width:200px;">
                   <label class="form-label">Reason</label>
@@ -3004,17 +3004,17 @@
         <div class="row mb-3">
           <div class="col-md-6">
             <label class="form-label">Unit Price ₱ <span class="text-danger">*</span></label>
-            <input type="number" class="form-control" id="addprod-price" min="0" step="0.01" placeholder="0.00" />
+            <input type="number" class="form-control" id="addprod-price" min="0" step="0.00001" placeholder="0.00" />
           </div>
           <div class="col-md-6">
             <label class="form-label">Unit Cost ₱</label>
-            <input type="number" class="form-control" id="addprod-cost" min="0" step="0.01" placeholder="0.00" />
+            <input type="number" class="form-control" id="addprod-cost" min="0" step="0.00001" placeholder="0.00" />
           </div>
         </div>
         <div class="row mb-3" id="addprod-agent-base-wrap" style="display:none;">
           <div class="col-md-6">
             <label class="form-label">Agent Base Price ₱ <span style="font-size:11px;color:var(--text-muted);">(Admins only)</span></label>
-            <input type="number" class="form-control" id="addprod-agent-base" min="0" step="0.01" placeholder="0.00" />
+            <input type="number" class="form-control" id="addprod-agent-base" min="0" step="0.00001" placeholder="0.00" />
           </div>
         </div>
         <div class="row mb-1">
@@ -3097,17 +3097,17 @@
         <div class="grid grid-2" style="gap:10px;margin-bottom:12px;">
           <div>
             <label class="form-label">Unit Price (₱)</label>
-            <input type="number" class="form-control" id="editprod-price" min="0" step="0.01" placeholder="0.00" />
+            <input type="number" class="form-control" id="editprod-price" min="0" step="0.00001" placeholder="0.00" />
           </div>
           <div>
             <label class="form-label">Unit Cost (₱)</label>
-            <input type="number" class="form-control" id="editprod-cost" min="0" step="0.01" placeholder="0.00" />
+            <input type="number" class="form-control" id="editprod-cost" min="0" step="0.00001" placeholder="0.00" />
           </div>
         </div>
         <div class="grid grid-2" style="gap:10px;margin-bottom:12px;display:none;" id="editprod-agent-base-wrap">
           <div>
             <label class="form-label">Agent Base Price (₱) <span style="font-size:11px;color:var(--text-muted);">(Admins only)</span></label>
-            <input type="number" class="form-control" id="editprod-agent-base" min="0" step="0.01" placeholder="0.00" />
+            <input type="number" class="form-control" id="editprod-agent-base" min="0" step="0.00001" placeholder="0.00" />
           </div>
         </div>
         <div class="grid grid-3" style="gap:10px;margin-bottom:12px;">
@@ -3254,7 +3254,7 @@
           Record cash added to the drawer (e.g. a bank withdrawal).
         </div>
         <label class="form-label">Amount <span class="text-danger">*</span></label>
-        <input type="number" min="0" step="0.01" class="form-control" id="cash-add-amount" placeholder="0.00" />
+        <input type="number" min="0" step="0.00001" class="form-control" id="cash-add-amount" placeholder="0.00" />
         <label class="form-label" style="margin-top:10px;">Date</label>
         <input type="date" class="form-control" id="cash-add-date" />
         <label class="form-label" style="margin-top:10px;">Note</label>
@@ -3284,7 +3284,7 @@
           Use a <strong>positive</strong> amount to add, a <strong>negative</strong> amount to deduct.
         </div>
         <label class="form-label">Amount (+ / −) <span class="text-danger">*</span></label>
-        <input type="number" step="0.01" class="form-control" id="cash-adjust-amount" placeholder="e.g. 50 or -50" />
+        <input type="number" step="0.00001" class="form-control" id="cash-adjust-amount" placeholder="e.g. 50 or -50" />
         <label class="form-label" style="margin-top:10px;">Date</label>
         <input type="date" class="form-control" id="cash-adjust-date" />
         <label class="form-label" style="margin-top:10px;">Reason / Note <span class="text-danger">*</span></label>
@@ -3313,7 +3313,7 @@
           Record cash physically deposited to the bank. This deducts from cash on hand and requires the master key.
         </div>
         <label class="form-label">Amount <span class="text-danger">*</span></label>
-        <input type="number" min="0" step="0.01" class="form-control" id="cash-deposit-amount" placeholder="0.00" />
+        <input type="number" min="0" step="0.00001" class="form-control" id="cash-deposit-amount" placeholder="0.00" />
         <label class="form-label" style="margin-top:10px;">Deposit Date <span class="text-danger">*</span></label>
         <input type="date" class="form-control" id="cash-deposit-date" />
         <label class="form-label" style="margin-top:10px;">Note</label>
@@ -3342,7 +3342,7 @@
           One-time starting count of cash physically in the drawer. This can only be set once, before any cash activity.
         </div>
         <label class="form-label">Opening Amount <span class="text-danger">*</span></label>
-        <input type="number" min="0" step="0.01" class="form-control" id="cash-opening-amount" placeholder="0.00" />
+        <input type="number" min="0" step="0.00001" class="form-control" id="cash-opening-amount" placeholder="0.00" />
         <label class="form-label" style="margin-top:10px;">Date</label>
         <input type="date" class="form-control" id="cash-opening-date" />
         <label class="form-label" style="margin-top:10px;">Your Admin Security Key <span class="text-danger">*</span></label>
@@ -3549,6 +3549,25 @@
       </div>
       <div class="modal-footer" style="flex-shrink:0;">
         <button class="btn btn-secondary" onclick="closeModal('modal-csv-skipped')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: IMPORT REPORT (what got in / what didn't + why)
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-import-report">
+    <div class="modal-box" style="max-width:660px;width:100%;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="modal-header" style="flex-shrink:0;">
+        <div style="font-size:14px;font-weight:600;">
+          <i class="ti ti-clipboard-list" style="margin-right:6px;color:var(--accent);"></i>Import Report
+        </div>
+        <button class="icon-btn" onclick="closeModal('modal-import-report')"><i class="ti ti-x"></i></button>
+      </div>
+      <div style="padding:10px 18px;font-size:13px;flex-shrink:0;border-bottom:1px solid var(--border);" id="import-report-summary"></div>
+      <div style="overflow-y:auto;flex:1;min-height:0;padding:4px 18px 12px;" id="import-report-body"></div>
+      <div class="modal-footer" style="flex-shrink:0;">
+        <button class="btn btn-secondary" onclick="closeModal('modal-import-report')">Close</button>
       </div>
     </div>
   </div>
@@ -4250,7 +4269,7 @@
           <div id="rtn-refund-section" style="display:none;margin-top:10px;">
             <label class="form-label">Refund Amount ₱ <span style="color:#EF4444;">*</span></label>
             <input type="number" class="form-control" id="rtn-refund-amount"
-                   min="0.01" step="0.01" placeholder="0.00" oninput="onReturnQtyChange()" />
+                   min="0.01" step="0.00001" placeholder="0.00" oninput="onReturnQtyChange()" />
           </div>
         </div>
         <!-- Replacement toggle -->
@@ -4426,7 +4445,7 @@
           </div>
           <div>
             <label style="font-size:11px;color:var(--text-muted);">Unit Price (₱)</label>
-            <input type="number" min="0" step="0.01" class="form-control" id="ci-replacement-unit-price" oninput="updateCorrectItemPreview()" />
+            <input type="number" min="0" step="0.00001" class="form-control" id="ci-replacement-unit-price" oninput="updateCorrectItemPreview()" />
           </div>
           <div>
             <label style="font-size:11px;color:var(--text-muted);">Deduct From</label>
@@ -5080,7 +5099,7 @@
             </div>
             <div style="flex:0.8;min-width:90px;">
               <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Unit Cost</label>
-              <input type="number" class="form-control form-control-sm" id="new-map-unit-cost" placeholder="0.00" min="0" step="0.01" style="text-align:right;" />
+              <input type="number" class="form-control form-control-sm" id="new-map-unit-cost" placeholder="0.00" min="0" step="0.00001" style="text-align:right;" />
             </div>
             <div style="display:flex;align-items:center;gap:5px;padding-bottom:5px;">
               <input type="checkbox" id="new-map-preferred" style="width:14px;height:14px;cursor:pointer;" />
@@ -5302,9 +5321,9 @@
         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addDeliveryEditLine()"><i class="ti ti-plus"></i> Add line</button>
         <div class="row g-2" style="margin-top:14px;max-width:420px;margin-left:auto;">
           <div class="col-6"><label class="form-label" style="font-size:11px;">Discount (₱)</label>
-            <input type="number" class="form-control" id="de-discount" min="0" step="0.01" value="0" oninput="deRecalcTotal()"></div>
+            <input type="number" class="form-control" id="de-discount" min="0" step="0.00001" value="0" oninput="deRecalcTotal()"></div>
           <div class="col-6"><label class="form-label" style="font-size:11px;">Delivery fee (₱)</label>
-            <input type="number" class="form-control" id="de-delivery-fee" min="0" step="0.01" value="0" oninput="deRecalcTotal()"></div>
+            <input type="number" class="form-control" id="de-delivery-fee" min="0" step="0.00001" value="0" oninput="deRecalcTotal()"></div>
         </div>
         <div style="text-align:right;font-size:15px;font-weight:700;margin-top:12px;">Total: <span id="de-total">₱0.00</span></div>
       </div>
@@ -5358,6 +5377,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u16"></script>
+  <script src="js/app.js?v=u21"></script>
 </body>
 </html>

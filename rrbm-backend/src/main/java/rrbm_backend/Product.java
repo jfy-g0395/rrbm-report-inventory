@@ -54,17 +54,17 @@ public class Product {
     private String sellingTag = "SELLING";
 
     // Selling price per unit
-    @Column(name = "unit_price", precision = 10, scale = 2, nullable = false)
+    @Column(name = "unit_price", precision = 13, scale = 5, nullable = false)
     private BigDecimal unitPrice = BigDecimal.ZERO;
 
     // Cost price per unit (for profit calculation)
-    @Column(name = "unit_cost", precision = 10, scale = 2)
+    @Column(name = "unit_cost", precision = 13, scale = 5)
     private BigDecimal unitCost = BigDecimal.ZERO;
 
     // Agent base price per unit — the company price an agent buys at; the agent's over price
     // (commission) is unitPrice - agentBasePrice. Managed only by admin roles.
     // Nullable: products without one leave the order's base/over price for manual entry.
-    @Column(name = "agent_base_price", precision = 10, scale = 2)
+    @Column(name = "agent_base_price", precision = 13, scale = 5)
     private BigDecimal agentBasePrice;
 
     // Stock level that triggers CRITICAL warning (red)

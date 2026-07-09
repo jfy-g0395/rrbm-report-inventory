@@ -40,7 +40,7 @@ public class Transaction {
     private String transactionType;
 
     /** Positive for revenue events, negative for reversal events. */
-    @Column(precision = 12, scale = 2, nullable = false)
+    @Column(precision = 15, scale = 5, nullable = false)
     private BigDecimal amount;
 
     /** ORDER | EXPENSE | MANUAL */

@@ -39,16 +39,16 @@ public class Order {
     @Column(name = "payment_status", length = 10)
     private String paymentStatus;
     
-    @Column(precision = 10, scale = 2, nullable = false)
+    @Column(precision = 15, scale = 5, nullable = false)
     private BigDecimal subtotal = BigDecimal.ZERO;
-    
-    @Column(precision = 10, scale = 2)
+
+    @Column(precision = 15, scale = 5)
     private BigDecimal discount = BigDecimal.ZERO;
 
-    @Column(name = "delivery_fee", precision = 10, scale = 2, nullable = false)
+    @Column(name = "delivery_fee", precision = 13, scale = 5, nullable = false)
     private BigDecimal deliveryFee = BigDecimal.ZERO;
 
-    @Column(precision = 10, scale = 2, nullable = false)
+    @Column(precision = 15, scale = 5, nullable = false)
     private BigDecimal total = BigDecimal.ZERO;
     
     @Column(length = 20, nullable = false)
@@ -99,7 +99,7 @@ public class Order {
     // Void / cancel-for-replacement tracking (V39)
     // Running monetary total of all item-level voids applied to this order.
     // Effective order value = total - voidedAmount.
-    @Column(name = "voided_amount", precision = 10, scale = 2, nullable = false)
+    @Column(name = "voided_amount", precision = 13, scale = 5, nullable = false)
     private BigDecimal voidedAmount = BigDecimal.ZERO;
 
     // Set on the cancelled original when a replacement order is created.

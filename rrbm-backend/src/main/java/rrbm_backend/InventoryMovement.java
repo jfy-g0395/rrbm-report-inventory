@@ -48,6 +48,14 @@ public class InventoryMovement {
     @Column(name = "user_id")
     private Long userId;
 
+    // Product's grand total stock (wh1 + wh2 + wh3) immediately AFTER this
+    // movement was applied. Nullable: historical rows (pre-V97) were never
+    // stamped. Lets the movement log show the running total for every
+    // deduction/addition — including background/system ones — so an unexpected
+    // (phantom) change is traceable to the exact movement that caused it.
+    @Column(name = "balance_after")
+    private Integer balanceAfter;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

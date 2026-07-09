@@ -31,7 +31,7 @@ public class Expense {
     @Column(name = "admin_name", nullable = false, length = 150)
     private String adminName;
 
-    @Column(name = "total_amount", nullable = false, precision = 12, scale = 2)
+    @Column(name = "total_amount", nullable = false, precision = 15, scale = 5)
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
     @Column(name = "created_at", nullable = false, updatable = false)

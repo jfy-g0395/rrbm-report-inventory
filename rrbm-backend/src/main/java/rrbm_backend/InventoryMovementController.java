@@ -95,6 +95,9 @@ public class InventoryMovementController {
             row.put("direction",    qty >= 0 ? "IN" : "OUT");
             row.put("referenceId",  m.getReferenceId());
             row.put("reason",       m.getReason());
+            // Product grand total (wh1+wh2+wh3) right after this movement.
+            // Null for historical rows recorded before this was captured (V97).
+            row.put("balanceAfter", m.getBalanceAfter());
             movements.add(row);
         }
 

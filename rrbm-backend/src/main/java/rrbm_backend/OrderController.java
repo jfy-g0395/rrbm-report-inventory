@@ -145,6 +145,7 @@ public class OrderController {
                     .body(Map.of("message", "Invalid or missing authentication token"));
 
         int imported = 0, failed = 0;
+        List<Map<String, Object>> succeeded = new ArrayList<>();
         List<Map<String, Object>> errors = new ArrayList<>();
         List<Map<String, Object>> skipped = new ArrayList<>();
         for (CreateOrderRequest request : requests) {
@@ -199,16 +200,27 @@ public class OrderController {
                     item.setWarehouse(itemReq.getWarehouse() != null ? itemReq.getWarehouse() : "wh1");
                     order.addItem(item);
                 });
-                orderService.createOrder(order, userId);
+                Order saved = orderService.createOrder(order, userId);
                 imported++;
+                succeeded.add(Map.of(
+                        "ref",      externalRef != null ? externalRef
+                                    : (request.getCustomerName() != null ? request.getCustomerName() : "?"),
+                        "customer", request.getCustomerName() != null ? request.getCustomerName() : "?",
+                        "orderId",  saved.getId(),
+                        "items",    order.getItems().size()
+                ));
             } catch (Exception e) {
                 failed++;
-                String ref = (request.getNotes() != null && !request.getNotes().isBlank())
-                        ? request.getNotes() : (request.getCustomerName() != null ? request.getCustomerName() : "?");
-                errors.add(Map.of("ref", ref, "reason", e.getMessage() != null ? e.getMessage() : "Unknown error"));
+                errors.add(Map.of(
+                        "ref",      externalRef != null ? externalRef
+                                    : (request.getCustomerName() != null ? request.getCustomerName() : "?"),
+                        "customer", request.getCustomerName() != null ? request.getCustomerName() : "?",
+                        "reason",   e.getMessage() != null ? e.getMessage() : "Unknown error"
+                ));
             }
         }
-        return ResponseEntity.ok(Map.of("imported", imported, "failed", failed, "errors", errors, "skipped", skipped));
+        return ResponseEntity.ok(Map.of("imported", imported, "failed", failed,
+                "succeeded", succeeded, "errors", errors, "skipped", skipped));
     }
 
     /**

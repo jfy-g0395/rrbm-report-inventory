@@ -25,10 +25,10 @@ public class PoItem {
     @Column(name = "quantity_ordered")
     private Integer quantityOrdered = 1;
 
-    @Column(name = "unit_price", precision = 15, scale = 2)
+    @Column(name = "unit_price", precision = 18, scale = 5)
     private BigDecimal unitPrice = BigDecimal.ZERO;
 
-    @Column(name = "line_total", precision = 15, scale = 2)
+    @Column(name = "line_total", precision = 18, scale = 5)
     private BigDecimal lineTotal = BigDecimal.ZERO;
 
     @Column(name = "fulfilled_qty")
