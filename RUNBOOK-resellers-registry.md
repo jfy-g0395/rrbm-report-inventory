@@ -1,5 +1,30 @@
 # Runbook — Resellers & Distributors registry (Phase A)
 
+## 🟡 STATUS: BUILT — in PR #5, NOT yet tested / merged / deployed (updated 2026-07-09)
+All three build sessions are complete and pushed to `feat/resellers-distributors-registry`:
+- **S-A1** backend — `da142fa` (V98 schema, `/api/resellers` CRUD + price map + order hook). Backend
+  `./mvnw compile` is **green**.
+- **S-A2** frontend — `61070de` (page, order-form picker + price auto-fill, collections source filter,
+  access wiring, cache-bust `u22`). `node --check js/app.js` **passes**.
+- **S-A3** runbook — `c132124` (this file). Plan reconciled at `14cedd7`.
+- **PR:** https://github.com/jfy-g0395/rrbm-report-inventory/pull/5 (**open**).
+
+**Pre-flight reconciliation (why V98):** built off `origin/main` `0e51159`; head was **V97** (not the plan's
+V92), so the migration was renumbered `V93 → V98` and all money columns set to `numeric(13,5)` per V96.
+No collisions.
+
+**Done:** code written, committed, pushed; compiles; JS syntax valid.
+**NOT done (in order):**
+1. ⏳ **Functional test** on an isolated/staging Postgres (§3) — nothing has touched a database yet.
+2. ⏳ **Review + merge PR #5** into `main` (human gate).
+3. ⏳ **Deploy to live** (§2) — back up the live DB before applying V98.
+
+Do **not** deploy until 1–2 are done. Follow §0 pre-flight every session. This block is the source of
+truth for progress — update it as stages complete (mark ✅ DEPLOYED with the merge commit + Flyway
+confirmation, like `RUNBOOK-daily-report-pizza-boxes-dispatched.md`, once live).
+
+---
+
 **Branch:** `feat/resellers-distributors-registry` (off `main`)
 **Audience:** Claude Code (or engineer) on the **live server**
 **Type:** New feature — deploy + verify (schema V98 + backend + frontend).
