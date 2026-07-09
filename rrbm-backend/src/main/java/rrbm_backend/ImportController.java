@@ -2081,7 +2081,7 @@ public class ImportController {
                 item.setOpAmount(
                     itemRow.opPerUnit()
                            .multiply(new BigDecimal(itemRow.qty()))
-                           .setScale(2, RoundingMode.HALF_UP)
+                           .setScale(5, RoundingMode.HALF_UP)
                 );
             }
             order.addItem(item);
@@ -2143,7 +2143,7 @@ public class ImportController {
                         BigDecimal opVal = new BigDecimal(op.toString());
                         item.setOpPerUnit(opVal);
                         item.setOpAmount(opVal.multiply(
-                                new BigDecimal(item.getQuantity())).setScale(2, RoundingMode.HALF_UP));
+                                new BigDecimal(item.getQuantity())).setScale(5, RoundingMode.HALF_UP));
                     } else {
                         item.setOpPerUnit(null);
                         item.setOpAmount(null);

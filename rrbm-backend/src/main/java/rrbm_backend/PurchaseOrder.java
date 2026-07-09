@@ -63,7 +63,7 @@ public class PurchaseOrder {
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    @Column(name = "total_amount", precision = 15, scale = 2)
+    @Column(name = "total_amount", precision = 18, scale = 5)
     private BigDecimal totalAmount = BigDecimal.ZERO;
 
     @OneToMany(mappedBy = "purchaseOrder", cascade = CascadeType.ALL,

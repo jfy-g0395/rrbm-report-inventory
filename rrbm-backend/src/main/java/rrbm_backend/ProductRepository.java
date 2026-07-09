@@ -50,6 +50,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT DISTINCT p.subCategory FROM Product p WHERE p.category = :category AND p.subCategory IS NOT NULL AND TRIM(p.subCategory) <> '' ORDER BY p.subCategory")
     List<String> findDistinctSubCategoryByCategory(@org.springframework.data.repository.query.Param("category") String category);
 
+    /** Grand total stock (wh1 + wh2 + wh3) read fresh from the DB. Used by
+     *  logMovement to stamp the running total after a movement; a JPQL SELECT
+     *  auto-flushes pending entity mutations first and reflects atomic in-DB
+     *  updates (addStockWhN), so it is correct for every stock-change path. */
+    @Query("SELECT COALESCE(p.stockWh1,0) + COALESCE(p.stockWh2,0) + COALESCE(p.stockWh3,0) FROM Product p WHERE p.id = :id")
+    Integer sumStockById(@Param("id") Long id);
+
     java.util.Optional<Product> findByItemCode(String itemCode);
 
     java.util.Optional<Product> findByProductCode(String productCode);

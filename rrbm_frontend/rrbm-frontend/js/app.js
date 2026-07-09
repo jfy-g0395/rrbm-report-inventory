@@ -298,7 +298,7 @@
     var up = parseFloat(($(unitId) || {}).value) || 0;
     var bp = parseFloat(($(baseId) || {}).value) || 0;
     var opEl = $(opId);
-    if (opEl) opEl.value = Math.max(0, up - bp).toFixed(2);
+    if (opEl) opEl.value = Math.max(0, up - bp).toFixed(5);
   }
 
   // ================================================================
@@ -619,7 +619,7 @@
           + ivmBtn
           + cancelBtn;
       } else if (o.status === 'DELIVERED') {
-        const safeTotal = Number(o.total || 0).toFixed(2);
+        const safeTotal = Number(o.total || 0).toFixed(3);
         if (o.refundedAt) {
           actions = '<span style="color:#F59E0B;font-size:12px;font-weight:600;"><i class="ti ti-receipt-refund"></i> Returned</span>';
           if (canManageOrders()) {
@@ -791,20 +791,20 @@
     const receiptRef = ecomOrderRef(order) || order.id;
 
     const itemRows = (order.items || []).map(function (item) {
-      const sub = Number(item.subtotal || 0).toFixed(2);
+      const sub = Number(item.subtotal || 0).toFixed(3);
       return '<tr>'
         + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;">' + escapeHtml(item.productName) + '</td>'
         + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:center;">' + item.quantity + '</td>'
-        + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:right;">₱' + Number(item.unitPrice || 0).toFixed(2) + '</td>'
+        + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:right;">₱' + Number(item.unitPrice || 0).toFixed(3) + '</td>'
         + '<td style="padding:8px 10px;border-bottom:1px solid #f0e8d0;text-align:right;">₱' + sub + '</td>'
         + '</tr>';
     }).join('');
 
     const voidedAmt    = Number(order.voidedAmount  || 0);
-    const subtotal     = Number(order.subtotal     || 0).toFixed(2);
-    const discount     = Number(order.discount     || 0).toFixed(2);
+    const subtotal     = Number(order.subtotal     || 0).toFixed(3);
+    const discount     = Number(order.discount     || 0).toFixed(3);
     const deliveryFee  = Number(order.deliveryFee  || 0);
-    const total        = (Number(order.total       || 0) - voidedAmt).toFixed(2);
+    const total        = (Number(order.total       || 0) - voidedAmt).toFixed(3);
     const payMode  = order.paymentMode || 'CASH';
     const orderType = formatOrderType(order.orderType || 'STANDARD');
     const address  = order.address ? ('<div style="margin-top:4px;font-size:12px;color:#555;">📍 ' + escapeHtml(order.address) + '</div>') : '';
@@ -927,8 +927,8 @@
           return '<tr>'
             + '<td>' + escapeHtml(item.productName || '') + '</td>'
             + '<td class="r m">' + _effQty + '</td>'
-            + '<td class="r m">&#8369;' + Number(item.unitPrice || 0).toFixed(2) + '</td>'
-            + '<td class="r b">&#8369;' + _effAmt.toFixed(2) + '</td>'
+            + '<td class="r m">&#8369;' + Number(item.unitPrice || 0).toFixed(3) + '</td>'
+            + '<td class="r b">&#8369;' + _effAmt.toFixed(3) + '</td>'
             + '</tr>';
         }).join('')
       + '</tbody></table>'
@@ -937,8 +937,8 @@
       + '<div class="rc-totals">'
       + '<div class="rc-trow"><span>Subtotal</span><span>&#8369;' + subtotal + '</span></div>'
       + '<div class="rc-trow"><span>Discount</span><span>&minus;&#8369;' + discount + '</span></div>'
-      + (deliveryFee > 0 ? '<div class="rc-trow"><span>Delivery fee</span><span>+&#8369;' + deliveryFee.toFixed(2) + '</span></div>' : '')
-      + (voidedAmt > 0 ? '<div class="rc-trow" style="color:#9CA3AF;"><span>Void adjustment</span><span>&minus;&#8369;' + voidedAmt.toFixed(2) + '</span></div>' : '')
+      + (deliveryFee > 0 ? '<div class="rc-trow"><span>Delivery fee</span><span>+&#8369;' + deliveryFee.toFixed(3) + '</span></div>' : '')
+      + (voidedAmt > 0 ? '<div class="rc-trow" style="color:#9CA3AF;"><span>Void adjustment</span><span>&minus;&#8369;' + voidedAmt.toFixed(3) + '</span></div>' : '')
       + '</div>'
 
       // Grand total
@@ -1014,7 +1014,7 @@
         : ((o.items && o.items.length > 0) ? '<span style="color:var(--text-muted);font-size:11px;">(all voided)</span>' : '-');
       const notCancelled = o.status !== 'CANCELLED';
       const safeId    = o.id.replace(/'/g, "\\'");
-      const safeTotal = Number(o.total || 0).toFixed(2);
+      const safeTotal = Number(o.total || 0).toFixed(3);
 
       // Action buttons — Ledger visible to all; Print, Refund, Void gated by canManageOrders()
       let actions = '<button class="btn btn-sm" onclick="viewOrderLedger(\'' + safeId + '\')" title="View Ledger" style="background:#7C3AED;color:#fff;margin-right:3px;"><i class="ti ti-scale"></i></button>'
@@ -1201,7 +1201,7 @@
 
       // 409 = active orders exist → offer the force-close override
       if (res.status === 409 && data.error === 'ACTIVE_ORDERS') {
-        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
         const warning = $('close-override-warning');
         if (warning) {
           warning.innerHTML = '<strong>⚠ ' + (data.count||0) + ' order(s) totalling ' + fmt(data.amount)
@@ -1299,7 +1299,7 @@
       updateBatchCollectButton();
       return;
     }
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     var payBadge = function(mode){
       var map = { CASH:'Cash', COD:'COD', GCASH:'GCash', PAYMAYA:'PayMaya',
                   BANK_TRANSFER:'Bank Transfer', BANK_DEPOSIT:'Bank Deposit', ONLINE:'Online' };
@@ -1481,7 +1481,7 @@
     }
     if (!order) { showToast('Order not found', 'error'); return; }
 
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     var created = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}) : '—';
     var displayId = ecomOrderRef(order) || order.id;
 
@@ -1746,7 +1746,7 @@
     var tb = $('invmov-tbody');
     var rows = data.movements || [];
     if (!rows.length) {
-      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:20px;">No movements in this period</td></tr>';
+      tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:20px;">No movements in this period</td></tr>';
       return;
     }
     tb.innerHTML = rows.map(function (m) {
@@ -1760,6 +1760,7 @@
         + '<td style="text-align:center;color:' + color + ';font-weight:600;">' + (isIn ? 'IN' : 'OUT') + '</td>'
         + '<td>' + escapeHtml((m.warehouse || '').toUpperCase()) + '</td>'
         + '<td style="text-align:right;color:' + color + ';font-weight:600;">' + (isIn ? '+' : '') + m.quantity + '</td>'
+        + '<td style="text-align:right;font-weight:600;">' + (m.balanceAfter != null ? Number(m.balanceAfter).toLocaleString() : '<span style="color:var(--text-muted);font-weight:400;">—</span>') + '</td>'
         + '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(m.reason || '') + '</td>'
         + '<td style="font-size:11px;">' + escapeHtml(m.referenceId || '') + '</td>'
         + '</tr>';
@@ -2499,7 +2500,7 @@
       + '<div class="col-md-1"><label class="form-label">Rejected</label>'
       + '<input type="number" class="form-control delivery-rejected" id="delivery-rejected-' + n + '" min="0" value="0" placeholder="0" /></div>'
       + '<div class="col-md-1"><label class="form-label">Unit Cost</label>'
-      + '<input type="number" class="form-control delivery-unit-cost" id="delivery-unit-cost-' + n + '" min="0" step="0.01" placeholder="₱" /></div>'
+      + '<input type="number" class="form-control delivery-unit-cost" id="delivery-unit-cost-' + n + '" min="0" step="0.00001" placeholder="₱" /></div>'
       + '<div class="col-md-1"><label class="form-label">WH</label>'
       + '<select class="form-select delivery-wh" id="delivery-wh-' + n + '"><option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">Balagtas</option></select></div>'
       + '<div class="col-md-1 text-end"><label class="form-label">&nbsp;</label>'
@@ -2606,7 +2607,7 @@
         if ($('delivery-received-' + rn)) $('delivery-received-' + rn).value = rem;
         if ($('delivery-qty-' + rn)) $('delivery-qty-' + rn).value = rem > 0 ? rem : 1;
         var cost = this.getAttribute('data-cost');
-        if (cost !== '' && $('delivery-unit-cost-' + rn)) $('delivery-unit-cost-' + rn).value = parseFloat(cost).toFixed(2);
+        if (cost !== '' && $('delivery-unit-cost-' + rn)) $('delivery-unit-cost-' + rn).value = parseFloat(cost);
         dropdown.classList.remove('show');
       });
     });
@@ -2755,7 +2756,7 @@
     if (remaining < 0) remaining = 0;
     if ($('delivery-received-' + n)) $('delivery-received-' + n).value = remaining;
     if ($('delivery-qty-' + n)) $('delivery-qty-' + n).value = remaining > 0 ? remaining : 1;
-    if (item.unitPrice != null && $('delivery-unit-cost-' + n)) $('delivery-unit-cost-' + n).value = parseFloat(item.unitPrice).toFixed(2);
+    if (item.unitPrice != null && $('delivery-unit-cost-' + n)) $('delivery-unit-cost-' + n).value = parseFloat(item.unitPrice);
   }
 
   /** Resolve a PO item's productId from the cached product list by itemCode or name. */
@@ -3071,7 +3072,7 @@
       }
     }
 
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     var items = r.items || [];
     var totalReceived = 0, totalRejected = 0;
     var totalLineCost = 0;
@@ -3194,7 +3195,7 @@
       + '<select class="form-select" id="de-wh-' + n + '">'
       + '<option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">Balagtas</option></select></div>'
       + '<div class="col-md-2"><label class="form-label">Unit Cost (₱)</label>'
-      + '<input type="number" class="form-control" id="de-uc-' + n + '" min="0" step="0.01" placeholder="Invoice cost" value="' + (preset.unitCost != null ? preset.unitCost : '') + '" /></div>'
+      + '<input type="number" class="form-control" id="de-uc-' + n + '" min="0" step="0.00001" placeholder="Invoice cost" value="' + (preset.unitCost != null ? preset.unitCost : '') + '" /></div>'
       + '<div class="col-md-1 text-end"><label class="form-label">&nbsp;</label>'
       + '<button type="button" class="btn btn-outline-danger btn-sm d-block" onclick="removeDeliveryEditRow(\'de-row-' + n + '\')"><i class="ti ti-trash"></i></button></div>'
       + '</div>');
@@ -4368,15 +4369,15 @@
       var statsEl  = $('exp-weekly-stats');
       if (statsEl) statsEl.innerHTML =
         '<div class="stat-card"><div class="stat-label">Week ' + data.week + ' · ' + data.weekStart + ' → ' + data.weekEnd + '</div>' +
-          '<div class="stat-value" style="color:var(--accent);">₱' + Number(data.grandTotal||0).toFixed(2) + '</div>' +
+          '<div class="stat-value" style="color:var(--accent);">₱' + Number(data.grandTotal||0).toFixed(3) + '</div>' +
           '<div class="stat-sub">Grand Total</div></div>' +
         '<div class="stat-card"><div class="stat-label">Week-over-Week</div>' +
           '<div class="stat-value" style="color:' + wowColor + ';font-size:20px;">' + wowText + '</div>' +
           '<div class="stat-sub">vs. Week ' + (data.week - 1 || '(prev)') + '</div></div>' +
         '<div class="stat-card"><div class="stat-label">Daily Average</div>' +
-          '<div class="stat-value" style="color:var(--accent);">₱' + Number(data.dailyAvg||0).toFixed(2) + '</div>' +
+          '<div class="stat-value" style="color:var(--accent);">₱' + Number(data.dailyAvg||0).toFixed(3) + '</div>' +
           '<div class="stat-sub">' +
-            (data.highestDay ? 'High: ₱' + Number(data.highestDay.total||0).toFixed(2) + ' (' + data.highestDay.date + ')' : 'No spend days') +
+            (data.highestDay ? 'High: ₱' + Number(data.highestDay.total||0).toFixed(3) + ' (' + data.highestDay.date + ')' : 'No spend days') +
           '</div></div>';
 
       // Day-by-day table
@@ -4387,7 +4388,7 @@
           var rowStyle = isToday ? 'background:rgba(250,214,106,0.08);font-weight:600;' : '';
           return '<tr style="' + rowStyle + '">' +
             '<td>' + d.date + (isToday ? ' <span style="color:var(--accent);font-size:11px;">(today)</span>' : '') + '</td>' +
-            '<td style="text-align:right;">' + Number(d.total||0).toFixed(2) + '</td>' +
+            '<td style="text-align:right;">' + Number(d.total||0).toFixed(3) + '</td>' +
             '<td style="text-align:right;">' + d.count + '</td>' +
             '</tr>';
         }).join('');
@@ -4399,7 +4400,7 @@
       if (data.byCategory && data.byCategory.length > 0) {
         if (catTbody) catTbody.innerHTML = data.byCategory.map(function(c) {
           return '<tr><td>' + escapeHtml(c.categoryName) + ' <span style="color:var(--text-muted);font-size:11px;">(' + c.categoryCode + ')</span></td>' +
-            '<td style="text-align:right;">' + Number(c.total||0).toFixed(2) + '</td>' +
+            '<td style="text-align:right;">' + Number(c.total||0).toFixed(3) + '</td>' +
             '<td style="text-align:right;">' + (c.pct != null ? c.pct.toFixed(1) + '%' : '—') + '</td></tr>';
         }).join('');
         if (catSection) catSection.style.display = '';
@@ -4416,7 +4417,7 @@
             '<td>#' + v.id + '</td>' +
             '<td>' + v.date + '</td>' +
             '<td>' + escapeHtml(v.voidReason || '—') + '</td>' +
-            '<td style="text-align:right;">₱' + Number(v.totalAmount||0).toFixed(2) + '</td>' +
+            '<td style="text-align:right;">₱' + Number(v.totalAmount||0).toFixed(3) + '</td>' +
             '</tr>';
         }).join('');
         if (voidSection) voidSection.style.display = '';
@@ -4453,7 +4454,7 @@
       let grandTotal = 0;
       tbody.innerHTML = data.map(function (e) {
         const itemsList = (e.items || []).map(function (i) {
-          return i.itemDescription + ' (₱' + Number(i.amount).toFixed(2) + ')';
+          return i.itemDescription + ' (₱' + Number(i.amount).toFixed(3) + ')';
         }).join(', ');
         const amt = Number(e.totalAmount || 0);
         grandTotal += amt;
@@ -4463,11 +4464,11 @@
           <td>${e.date || '—'}</td>
           <td>${e.adminName || '—'}</td>
           <td style="font-size:12px;color:var(--text-muted);">${itemsList || '—'}</td>
-          <td style="text-align:right;font-weight:600;">₱${amt.toFixed(2)}</td>
+          <td style="text-align:right;font-weight:600;">₱${amt.toFixed(3)}</td>
           <td style="font-size:11px;white-space:nowrap;">${lateBadge}${editBtn}</td>
         </tr>`;
       }).join('');
-      if (totalEl) totalEl.textContent = 'Total: ₱' + grandTotal.toFixed(2);
+      if (totalEl) totalEl.textContent = 'Total: ₱' + grandTotal.toFixed(3);
       // Store for PDF export
       window._expRangeData  = data;
       window._expRangeStart = start;
@@ -4517,7 +4518,7 @@
     const end   = window._expRangeEnd   || '';
     if (!data.length) { showToast('Load expense data first', 'error'); return; }
 
-    const fmt = function(n){ return '₱' + Number(n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+    const fmt = function(n){ return '₱' + Number(n||0).toFixed(3).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
     let grandTotal = 0;
 
     // Day-by-day rows — uses i.itemDescription (correct API field name)
@@ -4637,7 +4638,7 @@
     row.style.cssText = 'display:grid;grid-template-columns:1fr 140px 36px;gap:8px;margin-bottom:8px;';
     row.innerHTML =
       '<input type="text" class="form-control exp-item-desc" placeholder="Item description" />' +
-      '<input type="number" class="form-control exp-item-amount" placeholder="Amount" min="0" step="0.01" oninput="updateExpenseTotal()" />' +
+      '<input type="number" class="form-control exp-item-amount" placeholder="Amount" min="0" step="0.00001" oninput="updateExpenseTotal()" />' +
       '<button class="btn btn-secondary btn-sm" onclick="removeExpenseRow(this)" title="Remove" style="padding:0 10px;">×</button>';
     container.appendChild(row);
   };
@@ -6429,8 +6430,8 @@
     if (container) container.innerHTML = '';
     (o.items || []).forEach(function (it) { addDeliveryEditLine(it); });
     if (!(o.items || []).length) addDeliveryEditLine();
-    if ($('de-discount')) $('de-discount').value = Number(o.discount || 0).toFixed(2);
-    if ($('de-delivery-fee')) $('de-delivery-fee').value = Number(o.deliveryFee || 0).toFixed(2);
+    if ($('de-discount')) $('de-discount').value = Number(o.discount || 0);
+    if ($('de-delivery-fee')) $('de-delivery-fee').value = Number(o.deliveryFee || 0);
     deRecalcTotal();
     openModal('modal-delivery-edit');
   };
@@ -6451,7 +6452,7 @@
       + '<div class="col-md-2"><label class="form-label" style="font-size:11px;">Qty <span class="text-danger">*</span></label>'
         + '<input type="number" class="form-control" id="de-qty-' + n + '" min="1" value="1"></div>'
       + '<div class="col-md-2"><label class="form-label" style="font-size:11px;">Unit price (₱) <span class="text-danger">*</span></label>'
-        + '<input type="number" class="form-control" id="de-price-' + n + '" min="0" step="0.01" value="0"></div>'
+        + '<input type="number" class="form-control" id="de-price-' + n + '" min="0" step="0.00001" value="0"></div>'
       + '<div class="col-md-2"><label class="form-label" style="font-size:11px;">Warehouse</label>'
         + '<select class="form-control" id="de-wh-' + n + '" style="font-size:12px;padding:4px;">' + smWhOptions((prefill && prefill.warehouse) || 'wh1') + '</select></div>'
       + '<div class="col-md-1"><label class="form-label" style="font-size:11px;">Subtotal</label>'
@@ -6466,7 +6467,7 @@
       if ($('de-prod-input-' + n)) $('de-prod-input-' + n).value = prefill.productName || '';
       if ($('de-prod-id-' + n)) $('de-prod-id-' + n).value = prefill.productId || '';
       if ($('de-qty-' + n)) $('de-qty-' + n).value = prefill.quantity || 1;
-      if ($('de-price-' + n)) $('de-price-' + n).value = Number(prefill.unitPrice || 0).toFixed(2);
+      if ($('de-price-' + n)) $('de-price-' + n).value = Number(prefill.unitPrice || 0);
       var ps = $('de-prod-status-' + n);
       if (ps && prefill.productId) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = '✓ Catalog product'; }
       deRecalcLine(n);
@@ -6522,7 +6523,7 @@
       html += '<div class="product-dropdown-item" data-id="' + p.id + '" data-name="' + escapeHtml(p.name)
         + '" data-price="' + p.unitPrice + '" data-primary="' + primary + '" data-n="' + n + '"><div style="flex:1;"><div class="product-name">'
         + escapeHtml(p.name) + '</div><div style="font-size:10px;color:#888;">' + (parts.join(' · ') || 'No stock')
-        + '</div></div><div style="text-align:right;"><span class="product-price">₱' + parseFloat(p.unitPrice || 0).toFixed(2) + '</span></div></div>';
+        + '</div></div><div style="text-align:right;"><span class="product-price">₱' + parseFloat(p.unitPrice || 0).toFixed(3) + '</span></div></div>';
     });
     dropdown.innerHTML = html;
     dropdown.classList.add('show');
@@ -6534,7 +6535,7 @@
         var ps = $('de-prod-status-' + nn);
         if (ps) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = '✓ Catalog product'; }
         var pr = $('de-price-' + nn);
-        if (pr && (!pr.value || parseFloat(pr.value) <= 0)) pr.value = parseFloat(this.getAttribute('data-price') || 0).toFixed(2);
+        if (pr && (!pr.value || parseFloat(pr.value) <= 0)) pr.value = parseFloat(this.getAttribute('data-price') || 0);
         var wh = $('de-wh-' + nn); if (wh) wh.value = this.getAttribute('data-primary');
         deRecalcLine(nn);
         dropdown.classList.remove('show');
@@ -6970,14 +6971,14 @@
     container.insertAdjacentHTML('beforeend', '<div class="order-item-row" id="' + rowId + '"><div class="row align-items-end">'
       + '<div class="col-md-4"><label class="form-label">Product <span class="text-danger">*</span></label><div class="product-autocomplete-wrapper"><input type="text" class="form-control product-input" id="productInput-' + num + '" placeholder="Type to search products..." autocomplete="off" required><input type="hidden" class="product-id-hidden" id="productId-' + num + '" value=""><input type="hidden" id="warehouse-' + num + '" value="wh1"><div class="product-dropdown" id="productDropdown-' + num + '"></div><div id="productStatus-' + num + '" style="display:none;font-size:11px;margin-top:3px;"></div></div></div>'
       + '<div class="col-md-2"><label class="form-label">Qty <span class="text-danger">*</span></label><input type="number" class="form-control item-quantity" id="quantity-' + num + '" min="1" value="1" required></div>'
-      + '<div class="col-md-2"><label class="form-label">Unit Price (₱) <span class="text-danger">*</span></label><input type="number" class="form-control item-unit-price" id="unitPrice-' + num + '" min="0" step="0.01" value="0" required></div>'
+      + '<div class="col-md-2"><label class="form-label">Unit Price (₱) <span class="text-danger">*</span></label><input type="number" class="form-control item-unit-price" id="unitPrice-' + num + '" min="0" step="0.00001" value="0" required></div>'
       + '<div class="col-md-2"><label class="form-label">Stock Info</label><div class="stock-info-display" id="stockInfo-' + num + '" style="font-size:11px;padding:6px 8px;background:#f0f0f0;border-radius:6px;min-height:34px;display:flex;align-items:center;color:#666;">Select a product</div></div>'
       + '<div class="col-md-1"><label class="form-label">Subtotal</label><input type="text" class="form-control item-subtotal" id="subtotal-' + num + '" value="₱0.00" readonly style="background-color:#e9ecef;font-size:12px;"></div>'
       + '<div class="col-md-1 text-center"><label class="form-label">&nbsp;</label><button type="button" class="remove-item-btn d-block" onclick="removeItemRow(\'' + rowId + '\')"><i class="ti ti-trash"></i></button></div>'
       + '</div>'
       + '<div class="row agent-op-row g-2 mt-0" id="op-row-' + num + '" style="display:' + (isAgent ? '' : 'none') + ';padding:4px 0;">'
-      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Base Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="basePrice-' + num + '" min="0" step="0.01" placeholder="Company price per unit"></div>'
-      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Over Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="opPerUnit-' + num + '" min="0" step="0.01" placeholder="Auto = Unit − Base" readonly style="background-color:#e9ecef;"></div>'
+      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Base Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="basePrice-' + num + '" min="0" step="0.00001" placeholder="Company price per unit"></div>'
+      + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Over Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="opPerUnit-' + num + '" min="0" step="0.00001" placeholder="Auto = Unit − Base" readonly style="background-color:#e9ecef;"></div>'
       + '<div class="col-md-6 d-flex align-items-end" style="padding-bottom:4px;"><small style="color:#888;font-size:11px;">Over Price = Unit Price − Base Price (auto) · Commission = Over Price × Qty</small></div>'
       + '</div>'
       + '</div>');
@@ -7036,7 +7037,7 @@
       }
 
       const setLabel = product.isSet ? ' <span style="font-size:9px;font-weight:700;background:#D4860A;color:#fff;padding:1px 4px;border-radius:2px;vertical-align:middle;">SET</span>' : '';
-      html += '<div class="product-dropdown-item" data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '" data-price="' + product.unitPrice + '" data-agent-base="' + (product.agentBasePrice != null ? product.agentBasePrice : '') + '" data-wh="' + primaryWh + '" data-wh1="' + wh1 + '" data-wh2="' + wh2 + '" data-wh3="' + wh3 + '" data-isset="' + (product.isSet ? '1' : '0') + '" data-setavail="' + (setAvail == null ? '' : setAvail) + '" data-row="' + rowNum + '"><div style="flex:1;"><div class="product-name">' + product.name + setLabel + '</div><div style="font-size:10px;color:#888;">' + (whParts.join(' · ') || 'No stock') + '</div></div><div style="text-align:right;"><span class="product-price">₱' + parseFloat(product.unitPrice).toFixed(2) + '</span><br><span class="product-stock ' + stockClass + '">' + stockLabel + '</span></div></div>';
+      html += '<div class="product-dropdown-item" data-id="' + product.id + '" data-name="' + escapeHtml(product.name) + '" data-price="' + product.unitPrice + '" data-agent-base="' + (product.agentBasePrice != null ? product.agentBasePrice : '') + '" data-wh="' + primaryWh + '" data-wh1="' + wh1 + '" data-wh2="' + wh2 + '" data-wh3="' + wh3 + '" data-isset="' + (product.isSet ? '1' : '0') + '" data-setavail="' + (setAvail == null ? '' : setAvail) + '" data-row="' + rowNum + '"><div style="flex:1;"><div class="product-name">' + product.name + setLabel + '</div><div style="font-size:10px;color:#888;">' + (whParts.join(' · ') || 'No stock') + '</div></div><div style="text-align:right;"><span class="product-price">₱' + parseFloat(product.unitPrice).toFixed(3) + '</span><br><span class="product-stock ' + stockClass + '">' + stockLabel + '</span></div></div>';
     });
     dropdown.innerHTML = html; dropdown.classList.add('show');
     dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
@@ -7047,11 +7048,11 @@
         $('productInput-' + rn).value = this.getAttribute('data-name');
         $('productId-' + rn).value = this.getAttribute('data-id');
         var ps = $('productStatus-' + rn); if (ps) { ps.style.display = ''; ps.style.color = '#10B981'; ps.textContent = '✓ Catalog product'; }
-        $('unitPrice-' + rn).value = parseFloat(this.getAttribute('data-price')).toFixed(2);
+        $('unitPrice-' + rn).value = parseFloat(this.getAttribute('data-price'));
         // Agent auto-pricing: base price auto-fills (still editable), over price locks to Unit − Base.
         if ((($('field-source') || {}).value) === 'AGENT') {
           var ab = this.getAttribute('data-agent-base');
-          if (ab !== '' && ab != null && $('basePrice-' + rn)) $('basePrice-' + rn).value = parseFloat(ab).toFixed(2);
+          if (ab !== '' && ab != null && $('basePrice-' + rn)) $('basePrice-' + rn).value = parseFloat(ab);
           _recomputeOverPrice('unitPrice-' + rn, 'basePrice-' + rn, 'opPerUnit-' + rn);
         }
         const si = $('stockInfo-' + rn);
@@ -7078,7 +7079,7 @@
 
   function calcItemSubtotal(rn) {
     const q = parseFloat(($('quantity-' + rn) || {}).value) || 0, p = parseFloat(($('unitPrice-' + rn) || {}).value) || 0;
-    const el = $('subtotal-' + rn); if (el) el.value = '₱' + (q * p).toFixed(2);
+    const el = $('subtotal-' + rn); if (el) el.value = '₱' + (q * p).toFixed(3);
     calculateOrderTotals();
   }
 
@@ -7089,7 +7090,7 @@
     });
     const disc = $('orderDiscount');
     if (disc) {
-      disc.value = pct === 0 ? '0' : (sub * pct / 100).toFixed(2);
+      disc.value = pct === 0 ? '0' : (sub * pct / 100).toFixed(3);
       calculateOrderTotals();
     }
   };
@@ -7098,13 +7099,13 @@
     let sub = 0; $$('.item-subtotal').forEach(function (i) { sub += parseFloat(i.value.replace('₱', '')) || 0; });
     const disc = parseFloat(($('orderDiscount')     || {}).value) || 0;
     const fee  = parseFloat(($('orderDeliveryFee')  || {}).value) || 0;
-    if ($('orderSubtotal'))       $('orderSubtotal').textContent       = '₱' + sub.toFixed(2);
-    if ($('orderDiscountAmount')) $('orderDiscountAmount').textContent  = '-₱' + disc.toFixed(2);
+    if ($('orderSubtotal'))       $('orderSubtotal').textContent       = '₱' + sub.toFixed(3);
+    if ($('orderDiscountAmount')) $('orderDiscountAmount').textContent  = '-₱' + disc.toFixed(3);
     if ($('orderDeliveryFeeDisplay')) {
       $('orderDeliveryFeeDisplay').style.display = fee > 0 ? 'flex' : 'none';
     }
-    if ($('orderDeliveryFeeAmt'))    $('orderDeliveryFeeAmt').textContent = '+₱' + fee.toFixed(2);
-    if ($('orderTotal'))          $('orderTotal').textContent           = '₱' + (sub - disc + fee).toFixed(2);
+    if ($('orderDeliveryFeeAmt'))    $('orderDeliveryFeeAmt').textContent = '+₱' + fee.toFixed(3);
+    if ($('orderTotal'))          $('orderTotal').textContent           = '₱' + (sub - disc + fee).toFixed(3);
   }
 
   // ================================================================
@@ -8622,7 +8623,7 @@
   // ================================================================
   function loadChannelSummary(period) {
     period = period || appState.dashPeriod || 'daily';
-    const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     fetch(API_BASE + '/api/dashboard/channel-summary?period=' + period, { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(d){
@@ -9603,8 +9604,11 @@
       // Carry customer name from first non-blank occurrence
       if (customer && !orderMap[orderNo].customer) orderMap[orderNo].customer = customer;
 
-      // Unit price derived from CSV line total — preserves actual ecommerce pricing
-      var unitPrice = total > 0 ? Math.round((total / qty) * 100) / 100 : 0;
+      // Unit price derived from CSV line total — preserves actual ecommerce pricing.
+      // Computed at 5 decimals (system-wide money precision) so qty × unitPrice
+      // matches the marketplace Total instead of drifting a few centavos. The
+      // preview shows 3 decimals; the full 5-decimal value is what gets stored.
+      var unitPrice = total > 0 ? Math.round((total / qty) * 1e5) / 1e5 : 0;
 
       // Match: SKU exact first, then name fuzzy
       var match = matchCsvProduct(prodName, csvSku);
@@ -9793,9 +9797,12 @@
       if (score > bestScore) { bestScore = score; best = prod; }
     });
 
-    if (!best || bestScore < 2) return null;    // raised minimum threshold
-    // High: ≥ 5 points; Low: 2–4
-    return { product: best, confidence: bestScore >= 5 ? 'high' : 'low' };
+    if (!best || bestScore < 2) return null;    // no usable name guess
+    // Name matches are SUGGESTIONS only — never auto-trusted. Only an exact SKU
+    // code match (Step 1 above) is 'high' (green / importable). A name guess is
+    // returned as 'suggested': it pre-fills the row as a starting point but stays
+    // RED and must be confirmed by a person before it can import.
+    return { product: best, confidence: 'suggested' };
   }
 
   // Build platform badge HTML
@@ -9835,23 +9842,20 @@
         .join('');
     }
 
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
 
     var html = '';
     orders.forEach(function(order, oi) {
-      // Compute match status
+      // Two states only (no "review"): every item must be confirmed green, or the
+      // whole order is red / "Fix needed".
       var allHigh   = order.items.every(function(i){ return i.confidence === 'high'; });
-      var anyNull   = order.items.some(function(i){  return i.confidence === null; });
       var statusChip, statusClass;
-      if (anyNull) {
-        statusChip  = '<span style="background:#EF4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Fix needed</span>';
-        statusClass = 'fix';
-      } else if (allHigh) {
+      if (allHigh) {
         statusChip  = '<span style="background:#10B981;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Ready</span>';
         statusClass = 'ready';
       } else {
-        statusChip  = '<span style="background:#F59E0B;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Review</span>';
-        statusClass = 'review';
+        statusChip  = '<span style="background:#EF4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Fix needed</span>';
+        statusClass = 'fix';
       }
 
       // Header row — chip gets an id so we can update it live as user corrects items
@@ -9887,10 +9891,9 @@
         + '<tbody>';
 
       order.items.forEach(function(item, ii) {
-        // Border colour indicates confidence: green=high, amber=low, red=unmatched
-        var borderColor = item.confidence === 'high' ? '#10B981'
-                        : item.confidence === 'low'  ? '#F59E0B'
-                        : '#EF4444';
+        // Two states only: green = confirmed (exact SKU match or hand-picked),
+        // red = everything else (name guess or no match) — confirm before import.
+        var borderColor = item.confidence === 'high' ? '#10B981' : '#EF4444';
         var lineTotal = (item.qty || 0) * (item.unitPrice || 0);
         var inputBase = 'border-radius:4px;background:var(--bg);color:var(--fg);font-size:11px;padding:3px 5px;';
 
@@ -9904,6 +9907,7 @@
           +   ' value="' + escapeHtml(item.productName || '') + '"'
           +   ' placeholder="Type to search inventory…"'
           +   ' oninput="onImportProdInput(this,' + oi + ',' + ii + ')"'
+          +   ' onblur="onImportProdInput(this,' + oi + ',' + ii + ')"'
           +   ' style="width:100%;min-width:180px;' + inputBase + 'border:1.5px solid ' + borderColor + ';"></td>'
           // Editable qty
           + '<td style="text-align:right;"><input type="number" id="ipq-' + oi + '-' + ii + '"'
@@ -9912,7 +9916,7 @@
           +   ' style="width:58px;text-align:right;' + inputBase + 'border:1px solid var(--border);"></td>'
           // Editable unit price
           + '<td style="text-align:right;"><input type="number" id="ipp-' + oi + '-' + ii + '"'
-          +   ' value="' + Number(item.unitPrice || 0).toFixed(2) + '" min="0" step="0.01"'
+          +   ' value="' + Number(item.unitPrice || 0).toFixed(3) + '" min="0" step="0.00001"'
           +   ' oninput="onImportPriceInput(this,' + oi + ',' + ii + ')"'
           +   ' style="width:78px;text-align:right;' + inputBase + 'border:1px solid var(--border);"></td>'
           // Line total (read-only, auto-updated)
@@ -9990,7 +9994,7 @@
     if (!item) return;
     var lt = (item.qty || 0) * (item.unitPrice || 0);
     var cell = document.getElementById('iplt-' + oi + '-' + ii);
-    if (cell) cell.textContent = '₱' + lt.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if (cell) cell.textContent = '₱' + lt.toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3});
   }
 
   /** Update the status chip on the order's header row based on current item states. */
@@ -9998,15 +10002,9 @@
     var order = _importParsed[oi];
     if (!order) return;
     var allHigh = order.items.every(function(i){ return i.confidence === 'high'; });
-    var anyNull = order.items.some(function(i){  return i.confidence === null; });
-    var chip;
-    if (anyNull) {
-      chip = '<span style="background:#EF4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Fix needed</span>';
-    } else if (allHigh) {
-      chip = '<span style="background:#10B981;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Ready</span>';
-    } else {
-      chip = '<span style="background:#F59E0B;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Review</span>';
-    }
+    var chip = allHigh
+      ? '<span style="background:#10B981;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Ready</span>'
+      : '<span style="background:#EF4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Fix needed</span>';
     var chipCell = document.getElementById('import-chip-' + oi);
     if (chipCell) chipCell.innerHTML = chip;
   }
@@ -10021,34 +10019,48 @@
   };
 
   function updateImportSummary() {
-    var ready = 0, review = 0, fix = 0;
+    var ready = 0, fix = 0;
     _importParsed.forEach(function(order) {
-      var anyNull  = order.items.some(function(i){ return i.confidence === null; });
-      var allHigh  = order.items.every(function(i){ return i.confidence === 'high'; });
-      if (anyNull)       fix++;
-      else if (allHigh)  ready++;
-      else               review++;
+      // Green (importable) ONLY when every item is confirmed — an exact SKU/code
+      // match or a hand-picked product ('high'). Anything else (a name guess or
+      // no match) makes the whole order red and it must be fixed first.
+      var allHigh = order.items.every(function(i){ return i.confidence === 'high'; });
+      if (allHigh) ready++;
+      else         fix++;
     });
     var btn     = document.getElementById('import-submit-btn');
     var summary = document.getElementById('import-summary-line');
-    var importable = ready + review;
-    if (btn) btn.disabled = importable === 0;
-    if (btn) btn.innerHTML = importable > 0
-      ? '<i class="ti ti-cloud-upload"></i>  Import ' + importable + ' Order' + (importable > 1 ? 's' : '')
+    if (btn) btn.disabled = ready === 0;
+    if (btn) btn.innerHTML = ready > 0
+      ? '<i class="ti ti-cloud-upload"></i>  Import ' + ready + ' Order' + (ready > 1 ? 's' : '')
       : '  No orders ready';
     if (summary) {
       summary.style.display = _importParsed.length ? '' : 'none';
       summary.innerHTML = '<span style="color:#10B981;font-weight:600;">' + ready + ' ready</span>'
-        + (review ? ' &nbsp;·&nbsp; <span style="color:#F59E0B;font-weight:600;">' + review + ' review</span>' : '')
-        + (fix    ? ' &nbsp;·&nbsp; <span style="color:#EF4444;font-weight:600;">' + fix + ' need fixing</span>' : '');
+        + (fix ? ' &nbsp;·&nbsp; <span style="color:#EF4444;font-weight:600;">' + fix + ' need fixing</span>' : '');
     }
   }
 
   window.submitCsvImport = async function() {
     var importable = _importParsed.filter(function(order){
-      return order.items.every(function(i){ return i.confidence !== null; });
+      // Only fully-confirmed orders import — every item must be an exact SKU match
+      // or a hand-picked product ('high'). Name guesses ('suggested') and
+      // unmatched (null) rows are excluded until a person confirms them.
+      return order.items.every(function(i){ return i.confidence === 'high'; });
     });
     if (!importable.length) { showToast('No orders ready to import', 'error'); return; }
+
+    // Orders left RED (not confirmed) — never sent; reported as "not submitted".
+    var notSubmitted = _importParsed.filter(function(order){
+      return !order.items.every(function(i){ return i.confidence === 'high'; });
+    }).map(function(order){
+      var bad = order.items.filter(function(i){ return i.confidence !== 'high'; }).length;
+      return {
+        ref:      (order.allOrderNos && order.allOrderNos.length > 1) ? order.allOrderNos.join(', ') : order.orderNo,
+        customer: order.customer || '—',
+        reason:   bad + ' item' + (bad !== 1 ? 's' : '') + ' not confirmed (still red)'
+      };
+    });
 
     var paymentMode = (document.getElementById('import-payment-mode') || {}).value || 'COD';
     var orderStatus = (document.getElementById('import-order-status') || {}).value || 'ACTIVE';
@@ -10098,32 +10110,28 @@
         return;
       }
       const result = await res.json();
-      var imported = result.imported || 0;
-      var failed   = result.failed   || 0;
-      var skippedList = result.skipped || [];
-      if (imported === 0 && failed > 0 && skippedList.length === 0) {
-        // Nothing went through — leave modal open so user can retry
-        showToast('All ' + failed + ' order' + (failed !== 1 ? 's' : '') + ' failed to import', 'error');
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-cloud-upload"></i>  Import Orders'; }
-        return;
-      }
-      // At least some orders were imported (or skipped as dupes) — close main modal and reload
-      closeModal('modal-import-ecom');
-      var msg = imported + ' order' + (imported !== 1 ? 's' : '') + ' imported';
-      if (failed) msg += ' · ' + failed + ' failed';
-      if (skippedList.length) msg += ' · ' + skippedList.length + ' duplicate' + (skippedList.length !== 1 ? 's' : '') + ' skipped';
-      showToast(msg, (failed || skippedList.length) ? 'warning' : 'success');
+      var imported    = result.imported  || 0;
+      var failed      = result.failed    || 0;
+      var succeededL  = result.succeeded || [];
+      var errorsL     = result.errors    || [];
+      var skippedList = result.skipped   || [];
+
+      // Refresh the order list, then show the full report: what got in, what did
+      // not (failed + reason), duplicates skipped, and rows left red (not sent).
       loadOrders();
-      // Show skipped-orders modal if any duplicates were found
-      if (skippedList.length > 0) {
-        var skippedTbody = $('csv-skipped-tbody');
-        if (skippedTbody) {
-          skippedTbody.innerHTML = skippedList.map(function(s) {
-            return '<tr><td>' + escapeHtml(s.ref || '—') + '</td><td>' + escapeHtml(s.customer || '—') + '</td></tr>';
-          }).join('');
-        }
-        setText('csv-skipped-count', skippedList.length + ' order' + (skippedList.length !== 1 ? 's' : '') + ' already exist in the system and were not re-imported.');
-        openModal('modal-csv-skipped');
+      showImportReport(succeededL, errorsL, skippedList, notSubmitted);
+
+      var msg = imported + ' imported'
+        + (failed ? ' · ' + failed + ' failed' : '')
+        + (skippedList.length ? ' · ' + skippedList.length + ' duplicate' + (skippedList.length !== 1 ? 's' : '') : '');
+      showToast(msg, (failed || skippedList.length) ? 'warning' : 'success');
+
+      // Close the import modal only if something actually went in (or was a dup).
+      // If everything failed, leave it open behind the report so they can retry.
+      if (imported > 0 || skippedList.length > 0) {
+        closeModal('modal-import-ecom');
+      } else if (btn) {
+        btn.disabled = false; btn.innerHTML = '<i class="ti ti-cloud-upload"></i>  Import Orders';
       }
     } catch (err) {
       // Network timeout or parse error — the backend may have already committed some/all orders.
@@ -10133,6 +10141,64 @@
       showToast('Connection timed out — check the order list to see what was saved', 'warning');
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-cloud-upload"></i>  Import Orders'; }
     }
+  };
+
+  /**
+   * Build and open the post-import report so staff can double-check what went in
+   * and what did not. Four sections (each shown only when it has rows):
+   *   - Imported          (green)  — orders saved to the system
+   *   - Failed            (red)    — sent but rejected, with the reason why
+   *   - Duplicates        (grey)   — already in the system, not re-imported
+   *   - Not submitted     (amber)  — left red / unconfirmed, never sent
+   */
+  window.showImportReport = function(succeeded, errors, skipped, notSubmitted) {
+    var s = succeeded || [], e = errors || [], k = skipped || [], n = notSubmitted || [];
+
+    var summary = document.getElementById('import-report-summary');
+    if (summary) {
+      summary.innerHTML =
+          '<span style="color:#10B981;font-weight:700;">' + s.length + ' imported</span>'
+        + (e.length ? ' &nbsp;·&nbsp; <span style="color:#EF4444;font-weight:700;">' + e.length + ' failed</span>' : '')
+        + (k.length ? ' &nbsp;·&nbsp; <span style="color:#6B7280;font-weight:700;">' + k.length + ' duplicate' + (k.length !== 1 ? 's' : '') + '</span>' : '')
+        + (n.length ? ' &nbsp;·&nbsp; <span style="color:#B45309;font-weight:700;">' + n.length + ' not confirmed</span>' : '');
+    }
+
+    function section(title, color, icon, rows, render) {
+      if (!rows.length) return '';
+      return '<div style="margin-top:14px;">'
+        + '<div style="font-weight:700;font-size:12px;color:' + color + ';margin-bottom:5px;">'
+        +   '<i class="ti ' + icon + '" style="margin-right:4px;"></i>' + title + ' (' + rows.length + ')</div>'
+        + '<table class="table" style="margin:0;font-size:11px;"><tbody>'
+        + rows.map(render).join('')
+        + '</tbody></table></div>';
+    }
+
+    var body = document.getElementById('import-report-body');
+    if (body) {
+      var html = '';
+      html += section('Imported', '#10B981', 'ti-circle-check', s, function(r){
+        return '<tr><td style="font-family:monospace;white-space:nowrap;">' + escapeHtml(String(r.ref || '—'))
+          + '</td><td>' + escapeHtml(r.customer || '—')
+          + '</td><td style="text-align:right;color:var(--text-muted);">' + (r.items || 0) + ' item' + ((r.items || 0) !== 1 ? 's' : '') + '</td></tr>';
+      });
+      html += section('Did NOT go through — failed', '#EF4444', 'ti-circle-x', e, function(r){
+        return '<tr><td style="font-family:monospace;white-space:nowrap;">' + escapeHtml(String(r.ref || '—'))
+          + '</td><td>' + escapeHtml(r.customer || '—')
+          + '</td><td style="color:#EF4444;">' + escapeHtml(r.reason || 'Unknown error') + '</td></tr>';
+      });
+      html += section('Skipped — already in system (duplicate)', '#6B7280', 'ti-copy', k, function(r){
+        return '<tr><td style="font-family:monospace;white-space:nowrap;">' + escapeHtml(String(r.ref || '—'))
+          + '</td><td>' + escapeHtml(r.customer || '—') + '</td></tr>';
+      });
+      html += section('Not submitted — left red / not confirmed', '#B45309', 'ti-alert-triangle', n, function(r){
+        return '<tr><td style="font-family:monospace;white-space:nowrap;">' + escapeHtml(String(r.ref || '—'))
+          + '</td><td>' + escapeHtml(r.customer || '—')
+          + '</td><td style="color:#B45309;">' + escapeHtml(r.reason || 'not confirmed') + '</td></tr>';
+      });
+      body.innerHTML = html || '<div style="color:var(--text-muted);padding:16px;text-align:center;">Nothing to report.</div>';
+    }
+
+    openModal('modal-import-report');
   };
 
   // ================================================================
@@ -10175,7 +10241,7 @@
   function renderPoList(data) {
     var tbody = $('po-list-tbody');
     if (!tbody) return;
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     if (!data.length) {
       tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px;">No purchase orders</td></tr>';
       return;
@@ -10221,7 +10287,7 @@
   }
 
   function buildPoDetailHtml(po) {
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     var items = po.items || [];
     var rows = items.map(function(item){
       var fulfilled    = item.isFulfilled;
@@ -10535,7 +10601,7 @@
            'onchange="lookupPoItemDesc(this)" onblur="lookupPoItemDesc(this)" /></td>' +
       '<td><input type="number" class="form-control form-control-sm po-item-qty" value="1" min="1" ' +
            'style="text-align:right;min-width:90px;width:100%;" oninput="calculatePoTotal()" /></td>' +
-      '<td><input type="number" class="form-control form-control-sm po-item-price" value="0" min="0" step="0.01" ' +
+      '<td><input type="number" class="form-control form-control-sm po-item-price" value="0" min="0" step="0.00001" ' +
            'style="text-align:right;" oninput="calculatePoTotal()" /></td>' +
       '<td style="text-align:right;font-weight:600;" class="po-item-lt">₱0.00</td>' +
       '<td><button class="icon-btn" onclick="removePoItemRow(this)" title="Remove"><i class="ti ti-trash" style="color:#EF4444;"></i></button></td>';
@@ -10643,9 +10709,9 @@
       var lt    = qty * price;
       total    += lt;
       var ltCell = tr.querySelector('.po-item-lt');
-      if (ltCell) ltCell.textContent = '₱' + lt.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+      if (ltCell) ltCell.textContent = '₱' + lt.toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3});
     });
-    if (totEl) totEl.textContent = '₱' + total.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+    if (totEl) totEl.textContent = '₱' + total.toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3});
   };
 
   window.submitNewPO = function() {
@@ -10730,7 +10796,7 @@
     var po = _allPoData.find(function(p){ return p.id === id; });
     if (!po) { showToast('PO not found', 'error'); return; }
 
-    var fmt  = function(n){ return '&#8369;' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt  = function(n){ return '&#8369;' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     var poDate = po.createdAt
       ? new Date(po.createdAt).toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric'})
       : new Date().toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric'});
@@ -11179,7 +11245,7 @@
                'style="min-width:130px;" /></td>' +
           '<td><input type="number" class="form-control form-control-sm" id="edit-map-cost-' + m.id + '" ' +
                'value="' + (m.unitCost != null ? m.unitCost : '') + '" ' +
-               'step="0.01" min="0" style="text-align:right;min-width:90px;" /></td>' +
+               'step="0.00001" min="0" style="text-align:right;min-width:90px;" /></td>' +
           '<td style="text-align:center;">' +
             '<input type="checkbox" id="edit-map-pref-' + m.id + '"' + (isPreferred ? ' checked' : '') +
             ' style="width:14px;height:14px;" /></td>' +
@@ -11399,7 +11465,7 @@
 
   /** Build the HTML content used for both the detail modal and the PDF */
   function _buildDailyReportHTML(rep, orders, activityLogs, opts, cashEntries, expenseBreakdown) {
-    var fmt = function(v) { return '₱' + Number(v||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(v) { return '₱' + Number(v||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     var netVal   = rep.netSales != null ? rep.netSales : rep.totalRevenue;
     var grossVal = rep.grossSales != null ? rep.grossSales : rep.totalRevenue;
     var closedAt = rep.closedAt ? (formatDate(rep.closedAt) + ' at ' + formatTime(rep.closedAt)) : '—';
@@ -11730,7 +11796,7 @@
     var summary = $('rep-payables-summary');
     if (!tb) return;
     tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</td></tr>';
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     fetch(API_BASE + '/api/payables', { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(records){
@@ -11763,7 +11829,7 @@
     var summary = $('rep-collections-summary');
     if (!tb) return;
     tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</td></tr>';
-    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     fetch(API_BASE + '/api/orders/collections', { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(orders){
@@ -11889,7 +11955,7 @@
     renderSalesVsExpChart(chartLabels, salesValues, expenseValues);
 
     // Month-over-month comparison cards
-    var fmtCurr = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    var fmtCurr = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     setText('rep-mom-curr-orders', Number(data.totalOrders||0).toLocaleString());
     setText('rep-mom-curr-rev',    fmtCurr(data.totalRevenue));
     if (data.prevMonth) {
@@ -12148,7 +12214,7 @@
   function renderSourceBreakdown(data) {
     const list   = data.breakdown || [];
     const tbody  = $('rep-source-tbody');
-    const fmt    = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    const fmt    = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     if (tbody) {
       if (!list.length) {
         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No data</td></tr>';
@@ -12210,7 +12276,7 @@
       .then(function(data){
         const list  = data.agents || [];
         const tbody = $('rep-top-agents-tbody');
-        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
         if (!tbody) return;
         if (!list.length) {
           tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No agent/reseller orders this month</td></tr>';
@@ -12240,7 +12306,7 @@
       .then(function(data){
         const list  = data.dates || [];
         const tbody = $('rep-top-dates-tbody');
-        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
         if (!tbody) return;
         if (!list.length) {
           tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No data</td></tr>';
@@ -12267,7 +12333,7 @@
     fetch(API_BASE + '/api/reports/pizza-summary' + (month ? '?month=' + month : ''), { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(data){
-        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
 
         // Channel grid cells
         var dQtyEl = $('rep-pizza-direct-qty');
@@ -12313,7 +12379,7 @@
     fetch(API_BASE + '/api/reports/non-pizza-summary' + (month ? '?month=' + month : ''), { headers: authHeaders() })
       .then(function(res){ return res.json(); })
       .then(function(data){
-        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
 
         // Cache for modal
         _nonPizzaProducts = data.topProducts || [];
@@ -12337,7 +12403,7 @@
 
   window.openNonPizzaModal = function() {
     const tbody = $('nonpizza-modal-tbody');
-    const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     if (tbody) {
       if (!_nonPizzaProducts.length) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No data — load the monthly report first</td></tr>';
@@ -12367,7 +12433,7 @@
       .then(function(data){
         const days  = data.days || [];
         const tbody = $('rep-daily-tbody');
-        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
         if (!tbody) return;
         if (!days.length) {
           tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">No orders this month</td></tr>';
@@ -12397,7 +12463,7 @@
       .then(function(data){
         const list  = data.items || [];
         const tbody = $('rep-hot-selling-tbody');
-        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt   = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
         if (!tbody) return;
         if (!list.length) {
           tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No HOT/SELLING tagged items sold this month</td></tr>';
@@ -12426,7 +12492,7 @@
       .then(function(res){ return res.json(); })
       .then(function(data){
         const totalEl = $('rep-delivery-fees-total');
-        const fmt     = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt     = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
         if (totalEl) totalEl.textContent = 'Total collected: ' + fmt(data.totalFees) + ' (' + (data.orderCount || 0) + ' orders)';
         const list  = data.orders || [];
         const tbody = $('rep-delivery-fees-tbody');
@@ -12458,7 +12524,7 @@
       .then(function(res){ return res.json(); })
       .then(function(data){
         const grandEl = $('rep-expense-grand-total');
-        const fmt     = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+        const fmt     = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
         if (grandEl) grandEl.textContent = 'Total: ' + fmt(data.grandTotal);
         const list  = data.breakdown || [];
         const tbody = $('rep-expense-tbody');
@@ -12491,7 +12557,7 @@
   }
 
   function renderEcommerceBreakdown(data) {
-    const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+    const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     const platforms = data.platforms || [];
 
     setText('rep-ecom-orders',   Number(data.totalOrders||0).toLocaleString());
@@ -12860,12 +12926,12 @@
           }
           var effSubtotal = Number(it.unitPrice || 0) * active;
           var subtotalHtml = fullyVoided
-            ? '<span style="text-decoration:line-through;color:var(--text-muted);">&#8369;' + Number(it.subtotal || 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2}) + '</span>'
-            : '&#8369;' + effSubtotal.toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2});
+            ? '<span style="text-decoration:line-through;color:var(--text-muted);">&#8369;' + Number(it.subtotal || 0).toLocaleString('en-PH', {minimumFractionDigits:3,maximumFractionDigits:3}) + '</span>'
+            : '&#8369;' + effSubtotal.toLocaleString('en-PH', {minimumFractionDigits:3,maximumFractionDigits:3});
           return '<tr>'
             + '<td style="font-size:12px;">' + nameHtml + '</td>'
             + qtyHtml
-            + '<td style="text-align:right;font-size:12px;">&#8369;' + Number(it.unitPrice || 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
+            + '<td style="text-align:right;font-size:12px;">&#8369;' + Number(it.unitPrice || 0).toLocaleString('en-PH', {minimumFractionDigits:3,maximumFractionDigits:3}) + '</td>'
             + '<td style="text-align:right;font-size:12px;">' + subtotalHtml + '</td>'
             + '</tr>';
         }).join('')
@@ -12876,16 +12942,16 @@
     var effTotal = Number(order.total || 0) - vAmt;
     var totalsHtml = '<div style="text-align:right;font-size:13px;border-top:1px solid var(--border-light);padding-top:8px;">';
     if (Number(order.discount || 0) > 0) {
-      totalsHtml += '<div style="color:var(--text-muted);">Discount: <span style="color:#10B981;">&#8722;&#8369;' + Number(order.discount).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2}) + '</span></div>';
+      totalsHtml += '<div style="color:var(--text-muted);">Discount: <span style="color:#10B981;">&#8722;&#8369;' + Number(order.discount).toLocaleString('en-PH', {minimumFractionDigits:3,maximumFractionDigits:3}) + '</span></div>';
     }
     if (Number(order.deliveryFee || 0) > 0) {
-      totalsHtml += '<div style="color:var(--text-muted);">Delivery fee: &#8369;' + Number(order.deliveryFee).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2}) + '</div>';
+      totalsHtml += '<div style="color:var(--text-muted);">Delivery fee: &#8369;' + Number(order.deliveryFee).toLocaleString('en-PH', {minimumFractionDigits:3,maximumFractionDigits:3}) + '</div>';
     }
     if (vAmt > 0) {
-      totalsHtml += '<div style="color:var(--text-muted);">Voided: <span style="color:#EF4444;">&#8722;&#8369;' + vAmt.toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2}) + '</span></div>';
-      totalsHtml += '<div style="font-weight:700;font-size:15px;">Effective Total: &#8369;' + effTotal.toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2}) + '</div>';
+      totalsHtml += '<div style="color:var(--text-muted);">Voided: <span style="color:#EF4444;">&#8722;&#8369;' + vAmt.toLocaleString('en-PH', {minimumFractionDigits:3,maximumFractionDigits:3}) + '</span></div>';
+      totalsHtml += '<div style="font-weight:700;font-size:15px;">Effective Total: &#8369;' + effTotal.toLocaleString('en-PH', {minimumFractionDigits:3,maximumFractionDigits:3}) + '</div>';
     } else {
-      totalsHtml += '<div style="font-weight:700;font-size:15px;">Total: &#8369;' + Number(order.total || 0).toLocaleString('en-PH', {minimumFractionDigits:2,maximumFractionDigits:2}) + '</div>';
+      totalsHtml += '<div style="font-weight:700;font-size:15px;">Total: &#8369;' + Number(order.total || 0).toLocaleString('en-PH', {minimumFractionDigits:3,maximumFractionDigits:3}) + '</div>';
     }
     totalsHtml += '</div>';
 
@@ -13909,7 +13975,7 @@
   function _addRecExpenseRowHtml() {
     return '<div class="addrec-exp-item-row" style="display:grid;grid-template-columns:1fr 140px 36px;gap:8px;margin-bottom:8px;">'
       + '<input type="text" class="form-control addrec-exp-item-desc" placeholder="Item description">'
-      + '<input type="number" class="form-control addrec-exp-item-amount" placeholder="Amount" min="0" step="0.01">'
+      + '<input type="number" class="form-control addrec-exp-item-amount" placeholder="Amount" min="0" step="0.00001">'
       + '<button class="btn btn-secondary btn-sm" onclick="removeAddRecExpenseRow(this)" title="Remove" style="padding:0 10px;">×</button>'
       + '</div>';
   }
@@ -14064,13 +14130,13 @@
       +   '<div class="product-dropdown" id="addrec-ord-prod-dropdown-' + n + '"></div>'
       +   '<div id="addrec-ord-prod-status-' + n + '" style="display:none;font-size:11px;margin-top:3px;"></div></div></div>'
       + '<div><label class="form-label" style="font-size:11px;">Qty <span class="text-danger">*</span></label><input type="number" class="form-control" id="addrec-ord-qty-' + n + '" min="1" value="1"></div>'
-      + '<div><label class="form-label" style="font-size:11px;">Unit Price (₱) <span class="text-danger">*</span></label><input type="number" class="form-control" id="addrec-ord-price-' + n + '" min="0" step="0.01" value="0"></div>'
+      + '<div><label class="form-label" style="font-size:11px;">Unit Price (₱) <span class="text-danger">*</span></label><input type="number" class="form-control" id="addrec-ord-price-' + n + '" min="0" step="0.00001" value="0"></div>'
       + '<div><label class="form-label" style="font-size:11px;">Line Total</label><input type="text" class="form-control" id="addrec-ord-line-total-' + n + '" value="₱0.00" readonly style="background-color:#e9ecef;font-size:12px;"></div>'
       + '<div><button class="btn btn-secondary btn-sm" onclick="removeAddRecOrderItem(' + n + ')" title="Remove" style="padding:0 10px;">×</button></div>'
       + '</div>'
       + '<div class="addrec-ord-op-row" style="display:' + (isAgent ? '' : 'none') + ';grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
-      +   '<div><label class="form-label" style="font-size:11px;">Base Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="addrec-ord-base-' + n + '" min="0" step="0.01" placeholder="Company price per unit"></div>'
-      +   '<div><label class="form-label" style="font-size:11px;">Over Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="addrec-ord-op-' + n + '" min="0" step="0.01" placeholder="Auto = Unit − Base" readonly style="background-color:#e9ecef;"></div>'
+      +   '<div><label class="form-label" style="font-size:11px;">Base Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="addrec-ord-base-' + n + '" min="0" step="0.00001" placeholder="Company price per unit"></div>'
+      +   '<div><label class="form-label" style="font-size:11px;">Over Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="addrec-ord-op-' + n + '" min="0" step="0.00001" placeholder="Auto = Unit − Base" readonly style="background-color:#e9ecef;"></div>'
       + '</div>'
       + '</div>';
     var tmp = document.createElement('div');
@@ -14144,7 +14210,7 @@
       var label = p.isSet ? ((p.setAvailableQty != null ? p.setAvailableQty : 0) + ' sets') : (total.toLocaleString() + ' pcs');
       return '<div class="product-dropdown-item" data-id="' + p.id + '" data-name="' + escapeHtml(p.name) + '" data-price="' + p.unitPrice + '" data-agent-base="' + (p.agentBasePrice != null ? p.agentBasePrice : '') + '" data-wh="' + pw + '">'
         + '<div style="flex:1;"><div class="product-name">' + escapeHtml(p.name) + (p.isSet ? ' <span style="font-size:9px;font-weight:700;background:#D4860A;color:#fff;padding:1px 4px;border-radius:2px;">SET</span>' : '') + '</div></div>'
-        + '<div style="text-align:right;"><span class="product-price">₱' + parseFloat(p.unitPrice).toFixed(2) + '</span><br><span class="product-stock" style="font-size:10px;color:#888;">' + label + '</span></div></div>';
+        + '<div style="text-align:right;"><span class="product-price">₱' + parseFloat(p.unitPrice).toFixed(3) + '</span><br><span class="product-stock" style="font-size:10px;color:#888;">' + label + '</span></div></div>';
     }).join('');
     dropdown.classList.add('show');
     dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
@@ -14152,11 +14218,11 @@
         if ($('addrec-ord-prod-input-' + n)) $('addrec-ord-prod-input-' + n).value = this.getAttribute('data-name');
         if ($('addrec-ord-prod-id-' + n))    $('addrec-ord-prod-id-' + n).value    = this.getAttribute('data-id');
         if ($('addrec-ord-prod-wh-' + n))    $('addrec-ord-prod-wh-' + n).value    = this.getAttribute('data-wh');
-        if ($('addrec-ord-price-' + n))      $('addrec-ord-price-' + n).value      = parseFloat(this.getAttribute('data-price')).toFixed(2);
+        if ($('addrec-ord-price-' + n))      $('addrec-ord-price-' + n).value      = parseFloat(this.getAttribute('data-price'));
         // Agent auto-pricing: base auto-fills (editable), over price locks to Unit − Base.
         if ((($('addrec-ord-source') || {}).value) === 'AGENT') {
           var ab = this.getAttribute('data-agent-base');
-          if (ab !== '' && ab != null && $('addrec-ord-base-' + n)) $('addrec-ord-base-' + n).value = parseFloat(ab).toFixed(2);
+          if (ab !== '' && ab != null && $('addrec-ord-base-' + n)) $('addrec-ord-base-' + n).value = parseFloat(ab);
           _recomputeOverPrice('addrec-ord-price-' + n, 'addrec-ord-base-' + n, 'addrec-ord-op-' + n);
         }
         _recomputeAddRecLineTotal(n);
@@ -14418,8 +14484,8 @@
           + '<td>' + escapeHtml(r.importedBy || '—') + '</td>'
           + '<td style="text-align:right;">' + (r.ordersCount || 0) + '</td>'
           + '<td style="text-align:right;">' + (r.expensesCount || 0) + '</td>'
-          + '<td style="text-align:right;">₱' + Number(r.totalOrderValue || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
-          + '<td style="text-align:right;">₱' + Number(r.totalExpenseAmount || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
+          + '<td style="text-align:right;">₱' + Number(r.totalOrderValue || 0).toLocaleString(undefined, {minimumFractionDigits:3,maximumFractionDigits:3}) + '</td>'
+          + '<td style="text-align:right;">₱' + Number(r.totalExpenseAmount || 0).toLocaleString(undefined, {minimumFractionDigits:3,maximumFractionDigits:3}) + '</td>'
           + '<td style="text-align:center;"><button class="btn btn-secondary btn-sm" onclick="openImportDetailModal(' + idx + ')"><i class="ti ti-eye"></i> View</button></td>'
           + '</tr>';
       }).join('');

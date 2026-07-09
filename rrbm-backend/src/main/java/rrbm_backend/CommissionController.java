@@ -597,7 +597,7 @@ public class CommissionController {
                 if (e.getOpPerUnit() != null) {
                     opPerUnit = e.getOpPerUnit();
                 } else if (qty > 0) {
-                    opPerUnit = opAmount.divide(BigDecimal.valueOf(qty), 2, RoundingMode.HALF_UP);
+                    opPerUnit = opAmount.divide(BigDecimal.valueOf(qty), 5, RoundingMode.HALF_UP);
                 } else {
                     opPerUnit = BigDecimal.ZERO;
                 }

@@ -553,7 +553,7 @@ public class ExpenseController {
         }
 
         BigDecimal avgPerEntry = count > 0
-                ? total.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP) : null;
+                ? total.divide(BigDecimal.valueOf(count), 5, RoundingMode.HALF_UP) : null;
 
         List<Expense> voidedExpenses = expenseRepository.findVoidedByDateRange(target, target);
         List<Map<String, Object>> voidedEntries = new ArrayList<>();
@@ -632,7 +632,7 @@ public class ExpenseController {
             long daysWithImported = importedByDay.values().stream()
                     .filter(v -> v.compareTo(BigDecimal.ZERO) > 0).count();
             dailyAvg = daysWithImported > 0
-                    ? grandTotal.divide(BigDecimal.valueOf(daysWithImported), 2, RoundingMode.HALF_UP)
+                    ? grandTotal.divide(BigDecimal.valueOf(daysWithImported), 5, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
 
             highestDay = null;
@@ -693,7 +693,7 @@ public class ExpenseController {
 
             long daysWithData = dayRows.size();
             dailyAvg = daysWithData > 0
-                    ? grandTotal.divide(BigDecimal.valueOf(daysWithData), 2, RoundingMode.HALF_UP)
+                    ? grandTotal.divide(BigDecimal.valueOf(daysWithData), 5, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
 
             highestDay = null;
@@ -816,7 +816,7 @@ public class ExpenseController {
         // Daily average over days that had spend
         long daysWithData = dayRows.size();
         BigDecimal dailyAvg = daysWithData > 0
-                ? grandTotal.divide(BigDecimal.valueOf(daysWithData), 2, RoundingMode.HALF_UP)
+                ? grandTotal.divide(BigDecimal.valueOf(daysWithData), 5, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
 
         // Highest / lowest day (only days with > 0 spend)

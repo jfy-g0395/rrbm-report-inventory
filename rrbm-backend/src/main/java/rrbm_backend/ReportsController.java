@@ -1267,7 +1267,7 @@ public class ReportsController {
             if (amt.compareTo(high) > 0) { high = amt; highDay = d; }
             if (low == null || amt.compareTo(low) < 0) { low = amt; lowDay = d; }
         }
-        BigDecimal dailyAvg = grandTotal.divide(BigDecimal.valueOf(ym.lengthOfMonth()), 2, RoundingMode.HALF_UP);
+        BigDecimal dailyAvg = grandTotal.divide(BigDecimal.valueOf(ym.lengthOfMonth()), 5, RoundingMode.HALF_UP);
         BigDecimal ratio = netSales.signum() == 0 ? BigDecimal.ZERO
                 : grandTotal.multiply(BigDecimal.valueOf(100)).divide(netSales, 1, RoundingMode.HALF_UP);
 

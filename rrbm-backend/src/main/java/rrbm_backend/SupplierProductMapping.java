@@ -28,7 +28,7 @@ public class SupplierProductMapping {
     @Column(name = "supplier_description", columnDefinition = "TEXT")
     private String supplierDescription;
 
-    @Column(name = "unit_cost", precision = 10, scale = 2)
+    @Column(name = "unit_cost", precision = 13, scale = 5)
     private BigDecimal unitCost;
 
     @Column(name = "is_preferred", nullable = false)
