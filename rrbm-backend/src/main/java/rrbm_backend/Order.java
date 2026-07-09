@@ -123,6 +123,11 @@ public class Order {
     @Column(name = "agent_id")
     private Long agentId;
 
+    // FK to the registered reseller/distributor (S-A1). Nullable — parallel to agent_id;
+    // legacy RESELLER/DISTRIBUTOR orders keep agent_name as plain text.
+    @Column(name = "reseller_id")
+    private Long resellerId;
+
     // Import tracking (V59 — CSV upload U-series)
     @Column(name = "is_imported", nullable = false)
     private boolean imported = false;

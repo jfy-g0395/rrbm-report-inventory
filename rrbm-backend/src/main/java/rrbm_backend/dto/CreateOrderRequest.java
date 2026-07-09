@@ -11,6 +11,7 @@ public class CreateOrderRequest {
     private String source; // WALK_IN, AGENT, ECOMMERCE, FACEBOOK_PAGE, RESELLER, DISTRIBUTOR
     private String agentName;   // also used for reseller / distributor contact name
     private Long agentId;       // FK to agents.id — optional; triggers O.P. tracking when present
+    private Long resellerId;    // FK to resellers.id — optional; set when source is RESELLER/DISTRIBUTOR
     private String fbPage;
     private String ecommercePlatform; // SHOPEE, TIKTOK, LAZADA
     private String paymentMode;
