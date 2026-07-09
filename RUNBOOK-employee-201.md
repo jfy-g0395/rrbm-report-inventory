@@ -1,18 +1,29 @@
 # Runbook — Employee 201 records (Phase B)
 
-## 🟡 STATUS: BUILT — in PR, NOT yet tested / merged / deployed (updated 2026-07-10)
-Branch `feat/employee-201-records`, built off `main` (`0e51159`, head V97). Sessions:
-- **S-B1** backend — V99 schema, entities/repos, `EmployeeController`, access wiring, "Employee List → User
-  List" rename. `./mvnw compile` **green**.
-- **S-B2** frontend — Employee 201 page + 5-tab register/edit modal + timeline. `node --check` **passes**.
-- **S-B3** — this runbook + PR.
+## 🟡 STATUS: BUILT — PR #6 open, NOT yet tested / merged / deployed (updated 2026-07-10)
+Branch `feat/employee-201-records`, built off `main` (`0e51159`, head V97). **All 3 sessions complete:**
+- **S-B1** backend — `2767be2` — V99 schema, entities/repos, `EmployeeController`, access wiring,
+  "Employee List → User List" rename. `./mvnw compile` **green**.
+- **S-B2** frontend — `407c04d` — Employee 201 page + 5-tab register/edit modal + timeline. `node --check` **passes**.
+- **S-B3** — `311d2fd` — this runbook.
+- **PR:** https://github.com/jfy-g0395/rrbm-report-inventory/pull/6 (**open**).
 
 > ⚠️ **MIGRATION ORDER:** this feature is **V99**. Phase A (resellers) is **V98** and is on a separate
-> unmerged branch. **Phase A (V98) must be applied to any shared/live DB BEFORE this (V99)** or Flyway
-> will fault on out-of-order migrations. Deploy/merge order: **A → B.**
+> unmerged branch (PR #5). **Phase A (V98) must be applied to any shared/live DB BEFORE this (V99)** or
+> Flyway will fault on out-of-order migrations. Deploy/merge order: **A → B.**
 
 **NOT done (in order):** ① functional test on an isolated/staging Postgres · ② review + merge PR ·
 ③ deploy to live (after Phase A, with a DB backup first). Flip to ✅ DEPLOYED once live.
+
+### ▶ NEXT STEP for both branches (test → merge → deploy, A before B)
+The two features live in their own branches on purpose (one-branch-per-feature) and stay unmerged until
+each is validated on a **Postgres clone** (can't be done from the dev box). Do them **in order**:
+1. **Phase A (PR #5, V98)** — clone the live DB → check out `feat/resellers-distributors-registry` →
+   boot against the clone (V98 applies) → run `RUNBOOK-resellers-registry.md` §3 → if green, merge PR #5.
+2. **Phase B (PR #6, V99, THIS)** — clone again (now including V98) → check out `feat/employee-201-records`
+   → boot (V99 applies **after** V98) → run §3 below → if green, merge PR #6.
+3. **Deploy live A → B** (each runbook's §2, back up first). Never deploy B before A.
+Any failure → **STOP and report; never reset/clean/force.**
 
 > **BE TOKEN- AND USAGE-EFFICIENT.** Code is written and compiles. No re-plan, no subagents, read only
 > what a step names, stop-and-report on failure. **Never skip the pre-flight or a verification step.**
