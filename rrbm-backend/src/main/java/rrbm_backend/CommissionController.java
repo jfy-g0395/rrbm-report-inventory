@@ -38,6 +38,28 @@ public class CommissionController {
     private final JwtUtil                        jwtUtil;
     private final BCryptPasswordEncoder          passwordEncoder = new BCryptPasswordEncoder();
 
+    // RRBM logo (classpath resource) inlined as a base64 data URI so exported statements are
+    // self-contained (they render in a popup/blob window where relative asset URLs won't resolve).
+    private static volatile String LOGO_DATA_URI;
+    private static String logoDataUri() {
+        if (LOGO_DATA_URI == null) {
+            synchronized (CommissionController.class) {
+                if (LOGO_DATA_URI == null) {
+                    String uri = "";
+                    try (java.io.InputStream in =
+                                 CommissionController.class.getResourceAsStream("/rrbm-logo.png")) {
+                        if (in != null) {
+                            uri = "data:image/png;base64,"
+                                    + java.util.Base64.getEncoder().encodeToString(in.readAllBytes());
+                        }
+                    } catch (Exception ignored) { /* fall back to text mark */ }
+                    LOGO_DATA_URI = uri;
+                }
+            }
+        }
+        return LOGO_DATA_URI;
+    }
+
     public CommissionController(CommissionPeriodRepository periodRepository,
                                 CommissionEntryRepository entryRepository,
                                 CommissionAdjustmentRepository adjustmentRepository,
@@ -126,6 +148,106 @@ public class CommissionController {
         Map<String, Object> response = periodToMap(saved, true);
         response.put("backfill", backfillStats);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    // ── PUT /api/commissions/periods/{id} — edit an OPEN period's dates/notes ──
+
+    @Transactional
+    @PutMapping("/periods/{id}")
+    public ResponseEntity<?> updatePeriod(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        Long userId = userIdFromHeader(authHeader);
+        if (userId == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Authentication required"));
+
+        CommissionPeriod period = periodRepository.findById(id).orElse(null);
+        if (period == null)
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "Period not found"));
+
+        if (!"OPEN".equals(period.getStatus()))
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Only an OPEN period can be edited"));
+
+        String startStr = (String) body.get("startDate");
+        String endStr   = (String) body.get("endDate");
+        if (startStr == null || endStr == null)
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "startDate and endDate are required"));
+
+        LocalDate startDate;
+        LocalDate endDate;
+        try {
+            startDate = LocalDate.parse(startStr);
+            endDate   = LocalDate.parse(endStr);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Invalid date format — use YYYY-MM-DD"));
+        }
+
+        if (!startDate.isBefore(endDate))
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "startDate must be before endDate"));
+
+        // Overlap check against other OPEN periods (exclude this one).
+        List<CommissionPeriod> overlapping = periodRepository
+                .findByStartDateLessThanEqualAndEndDateGreaterThanEqual(endDate, startDate)
+                .stream()
+                .filter(p -> "OPEN".equals(p.getStatus()) && !p.getId().equals(id))
+                .collect(Collectors.toList());
+        if (!overlapping.isEmpty())
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "An open period already overlaps the requested date range"));
+
+        period.setStartDate(startDate);
+        period.setEndDate(endDate);
+        if (body.containsKey("notes")) period.setNotes((String) body.get("notes"));
+        CommissionPeriod saved = periodRepository.save(period);
+
+        // Re-sort entries to the new range: drop out-of-range PENDING entries, backfill new ones.
+        Map<String, Object> resync = commissionService.resyncOpenPeriodEntries(saved);
+
+        Map<String, Object> response = periodToMap(saved, true);
+        response.put("resync", resync);
+        return ResponseEntity.ok(response);
+    }
+
+    // ── DELETE /api/commissions/periods/{id} — delete an EMPTY open period ─────
+
+    @Transactional
+    @DeleteMapping("/periods/{id}")
+    public ResponseEntity<?> deletePeriod(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        Long userId = userIdFromHeader(authHeader);
+        if (userId == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Authentication required"));
+
+        CommissionPeriod period = periodRepository.findById(id).orElse(null);
+        if (period == null)
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", "Period not found"));
+
+        if (!"OPEN".equals(period.getStatus()))
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Only an OPEN period can be deleted"));
+
+        long entryCount = entryRepository.countByPeriodId(id);
+        long adjCount   = adjustmentRepository.countByPeriodId(id);
+        if (entryCount > 0 || adjCount > 0)
+            return ResponseEntity.badRequest().body(Map.of("message",
+                    "This period has " + entryCount + " commission entr" + (entryCount == 1 ? "y" : "ies")
+                    + " and " + adjCount + " adjustment(s); it cannot be deleted. "
+                    + "Edit its dates instead — commissions are never deleted."));
+
+        periodRepository.deleteById(id);
+        return ResponseEntity.ok(Map.of("message", "Period " + period.getPeriodCode() + " deleted"));
     }
 
     // ── GET /api/commissions/periods — list all periods with totals ───────────
@@ -835,24 +957,30 @@ public class CommissionController {
         sb.append("<title>Commission Statement ").append(shEsc(agent.getAgentCode()))
           .append(" ").append(shEsc(period.getPeriodCode())).append("</title><style>");
         sb.append("body{font-family:Arial,sans-serif;font-size:12px;padding:20px;color:#1A1208;max-width:960px;margin:0 auto;}");
-        sb.append(".hdr{display:flex;align-items:center;gap:14px;border-bottom:3px solid #FAD16A;padding-bottom:12px;margin-bottom:16px;}");
-        sb.append(".logo{width:40px;height:40px;background:#FAD16A;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:#2C1A0E;flex-shrink:0;}");
+        sb.append(".hdr{display:flex;align-items:center;gap:14px;border-bottom:3px solid #E0A800;padding-bottom:12px;margin-bottom:16px;}");
+        sb.append(".logo{width:40px;height:40px;background:#E0A800;border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px;color:#5C1A0E;flex-shrink:0;}");
         sb.append(".igrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}");
-        sb.append(".ibox{background:#FFFBE6;border:1px solid #FAD16A;border-radius:6px;padding:10px 14px;}");
+        sb.append(".ibox{background:#FFFBE6;border:1px solid #E0A800;border-radius:6px;padding:10px 14px;}");
         sb.append(".lbl{font-size:10px;color:#666;text-transform:uppercase;margin-bottom:2px;}");
-        sb.append("h3{margin:16px 0 8px;font-size:13px;color:#2C1A0E;border-bottom:2px solid #FAD16A;padding-bottom:4px;}");
+        sb.append("h3{margin:16px 0 8px;font-size:13px;color:#5C1A0E;border-bottom:2px solid #E0A800;padding-bottom:4px;}");
         sb.append("table{width:100%;border-collapse:collapse;margin-bottom:16px;}");
-        sb.append("th{background:#FAD16A;padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;}");
+        sb.append("th{background:#E0A800;padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;}");
         sb.append("td{padding:5px 8px;border-bottom:1px solid #eee;font-size:11px;}");
-        sb.append(".sbox{background:#FFFBE6;border:2px solid #FAD16A;border-radius:6px;padding:14px;max-width:320px;margin-left:auto;}");
+        sb.append(".sbox{background:#FFFBE6;border:2px solid #E0A800;border-radius:6px;padding:14px;max-width:320px;margin-left:auto;}");
         sb.append(".srow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:12px;}");
-        sb.append(".stot{font-size:14px;font-weight:700;border-top:1px solid #FAD16A;padding-top:8px;margin-top:4px;}");
+        sb.append(".stot{font-size:14px;font-weight:700;border-top:1px solid #E0A800;padding-top:8px;margin-top:4px;}");
         sb.append(".footer{margin-top:24px;font-size:10px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:8px;}");
         sb.append("@media print{body{padding:10px;}}");
         sb.append("</style></head><body>");
 
-        sb.append("<div class=\"hdr\"><div class=\"logo\">R</div>");
-        sb.append("<div><div style=\"font-size:15px;font-weight:700;color:#2C1A0E;\">RRBM Packaging Supplies and Trading</div>");
+        String logoUri = logoDataUri();
+        if (!logoUri.isEmpty()) {
+            sb.append("<div class=\"hdr\"><img src=\"").append(logoUri)
+              .append("\" alt=\"RBM Packaging Supplies\" style=\"height:44px;width:auto;\">");
+        } else {
+            sb.append("<div class=\"hdr\"><div class=\"logo\">R</div>");
+        }
+        sb.append("<div><div style=\"font-size:15px;font-weight:700;color:#5C1A0E;\">RRBM Packaging Supplies and Trading</div>");
         sb.append("<div style=\"font-size:11px;color:#666;\">Commission Statement</div></div></div>");
 
         sb.append("<div class=\"igrid\">");
@@ -865,7 +993,7 @@ public class CommissionController {
         sb.append("<div style=\"font-size:11px;color:#666;margin-top:2px;\">")
           .append(shEsc(period.getStartDate().toString())).append(" &ndash; ")
           .append(shEsc(period.getEndDate().toString())).append("</div>");
-        sb.append("<div style=\"margin-top:4px;\"><span style=\"font-size:10px;font-weight:600;padding:1px 8px;border-radius:10px;background:#FAD16A;color:#2C1A0E;\">")
+        sb.append("<div style=\"margin-top:4px;\"><span style=\"font-size:10px;font-weight:600;padding:1px 8px;border-radius:10px;background:#E0A800;color:#5C1A0E;\">")
           .append(shEsc(period.getStatus())).append("</span></div></div></div>");
 
         // Customer name per order — looked up live (CommissionEntry stores only orderId).
@@ -961,7 +1089,7 @@ public class CommissionController {
                                   BigDecimal netCommission) {
         StringBuilder sb = new StringBuilder();
         sb.append("<html><head><meta charset=\"UTF-8\">");
-        sb.append("<style>table{border-collapse:collapse;}th,td{border:1px solid #999;padding:4px 8px;font-size:12px;}th{background:#FAD16A;}</style>");
+        sb.append("<style>table{border-collapse:collapse;}th,td{border:1px solid #999;padding:4px 8px;font-size:12px;}th{background:#E0A800;}</style>");
         sb.append("</head><body>");
         sb.append("<h3 style=\"font-family:Arial;font-size:13px;\">Commission Statement &mdash; ")
           .append(shEsc(agent.getAgentCode())).append(" &mdash; ")

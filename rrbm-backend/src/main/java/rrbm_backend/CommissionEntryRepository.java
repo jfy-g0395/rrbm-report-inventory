@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Repository
@@ -27,6 +28,18 @@ public interface CommissionEntryRepository extends JpaRepository<CommissionEntry
     @Modifying(clearAutomatically = true)
     @Query("UPDATE CommissionEntry e SET e.status = 'RELEASED' WHERE e.periodId = :periodId")
     void releaseAllByPeriodId(@Param("periodId") Long periodId);
+
+    /**
+     * Removes an OPEN period's still-PENDING entries whose order date now falls outside the
+     * period's [start, end] range — used when an open period's dates are edited so its entries
+     * re-sort. RELEASED entries are never touched (an OPEN period has none).
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("DELETE FROM CommissionEntry e WHERE e.periodId = :periodId AND e.status = 'PENDING' "
+           + "AND (e.orderDate < :start OR e.orderDate > :end)")
+    int deletePendingOutsideRange(@Param("periodId") Long periodId,
+                                  @Param("start") LocalDate start,
+                                  @Param("end") LocalDate end);
 
     /** Sum of opAmount for RELEASED entries in the given period IDs. */
     @Query("SELECT COALESCE(SUM(e.opAmount), 0) FROM CommissionEntry e " +

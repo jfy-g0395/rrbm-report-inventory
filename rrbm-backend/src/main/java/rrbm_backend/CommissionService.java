@@ -103,6 +103,22 @@ public class CommissionService {
     }
 
     /**
+     * Re-syncs an OPEN period's entries to its (possibly edited) date range: drops PENDING
+     * entries that now fall outside the range and backfills orders that now fall inside it.
+     * Only valid for OPEN periods — all their entries are PENDING, so nothing released moves.
+     *
+     * @return backfill statistics plus an {@code entriesRemoved} count.
+     */
+    @Transactional
+    public Map<String, Object> resyncOpenPeriodEntries(CommissionPeriod period) {
+        int removed = entryRepository.deletePendingOutsideRange(
+                period.getId(), period.getStartDate(), period.getEndDate());
+        Map<String, Object> stats = backfillEntriesForPeriod(period);
+        stats.put("entriesRemoved", removed);
+        return stats;
+    }
+
+    /**
      * Backfills commission entries for existing orders that fall within the given period's
      * date range but don't have entries yet. This handles the case where orders were placed
      * before the period was opened.
