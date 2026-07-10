@@ -13569,6 +13569,10 @@
     var content = $('agent-tab-content');
     if (!content) return;
 
+    // Released periods are hidden from the table by default to keep it uncluttered;
+    // they remain selectable in the Period dropdown and toggleable via this flag.
+    var showReleased = !!window._agentCommShowReleased;
+
     // Build period dropdown grouped by year
     var periods = _currentAgentPeriods || [];
     var periodDropdown = '<div style="margin-bottom:12px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">' +
@@ -13604,6 +13608,12 @@
       '<option value="csv">CSV</option>' +
       '<option value="excel">Excel</option>' +
       '</select></div>' +
+      '<div style="display:flex;align-items:flex-end;">' +
+      '<label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:6px;">' +
+      '<input type="checkbox" id="agent-comm-show-released"' + (showReleased ? ' checked' : '') +
+      ' onchange="window._agentCommShowReleased=this.checked; loadAgentCommission(' + agentId +
+      ', (document.getElementById(\'agent-panel-commission-period-select\')||{}).value||null);">' +
+      'Show released periods</label></div>' +
       '</div>';
 
     content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading commission data…</div>';
@@ -13623,7 +13633,18 @@
         var m = { OPEN: 'background:#DBEAFE;color:#1E40AF;', CLOSED: 'background:#FEF3C7;color:#92400E;', RELEASED: 'background:#D1FAE5;color:#065F46;' };
         return '<span style="padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;' + (m[s] || 'background:#F3F4F6;color:#6B7280;') + '">' + (s || '—') + '</span>';
       };
-      var filtered = periodId ? summary.filter(function (r) { return r.periodId == periodId; }) : summary;
+      // Default view hides RELEASED periods to avoid clutter; selecting a specific period
+      // in the dropdown, or ticking "Show released", reveals them.
+      var releasedHidden = 0;
+      var filtered;
+      if (periodId) {
+        filtered = summary.filter(function (r) { return r.periodId == periodId; });
+      } else if (showReleased) {
+        filtered = summary;
+      } else {
+        filtered = summary.filter(function (r) { return r.status !== 'RELEASED'; });
+        releasedHidden = summary.length - filtered.length;
+      }
       var rows = filtered.map(function (r) {
         var relAt = r.releasedAt ? r.releasedAt.replace('T', ' ').substring(0, 19) : '';
         var releaseBtn = r.status === 'CLOSED'
@@ -13641,12 +13662,23 @@
         '</tr>';
       }).join('');
 
-      var html = '<div class="table-scroll"><table class="table">' +
-        '<thead><tr><th>Period</th><th>Start</th><th>End</th><th style="text-align:right;">O.P.</th><th style="text-align:right;">Net Commission</th><th>Status</th><th>Released At</th><th style="text-align:center;">Actions</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table></div>';
+      var hint = releasedHidden > 0
+        ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">' +
+            releasedHidden + ' released period' + (releasedHidden > 1 ? 's' : '') + ' hidden. ' +
+            '<a href="#" onclick="window._agentCommShowReleased=true; loadAgentCommission(' + agentId + ', null); return false;" style="color:var(--primary,#B8860B);font-weight:600;">Show</a>' +
+          '</div>'
+        : '';
 
-      content.innerHTML = periodDropdown + html;
+      var html = filtered.length === 0
+        ? '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">' +
+            (releasedHidden > 0 ? 'No active periods — all are released.' : 'No commission periods found.') +
+          '</div>'
+        : '<div class="table-scroll"><table class="table">' +
+            '<thead><tr><th>Period</th><th>Start</th><th>End</th><th style="text-align:right;">O.P.</th><th style="text-align:right;">Net Commission</th><th>Status</th><th>Released At</th><th style="text-align:center;">Actions</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+          '</table></div>';
+
+      content.innerHTML = periodDropdown + hint + html;
     } catch (err) {
       content.innerHTML = periodDropdown + '<div style="color:red;padding:16px;">Error loading commission data.</div>';
       console.error('loadAgentCommission', err);
