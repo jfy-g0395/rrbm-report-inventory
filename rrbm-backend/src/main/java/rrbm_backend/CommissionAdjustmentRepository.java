@@ -15,6 +15,8 @@ public interface CommissionAdjustmentRepository extends JpaRepository<Commission
 
     List<CommissionAdjustment> findByPeriodId(Long periodId);
 
+    long countByPeriodId(Long periodId);
+
     /**
      * Net adjustments for a set of periods: SUM(BONUS) − SUM(DEDUCTION).
      * Returns 0 when no adjustments exist.

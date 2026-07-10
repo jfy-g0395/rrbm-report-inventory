@@ -13402,9 +13402,9 @@
           '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Status</span><span class="slide-panel-info-value"><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + statusBg + ';color:' + statusFg + ';">' + escapeHtml(a.status || '') + '</span></span></div>' +
         '</div>' +
         '<div class="slide-panel-stats">' +
-          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + (a.totalOrders || 0) + '</div><div class="slide-panel-stat-label">Orders</div></div>' +
-          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + pending + '</div><div class="slide-panel-stat-label">Pending Commission</div></div>' +
-          '<div class="slide-panel-stat"><div class="slide-panel-stat-value" style="color:#10B981;">' + lifetime + '</div><div class="slide-panel-stat-label">Lifetime Commission</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-icon" style="background:#FBEFD0;color:#B8860B;"><i class="ti ti-clipboard-list"></i></div><div class="slide-panel-stat-value">' + (a.totalOrders || 0) + '</div><div class="slide-panel-stat-label">Orders</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-icon" style="background:#FBEFD0;color:#B8860B;"><i class="ti ti-currency-peso"></i></div><div class="slide-panel-stat-value">' + pending + '</div><div class="slide-panel-stat-label">Pending Commission</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-icon" style="background:#D1FAE5;color:#10B981;"><i class="ti ti-coins"></i></div><div class="slide-panel-stat-value" style="color:#10B981;">' + lifetime + '</div><div class="slide-panel-stat-label">Lifetime Commission</div></div>' +
         '</div>' +
         '<div class="slide-panel-tabs">' +
           '<button class="slide-panel-tab active" onclick="switchAgentTab(\'orders\')">Orders</button>' +
@@ -13569,6 +13569,10 @@
     var content = $('agent-tab-content');
     if (!content) return;
 
+    // Released periods are hidden from the table by default to keep it uncluttered;
+    // they remain selectable in the Period dropdown and toggleable via this flag.
+    var showReleased = !!window._agentCommShowReleased;
+
     // Build period dropdown grouped by year
     var periods = _currentAgentPeriods || [];
     var periodDropdown = '<div style="margin-bottom:12px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">' +
@@ -13604,6 +13608,12 @@
       '<option value="csv">CSV</option>' +
       '<option value="excel">Excel</option>' +
       '</select></div>' +
+      '<div style="display:flex;align-items:flex-end;">' +
+      '<label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:6px;">' +
+      '<input type="checkbox" id="agent-comm-show-released"' + (showReleased ? ' checked' : '') +
+      ' onchange="window._agentCommShowReleased=this.checked; loadAgentCommission(' + agentId +
+      ', (document.getElementById(\'agent-panel-commission-period-select\')||{}).value||null);">' +
+      'Show released periods</label></div>' +
       '</div>';
 
     content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading commission data…</div>';
@@ -13623,30 +13633,56 @@
         var m = { OPEN: 'background:#DBEAFE;color:#1E40AF;', CLOSED: 'background:#FEF3C7;color:#92400E;', RELEASED: 'background:#D1FAE5;color:#065F46;' };
         return '<span style="padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;' + (m[s] || 'background:#F3F4F6;color:#6B7280;') + '">' + (s || '—') + '</span>';
       };
-      var filtered = periodId ? summary.filter(function (r) { return r.periodId == periodId; }) : summary;
+      // Default view hides RELEASED periods to avoid clutter; selecting a specific period
+      // in the dropdown, or ticking "Show released", reveals them.
+      var releasedHidden = 0;
+      var filtered;
+      if (periodId) {
+        filtered = summary.filter(function (r) { return r.periodId == periodId; });
+      } else if (showReleased) {
+        filtered = summary;
+      } else {
+        filtered = summary.filter(function (r) { return r.status !== 'RELEASED'; });
+        releasedHidden = summary.length - filtered.length;
+      }
       var rows = filtered.map(function (r) {
         var relAt = r.releasedAt ? r.releasedAt.replace('T', ' ').substring(0, 19) : '';
         var releaseBtn = r.status === 'CLOSED'
-          ? '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;margin-right:4px;" onclick="releaseFromAgentPanel(' + r.periodId + ',' + agentId + ')"><i class="ti ti-affiliate"></i> Release</button>'
+          ? '<button class="btn btn-outline comm-btn" onclick="releaseFromAgentPanel(' + r.periodId + ',' + agentId + ')"><i class="ti ti-affiliate"></i> Release</button>'
           : '';
-        return '<tr>' +
-          '<td><code style="font-size:11px;">' + escapeHtml(r.periodCode || '') + '</code></td>' +
-          '<td>' + (r.startDate || '') + '</td>' +
-          '<td>' + (r.endDate || '') + '</td>' +
-          '<td style="text-align:right;">' + fmt(r.totalOp) + '</td>' +
-          '<td style="text-align:right;color:#10B981;">' + fmt(r.netCommission) + '</td>' +
-          '<td>' + statusBadgeMini(r.status) + '</td>' +
-          '<td style="font-size:11px;color:var(--text-muted);">' + relAt + '</td>' +
-          '<td style="text-align:center;">' + releaseBtn + '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="downloadCommissionStatement(' + agentId + ',' + r.periodId + ')"><i class="ti ti-download"></i></button></td>' +
-        '</tr>';
+        return '<div class="comm-card">' +
+            '<div class="comm-card-top">' +
+              '<div><code class="comm-card-code">' + escapeHtml(r.periodCode || '') + '</code>' +
+              '<div class="comm-card-dates">' + (r.startDate || '') + ' — ' + (r.endDate || '') + '</div></div>' +
+              statusBadgeMini(r.status) +
+            '</div>' +
+            '<div class="comm-card-figs">' +
+              '<div class="comm-card-fig"><span class="comm-card-fig-label">O.P.</span><span class="comm-card-fig-val">' + fmt(r.totalOp) + '</span></div>' +
+              '<div class="comm-card-fig"><span class="comm-card-fig-label">Net Commission</span><span class="comm-card-fig-val" style="color:#10B981;">' + fmt(r.netCommission) + '</span></div>' +
+              (relAt ? '<div class="comm-card-fig"><span class="comm-card-fig-label">Released</span><span class="comm-card-fig-val" style="font-size:12px;font-weight:500;color:var(--text-muted);">' + relAt + '</span></div>' : '') +
+            '</div>' +
+            '<div class="comm-card-actions">' +
+              '<button class="btn btn-outline comm-btn" onclick="viewCommissionStatement(' + agentId + ',' + r.periodId + ')"><i class="ti ti-eye"></i> View</button>' +
+              '<button class="btn btn-primary comm-btn" onclick="downloadCommissionStatement(' + agentId + ',' + r.periodId + ')"><i class="ti ti-download"></i> Download</button>' +
+              releaseBtn +
+            '</div>' +
+          '</div>';
       }).join('');
 
-      var html = '<div class="table-scroll"><table class="table">' +
-        '<thead><tr><th>Period</th><th>Start</th><th>End</th><th style="text-align:right;">O.P.</th><th style="text-align:right;">Net Commission</th><th>Status</th><th>Released At</th><th style="text-align:center;">Actions</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table></div>';
+      var hint = releasedHidden > 0
+        ? '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">' +
+            releasedHidden + ' released period' + (releasedHidden > 1 ? 's' : '') + ' hidden. ' +
+            '<a href="#" onclick="window._agentCommShowReleased=true; loadAgentCommission(' + agentId + ', null); return false;" style="color:var(--primary,#B8860B);font-weight:600;">Show</a>' +
+          '</div>'
+        : '';
 
-      content.innerHTML = periodDropdown + html;
+      var html = filtered.length === 0
+        ? '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">' +
+            (releasedHidden > 0 ? 'No active periods — all are released.' : 'No commission periods found.') +
+          '</div>'
+        : '<div class="comm-card-list">' + rows + '</div>';
+
+      content.innerHTML = periodDropdown + hint + html;
     } catch (err) {
       content.innerHTML = periodDropdown + '<div style="color:red;padding:16px;">Error loading commission data.</div>';
       console.error('loadAgentCommission', err);
@@ -13676,17 +13712,35 @@
       };
 
       var rows = periods.length ? periods.map(function (p) {
-        var closeBtn   = p.status === 'OPEN'
-          ? '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:3px 8px;" onclick="closePeriod(' + p.id + ')"><i class="ti ti-lock"></i> Close</button>' : '';
-        var releaseBtn = p.status === 'CLOSED'
-          ? '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:3px 8px;" onclick="releasePeriod(' + p.id + ')"><i class="ti ti-affiliate"></i> Release</button>' : '';
+        var actions = '';
+        if (p.status === 'OPEN') {
+          actions =
+            '<button class="btn btn-sm btn-outline" style="font-size:11px;padding:5px 10px;" onclick="showPeriodEditForm(' + p.id + ',\'' + (p.startDate||'') + '\',\'' + (p.endDate||'') + '\')"><i class="ti ti-edit"></i> Edit</button>' +
+            '<button class="btn btn-sm btn-outline" style="font-size:11px;padding:5px 10px;" onclick="closePeriod(' + p.id + ')"><i class="ti ti-lock"></i> Close</button>' +
+            '<button class="btn btn-sm btn-outline" style="font-size:11px;padding:5px 10px;color:#B91C1C;border-color:#FCA5A5;" onclick="deletePeriod(' + p.id + ',\'' + escapeHtml(p.periodCode||'') + '\')"><i class="ti ti-trash"></i> Delete</button>';
+        } else if (p.status === 'CLOSED') {
+          actions = '<button class="btn btn-sm btn-outline" style="font-size:11px;padding:5px 10px;" onclick="releasePeriod(' + p.id + ')"><i class="ti ti-affiliate"></i> Release</button>';
+        }
         return '<tr>' +
           '<td><code style="font-size:11px;">' + escapeHtml(p.periodCode||'') + '</code></td>' +
           '<td style="font-size:11px;">' + (p.startDate||'—') + ' — ' + (p.endDate||'—') + '</td>' +
           '<td>' + statusBadge(p.status) + '</td>' +
-          '<td style="display:flex;gap:4px;">' + closeBtn + releaseBtn + '</td>' +
+          '<td><div style="display:flex;gap:6px;flex-wrap:wrap;">' + actions + '</div></td>' +
           '</tr>';
       }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No commission periods found.</td></tr>';
+
+      var ec = window._periodEditCtx;
+      var editForm = ec
+        ? '<div id="period-edit-form" style="margin-bottom:12px;padding:12px;border:1px solid #E0A800;border-radius:6px;background:#FFFBEF;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">' +
+            '<div style="width:100%;font-size:12px;font-weight:700;color:#5C1A0E;margin-bottom:2px;">Edit period dates — entries re-sort automatically</div>' +
+            '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">Start Date</label><input type="date" id="period-edit-start" class="form-control" style="width:150px;font-size:12px;" value="' + (ec.start||'') + '"></div>' +
+            '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">End Date</label><input type="date" id="period-edit-end" class="form-control" style="width:150px;font-size:12px;" value="' + (ec.end||'') + '"></div>' +
+            '<div style="display:flex;gap:4px;">' +
+              '<button class="btn btn-sm btn-primary" onclick="savePeriodEdit()" style="font-size:12px;">Save</button>' +
+              '<button class="btn btn-sm btn-outline" onclick="cancelPeriodEdit()" style="font-size:12px;">Cancel</button>' +
+            '</div>' +
+          '</div>'
+        : '';
 
       var newForm = focusNew
         ? '<div id="period-new-form" style="margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">' +
@@ -13705,6 +13759,7 @@
           '<div style="font-size:12px;font-weight:600;">' + periods.length + ' period(s)</div>' +
           '<button class="btn btn-sm btn-primary" onclick="showNewPeriodForm()" style="font-size:12px;margin-left:auto;"><i class="ti ti-plus"></i> Open New Period</button>' +
         '</div>' +
+        editForm +
         newForm +
         '<div class="table-scroll"><table class="table" style="font-size:12px;">' +
           '<thead><tr><th>Code</th><th>Dates</th><th>Status</th><th>Actions</th></tr></thead>' +
@@ -13724,6 +13779,62 @@
   window.cancelNewPeriod = function () {
     var container = $('commission-period-modal-body');
     if (container) renderPeriodList(container, false);
+  };
+
+  window.showPeriodEditForm = function (id, start, end) {
+    window._periodEditCtx = { id: id, start: start, end: end };
+    var container = $('commission-period-modal-body');
+    if (container) renderPeriodList(container, false);
+  };
+
+  window.cancelPeriodEdit = function () {
+    window._periodEditCtx = null;
+    var container = $('commission-period-modal-body');
+    if (container) renderPeriodList(container, false);
+  };
+
+  window.savePeriodEdit = async function () {
+    var ec = window._periodEditCtx;
+    if (!ec) return;
+    var start = ($('period-edit-start') || {}).value;
+    var end   = ($('period-edit-end')   || {}).value;
+    if (!start || !end) { showToast('Start date and end date are required.', 'error'); return; }
+    try {
+      var res = await fetch(API_BASE + '/api/commissions/periods/' + ec.id, {
+        method: 'PUT',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ startDate: start, endDate: end })
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast(data.message || 'Failed to update period.', 'error'); return; }
+      showToast('Period ' + (data.periodCode || '') + ' updated.', 'success');
+      if (data.resync) {
+        showToast('Entries re-synced: +' + (data.resync.entriesCreated || 0) + ' added, −' + (data.resync.entriesRemoved || 0) + ' removed.', 'info');
+      }
+      window._periodEditCtx = null;
+      var container = $('commission-period-modal-body');
+      if (container) renderPeriodList(container, false);
+    } catch (err) {
+      showToast('Error updating period.', 'error');
+      console.error('savePeriodEdit', err);
+    }
+  };
+
+  window.deletePeriod = async function (id, code) {
+    if (!confirm('Delete period ' + (code || '') + '?\n\nOnly an empty open period can be deleted. Released or recorded commissions are never touched.')) return;
+    try {
+      var res = await fetch(API_BASE + '/api/commissions/periods/' + id, {
+        method: 'DELETE', headers: authHeaders()
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast(data.message || 'Failed to delete period.', 'error'); return; }
+      showToast(data.message || 'Period deleted.', 'success');
+      var container = $('commission-period-modal-body');
+      if (container) renderPeriodList(container, false);
+    } catch (err) {
+      showToast('Error deleting period.', 'error');
+      console.error('deletePeriod', err);
+    }
   };
 
   window.saveNewPeriod = async function () {
@@ -13837,6 +13948,78 @@
       showToast('Export failed', 'error');
     }
   };
+
+  // ── In-app commission statement viewer (read-only, styled with logo palette) ──
+  window.viewCommissionStatement = async function (agentId, periodId) {
+    try {
+      var res = await fetch(API_BASE + '/api/commissions/periods/' + periodId + '/agents/' + agentId + '/statement', { headers: authHeaders() });
+      if (!res.ok) { showToast('Failed to load statement (' + res.status + ')', 'error'); return; }
+      var s = await res.json();
+      renderStatementModal(s, agentId, periodId);
+    } catch (err) {
+      console.error('viewCommissionStatement', err);
+      showToast('Error loading statement', 'error');
+    }
+  };
+
+  function renderStatementModal(s, agentId, periodId) {
+    var money = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    var agent = s.agent || {}, period = s.period || {}, summary = s.summary || {};
+    var entries = s.entries || [], adjustments = s.adjustments || [];
+
+    var entryRows = entries.length ? entries.map(function (e) {
+      return '<tr>' +
+        '<td>' + escapeHtml(e.orderId || '') + '</td>' +
+        '<td>' + escapeHtml(e.orderDate || '') + '</td>' +
+        '<td>' + escapeHtml(e.productName || '') + '</td>' +
+        '<td style="text-align:right;">' + (e.quantity != null ? e.quantity : '') + '</td>' +
+        '<td style="text-align:right;">' + money(e.opAmount) + '</td>' +
+        '<td>' + escapeHtml(e.status || '') + '</td>' +
+      '</tr>';
+    }).join('') : '<tr><td colspan="6" style="text-align:center;color:#999;padding:12px;">No entries for this period.</td></tr>';
+
+    var adjBlock = adjustments.length
+      ? '<h4 class="stmt-h">Adjustments</h4><table class="stmt-table"><thead><tr><th>Type</th><th style="text-align:right;">Amount</th><th>Reason</th></tr></thead><tbody>' +
+        adjustments.map(function (a) {
+          return '<tr><td>' + escapeHtml(a.adjustmentType || '') + '</td><td style="text-align:right;">' + money(a.amount) + '</td><td>' + escapeHtml(a.reason || '') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '';
+
+    var existing = document.getElementById('stmt-view-overlay');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'stmt-view-overlay';
+    overlay.className = 'stmt-overlay';
+    overlay.onclick = function (e) { if (e.target === overlay) overlay.remove(); };
+
+    overlay.innerHTML =
+      '<div class="stmt-modal">' +
+        '<div class="stmt-head">' +
+          '<img src="assets/logo-two.png" alt="RBM Packaging Supplies" class="stmt-logo">' +
+          '<button class="stmt-close" onclick="document.getElementById(\'stmt-view-overlay\').remove();" aria-label="Close">&times;</button>' +
+        '</div>' +
+        '<div class="stmt-title">Commission Statement</div>' +
+        '<div class="stmt-meta">' +
+          '<div><div class="stmt-meta-label">Agent</div><div class="stmt-meta-val">' + escapeHtml(agent.agentCode || '') + '</div><div class="stmt-meta-sub">' + escapeHtml(agent.fullName || '') + '</div></div>' +
+          '<div><div class="stmt-meta-label">Period</div><div class="stmt-meta-val">' + escapeHtml(period.periodCode || '') + '</div><div class="stmt-meta-sub">' + escapeHtml((period.startDate || '') + ' — ' + (period.endDate || '')) + ' &middot; ' + escapeHtml(period.status || '') + '</div></div>' +
+        '</div>' +
+        '<h4 class="stmt-h">Commission Entries</h4>' +
+        '<table class="stmt-table"><thead><tr><th>Order</th><th>Date</th><th>Product</th><th style="text-align:right;">Qty</th><th style="text-align:right;">O.P.</th><th>Status</th></tr></thead>' +
+        '<tbody>' + entryRows + '</tbody></table>' +
+        adjBlock +
+        '<div class="stmt-totals">' +
+          '<div class="stmt-total-row"><span>Total O.P.</span><span>' + money(summary.totalOp) + '</span></div>' +
+          '<div class="stmt-total-row"><span>Total Adjustments</span><span>' + money(summary.totalAdjustments) + '</span></div>' +
+          '<div class="stmt-total-row stmt-total-net"><span>Net Commission</span><span>' + money(summary.netCommission) + '</span></div>' +
+        '</div>' +
+        '<div class="stmt-actions">' +
+          '<button class="btn btn-outline comm-btn" onclick="document.getElementById(\'stmt-view-overlay\').remove();">Close</button>' +
+          '<button class="btn btn-primary comm-btn" onclick="downloadCommissionStatement(' + agentId + ',' + periodId + ')"><i class="ti ti-download"></i> Download</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(overlay);
+  }
 
   window.openEditAgentModal = async function (agentId) {
     var res;

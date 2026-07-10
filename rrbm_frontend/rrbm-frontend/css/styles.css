@@ -965,25 +965,98 @@ body {
 }
 .slide-panel-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 18px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
 }
 .slide-panel-stat {
   text-align: center;
-  padding: 10px;
+  padding: 18px 14px;
   background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 10px);
+}
+.slide-panel-stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  margin: 0 auto 10px;
 }
 .slide-panel-stat-value {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.15;
 }
 .slide-panel-stat-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 4px;
 }
+@media (max-width: 560px) {
+  .slide-panel-stats { grid-template-columns: 1fr; }
+}
+
+/* Commission period cards (agent panel commission tab) */
+.comm-card-list { display: flex; flex-direction: column; gap: 12px; }
+.comm-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+}
+.comm-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+.comm-card-code { font-family: monospace; font-size: 13px; font-weight: 700; color: #B8860B; }
+.comm-card-dates { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.comm-card-figs { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 14px; }
+.comm-card-fig { display: flex; flex-direction: column; }
+.comm-card-fig-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
+.comm-card-fig-val { font-size: 16px; font-weight: 700; margin-top: 2px; }
+.comm-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.comm-btn {
+  flex: 1 1 120px;
+  min-height: 42px;
+  font-size: 13px;
+  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* In-app commission statement viewer */
+.stmt-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px 16px; z-index: 3000; overflow-y: auto;
+}
+.stmt-modal {
+  background: #fff; width: 100%; max-width: 720px;
+  border-radius: 14px; padding: 22px 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3); color: #1A1208;
+}
+.stmt-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #E0A800; padding-bottom: 12px; margin-bottom: 6px; }
+.stmt-logo { height: 40px; width: auto; }
+.stmt-close { background: none; border: none; font-size: 26px; line-height: 1; color: #999; cursor: pointer; padding: 0 4px; }
+.stmt-close:hover { color: #5C1A0E; }
+.stmt-title { font-size: 13px; font-weight: 600; color: #5C1A0E; margin-bottom: 14px; }
+.stmt-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+.stmt-meta-label { font-size: 10px; text-transform: uppercase; color: #888; }
+.stmt-meta-val { font-size: 14px; font-weight: 700; color: #5C1A0E; }
+.stmt-meta-sub { font-size: 12px; color: #666; }
+.stmt-h { font-size: 13px; color: #5C1A0E; border-bottom: 2px solid #E0A800; padding-bottom: 4px; margin: 18px 0 8px; }
+.stmt-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+.stmt-table th { background: #E0A800; color: #3d1207; padding: 6px 8px; text-align: left; font-size: 11px; text-transform: uppercase; }
+.stmt-table td { padding: 5px 8px; border-bottom: 1px solid #eee; font-size: 12px; }
+.stmt-totals { max-width: 300px; margin-left: auto; background: #FFFBE6; border: 2px solid #E0A800; border-radius: 8px; padding: 12px 14px; margin-top: 12px; }
+.stmt-total-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+.stmt-total-net { font-size: 15px; font-weight: 800; color: #5C1A0E; border-top: 1px solid #E0A800; padding-top: 8px; margin-top: 2px; }
+.stmt-actions { display: flex; gap: 10px; margin-top: 18px; }
+@media (max-width: 560px) { .stmt-meta { grid-template-columns: 1fr; } }
 
 /* ----------------------------------------------------------------
    Agent Card Grid

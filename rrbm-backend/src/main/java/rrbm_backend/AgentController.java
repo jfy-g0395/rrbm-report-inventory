@@ -283,12 +283,23 @@ public class AgentController {
             // Sum entries for this agent in this period
             List<Object[]> entrySums = commissionEntryRepository
                     .sumByPeriodIdAndAgentId(p.getId(), id);
+            boolean hasEntries = !entrySums.isEmpty();
 
-            if (entrySums.isEmpty()) continue; // Agent has no entries in this period
+            // Always surface OPEN periods (even with zero entries for this agent) so a newly
+            // opened period never silently disappears from the commission view. Periods that
+            // are CLOSED/RELEASED with no entries for this agent are still skipped.
+            if (!hasEntries && !"OPEN".equals(p.getStatus())) continue;
 
-            Object[] entrySum = entrySums.get(0);
-            BigDecimal totalOp = entrySum[1] != null ? (BigDecimal) entrySum[1] : BigDecimal.ZERO;
-            long orderCount = entrySum[2] != null ? ((Number) entrySum[2]).longValue() : 0L;
+            BigDecimal totalOp;
+            long orderCount;
+            if (hasEntries) {
+                Object[] entrySum = entrySums.get(0);
+                totalOp = entrySum[1] != null ? (BigDecimal) entrySum[1] : BigDecimal.ZERO;
+                orderCount = entrySum[2] != null ? ((Number) entrySum[2]).longValue() : 0L;
+            } else {
+                totalOp = BigDecimal.ZERO;
+                orderCount = 0L;
+            }
 
             // Sum adjustments (bonus/deduction) for this agent in this period
             List<CommissionAdjustment> adjs = adjustmentRepository.findByPeriodIdAndAgentId(p.getId(), id);

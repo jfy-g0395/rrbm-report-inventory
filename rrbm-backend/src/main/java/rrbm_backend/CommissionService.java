@@ -55,16 +55,29 @@ public class CommissionService {
         if (!coveringOpen.isEmpty()) {
             period = coveringOpen.get(0);  // on-time order: normal assignment
         } else {
-            // No OPEN period covers this date — late import into a CLOSED period.
-            // Business rule: commission is still earned on the sale date but paid out
-            // in the next available cut-off (earliest OPEN period).
-            period = periodRepository
+            // No OPEN period covers this date. Two distinct sub-cases:
+            //   • Backdated late import (order date precedes the earliest OPEN period):
+            //     commission is still earned on the sale date but paid out in the next
+            //     available cut-off → assign to the earliest OPEN period.
+            //   • Future-dated order (date falls after every OPEN period — typically the
+            //     covering period has not been created yet): do NOT misfile it into an
+            //     earlier open period. Defer entry creation; the covering period's backfill
+            //     (findOrdersWithoutCommissionEntries) will claim the order once created.
+            CommissionPeriod earliestOpen = periodRepository
                     .findByStatusOrderByStartDateDesc("OPEN")
                     .stream()
                     .min(Comparator.comparing(CommissionPeriod::getStartDate))
                     .orElse(null);
-            if (period == null) {
+            if (earliestOpen == null) {
                 log.warn("No OPEN commission period exists for order {} (date={}). Commission entry skipped.",
+                         savedOrder.getId(), orderDate);
+                return;
+            }
+            if (orderDate.isBefore(earliestOpen.getStartDate())) {
+                period = earliestOpen;  // backdated late import → next cut-off
+            } else {
+                log.info("Order {} (date={}) is not covered by any OPEN period and is not backdated; "
+                         + "commission entry deferred until a covering period is created.",
                          savedOrder.getId(), orderDate);
                 return;
             }
@@ -87,6 +100,22 @@ public class CommissionService {
             entry.setOpAmount(item.getOpAmount());
             entryRepository.save(entry);
         }
+    }
+
+    /**
+     * Re-syncs an OPEN period's entries to its (possibly edited) date range: drops PENDING
+     * entries that now fall outside the range and backfills orders that now fall inside it.
+     * Only valid for OPEN periods — all their entries are PENDING, so nothing released moves.
+     *
+     * @return backfill statistics plus an {@code entriesRemoved} count.
+     */
+    @Transactional
+    public Map<String, Object> resyncOpenPeriodEntries(CommissionPeriod period) {
+        int removed = entryRepository.deletePendingOutsideRange(
+                period.getId(), period.getStartDate(), period.getEndDate());
+        Map<String, Object> stats = backfillEntriesForPeriod(period);
+        stats.put("entriesRemoved", removed);
+        return stats;
     }
 
     /**
