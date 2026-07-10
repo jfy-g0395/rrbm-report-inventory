@@ -11696,11 +11696,19 @@
   /** Generate and open a printable daily report PDF for the given date (defaults to today) */
   window.downloadDailyReportPdf = function(dateStr) {
     var date = dateStr || new Date().toISOString().slice(0,10);
+
+    // Open the report window synchronously, inside the click gesture. Opening it later
+    // (after the async fetch resolves) detaches it from the user gesture and popup
+    // blockers silently block it — which looked like "nothing happens".
+    var w = window.open('', '_blank', 'width=900,height=780');
+    if (!w) { showToast('Popup blocked — please allow popups for this site to download the report.', 'error'); return; }
+    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Report ' + date + '</title></head>' +
+      '<body style="font-family:Arial,sans-serif;padding:28px;color:#666;">Generating daily report…</body></html>');
     showToast('Generating daily report…', 'success');
 
     _fetchDailyReportData(date)
       .then(function(d) {
-        if (!d.rep || d.rep.message) { showToast('No report data for ' + date, 'error'); return; }
+        if (!d.rep || d.rep.message) { showToast('No report data for ' + date, 'error'); try { w.close(); } catch (e) {} return; }
         var content = _buildDailyReportHTML(d.rep, d.orders, d.logs, {pdf:true}, d.cash, d.expenseBreakdown);
         var dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'});
         var genTs = new Date().toLocaleString('en-PH',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -11760,11 +11768,12 @@
           '<\/script>' +
           '</body></html>';
 
-        var w = window.open('', '_blank', 'width=900,height=780');
-        if (w) { w.document.write(html); w.document.close(); w.focus(); }
-        else { showToast('Popup blocked — please allow popups for this site to download the report.', 'error'); }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        w.focus();
       })
-      .catch(function(err) { showToast('Error generating report: ' + (err.message||err), 'error'); });
+      .catch(function(err) { showToast('Error generating report: ' + (err.message||err), 'error'); try { w.close(); } catch (e) {} });
   };
 
   /** Modal "Download PDF" button — global wrapper that closes over _drepCurrentDate
