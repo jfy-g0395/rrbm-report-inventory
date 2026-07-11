@@ -7184,7 +7184,7 @@
       var res = await fetch(API_BASE + '/api/orders/reseller-options?type=' + encodeURIComponent(type), { headers: authHeaders() });
       if (!res.ok) { if (input) input.placeholder = 'Failed to load'; return; }
       _cachedResellers = await res.json();
-      if (input) input.placeholder = 'Type to search ' + (type === 'DISTRIBUTOR' ? 'distributors' : 'resellers') + '…';
+      if (input) input.placeholder = 'Click to select ' + (type === 'DISTRIBUTOR' ? 'distributor' : 'reseller') + '…';
       setupResellerAutocomplete();
     } catch (e) {
       if (input) input.placeholder = 'Failed to load';
@@ -7197,14 +7197,10 @@
     if (!input || !dropdown) return;
     var fresh = input.cloneNode(true);
     input.parentNode.replaceChild(fresh, input);
-    var filterAndRender = function () {
-      var t = this.value.toLowerCase().trim();
-      renderResellerDropdown(dropdown, t.length === 0 ? _cachedResellers : _cachedResellers.filter(function (r) {
-        return (r.name || '').toLowerCase().includes(t) || (r.resellerCode || '').toLowerCase().includes(t);
-      }));
-    };
-    fresh.addEventListener('input', filterAndRender);
-    fresh.addEventListener('focus', filterAndRender);
+    // Read-only picker: no free-text entry. Clicking shows the full registered list;
+    // a value is only ever set by selecting a dropdown item (renderResellerDropdown).
+    fresh.addEventListener('focus', function () { renderResellerDropdown(dropdown, _cachedResellers); });
+    fresh.addEventListener('click', function () { renderResellerDropdown(dropdown, _cachedResellers); });
     document.addEventListener('click', function (e) {
       if (!fresh.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show');
     });
