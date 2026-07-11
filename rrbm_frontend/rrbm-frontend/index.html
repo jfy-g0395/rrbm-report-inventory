@@ -2392,7 +2392,11 @@
                   <!-- conditional: Reseller / Distributor name -->
                   <div id="addrec-ord-reseller-wrap" style="display:none;">
                     <label class="form-label" id="addrec-ord-reseller-label">Reseller Name</label>
-                    <input type="text" class="form-control" id="addrec-ord-reseller" placeholder="Enter reseller/distributor name">
+                    <div class="product-autocomplete-wrapper" style="position:relative;">
+                      <input type="text" class="form-control" id="addrec-ord-reseller-input" placeholder="Click to select registered..." autocomplete="off" readonly style="cursor:pointer;background:var(--card-bg);">
+                      <input type="hidden" id="addrec-ord-reseller-id" value="">
+                      <div class="product-dropdown" id="addrec-ord-reseller-dropdown"></div>
+                    </div>
                   </div>
                   <!-- conditional: Facebook page -->
                   <div id="addrec-ord-fb-wrap" style="display:none;">
@@ -5661,6 +5665,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u30"></script>
+  <script src="js/app.js?v=u31"></script>
 </body>
 </html>

@@ -15000,11 +15000,56 @@
     }
     if ($('addrec-ord-reseller-label')) $('addrec-ord-reseller-label').textContent = (v === 'DISTRIBUTOR') ? 'Distributor Name' : 'Reseller Name';
     if (v === 'AGENT') _loadAddRecAgents();
+    if (v === 'RESELLER' || v === 'DISTRIBUTOR') loadAddRecResellerOptions(v);
+    else if ($('addrec-ord-reseller-id')) $('addrec-ord-reseller-id').value = '';
     // Show/hide per-item Over Price rows.
     document.querySelectorAll('#addrec-ord-items .addrec-ord-op-row').forEach(function (r) {
       r.style.display = (v === 'AGENT') ? '' : 'none';
     });
   };
+
+  // Fix 4: Add-Records reseller/distributor picker (mirrors the New Order read-only picker).
+  var _addRecResellers = [];
+  async function loadAddRecResellerOptions(type) {
+    var input = $('addrec-ord-reseller-input');
+    if (input) input.placeholder = 'Loading…';
+    try {
+      var res = await fetch(API_BASE + '/api/orders/reseller-options?type=' + encodeURIComponent(type), { headers: authHeaders() });
+      if (!res.ok) { if (input) input.placeholder = 'Failed to load'; return; }
+      _addRecResellers = await res.json();
+      if (input) input.placeholder = 'Click to select ' + (type === 'DISTRIBUTOR' ? 'distributor' : 'reseller') + '…';
+      _setupAddRecResellerPicker();
+    } catch (e) { if (input) input.placeholder = 'Failed to load'; }
+  }
+  function _setupAddRecResellerPicker() {
+    var input = $('addrec-ord-reseller-input'), dropdown = $('addrec-ord-reseller-dropdown');
+    if (!input || !dropdown) return;
+    var fresh = input.cloneNode(true);
+    input.parentNode.replaceChild(fresh, input);
+    var showAll = function () { _renderAddRecResellerDropdown(dropdown, _addRecResellers); };
+    fresh.addEventListener('focus', showAll);
+    fresh.addEventListener('click', showAll);
+    document.addEventListener('click', function (e) { if (!fresh.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show'); });
+  }
+  function _renderAddRecResellerDropdown(dropdown, resellers) {
+    if (!dropdown) return;
+    if (!resellers || !resellers.length) {
+      dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">None registered</div>';
+      dropdown.classList.add('show'); return;
+    }
+    dropdown.innerHTML = resellers.map(function (r) {
+      return '<div class="product-dropdown-item" data-id="' + r.id + '" data-name="' + escapeHtml(r.name) + '" data-code="' + escapeHtml(r.resellerCode) + '"><strong>' + escapeHtml(r.name) + '</strong> <span style="font-size:11px;color:var(--text-muted);">(' + escapeHtml(r.resellerCode) + ')</span></div>';
+    }).join('');
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var rInput = $('addrec-ord-reseller-input'), rHidden = $('addrec-ord-reseller-id');
+        if (rInput) rInput.value = this.getAttribute('data-name') + ' (' + this.getAttribute('data-code') + ')';
+        if (rHidden) rHidden.value = this.getAttribute('data-id');
+        dropdown.classList.remove('show');
+      });
+    });
+  }
 
   async function _loadAddRecAgents() {
     var input = $('addrec-ord-agent-input');
@@ -15185,6 +15230,7 @@
     var notes         = (($('addrec-ord-notes') || {}).value || '').trim();
     var recordingOnly = !!(($('addrec-ord-recording-only') || {}).checked);
     var agentId       = source === 'AGENT' ? (parseInt(($('addrec-ord-agent-id') || {}).value) || null) : null;
+    var resellerId    = (source === 'RESELLER' || source === 'DISTRIBUTOR') ? (parseInt(($('addrec-ord-reseller-id') || {}).value) || null) : null;
 
     if (!date)         { showToast('Please select a date', 'error'); return; }
     if (!customerName) { showToast('Please enter customer name', 'error'); return; }
@@ -15202,7 +15248,10 @@
     }
 
     var contactName = null;
-    if (source === 'RESELLER' || source === 'DISTRIBUTOR') contactName = (($('addrec-ord-reseller') || {}).value || '').trim();
+    if (source === 'RESELLER' || source === 'DISTRIBUTOR') {
+      var _selRec = _addRecResellers.find(function (x) { return x.id === resellerId; });
+      contactName = _selRec ? _selRec.name : null;
+    }
 
     var rows = document.querySelectorAll('#addrec-ord-items .addrec-ord-item-row');
     if (!rows.length) { showToast('Please add at least one item', 'error'); return; }
@@ -15235,7 +15284,7 @@
     var payload = {
       date: date, recordingOnly: recordingOnly, paymentStatus: paymentStatus,
       customerName: customerName, source: source,
-      agentId: agentId, agentName: contactName || null,
+      agentId: agentId, resellerId: resellerId, agentName: contactName || null,
       fbPage: source === 'FACEBOOK_PAGE' ? (($('addrec-ord-fb') || {}).value || '').trim() : null,
       ecommercePlatform: ecommercePlatform,
       paymentMode: paymentMode, orderType: orderType,
@@ -15264,7 +15313,7 @@
   function _resetAddRecOrderForm() {
     // Keep date + source (fast repeated entry for the same day); clear the rest.
     ['addrec-ord-customer','addrec-ord-address','addrec-ord-notes','addrec-ord-fb',
-     'addrec-ord-reseller','addrec-ord-ecom-orderid','addrec-ord-agent-input','addrec-ord-agent-id']
+     'addrec-ord-reseller-input','addrec-ord-reseller-id','addrec-ord-ecom-orderid','addrec-ord-agent-input','addrec-ord-agent-id']
       .forEach(function (id) { if ($(id)) $(id).value = ''; });
     if ($('addrec-ord-discount')) $('addrec-ord-discount').value = '0';
     if ($('addrec-ord-delivery-fee')) $('addrec-ord-delivery-fee').value = '0';
