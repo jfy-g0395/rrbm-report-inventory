@@ -1,6 +1,16 @@
 # Runbook — Employee 201 records (Phase B)
 
-## 🟡 STATUS: BUILT — PR #6 open, NOT yet tested / merged / deployed (updated 2026-07-10)
+## ✅ STATUS: DEPLOYED — 2026-07-11
+Merged into `main` via PR #6 (merge commit `ee7122b`), pushed to `origin/main`, and deployed via
+`docker compose up -d --build` **after Phase A / V98** (migration order preserved). `flyway_schema_history`
+confirms **V99** (`employee 201`) applied successfully on the live DB (2026-07-11 02:40, after V98).
+Validated on an isolated clone stacked on V98 (§3 all green: employee create + age compute + auto
+milestone events (SALARY/POSITION/STATUS) + memo + benefit types + `employee-201` 403 gate; `/api/users`
+"User List" rename intact). Live `GET /api/employees` returns 200; frontend cache-bust `u27`.
+**Do not re-run §2 deploy steps — this is done.** Everything below is kept for reference/rollback only.
+
+<!-- superseded build-status note below -->
+### 🟡 (historical) BUILT — PR #6 open, NOT yet tested / merged / deployed (updated 2026-07-10)
 Branch `feat/employee-201-records`, built off `main` (`0e51159`, head V97). **All 3 sessions complete:**
 - **S-B1** backend — `2767be2` — V99 schema, entities/repos, `EmployeeController`, access wiring,
   "Employee List → User List" rename. `./mvnw compile` **green**.

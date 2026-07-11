@@ -25,3 +25,9 @@ package-lock.json
 # Captured build/test output (churns; not source)
 rrbm-backend/test_output.txt
 rrbm-backend/..backend-startup.log
+
+# Database backups & data exports — kept locally as deploy safety nets, never source
+rrbm_db_backup_*.sql
+backup_err.log
+_backfill/
+_exports/

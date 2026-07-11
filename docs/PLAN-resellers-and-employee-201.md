@@ -1,5 +1,15 @@
 # BUILD PLAN — Resellers/Distributors Registry + Employee 201 Records
 
+> ## ✅ DEPLOYED — 2026-07-11 (both features live on `main`)
+> - **Phase A — Resellers/Distributors (V98)** — merged via PR #5 (`dff8b60`).
+> - **Phase B — Employee 201 (V99)** — merged via PR #6 (`ee7122b`).
+> Each was validated on an isolated Postgres clone (B stacked on A so Flyway applied **V98 then V99** in
+> order), then deployed **A → B** via `docker compose up -d --build`. Live boot confirms both migrations
+> applied; `GET /api/resellers` and `GET /api/employees` return 200; frontend cache-bust `u27`.
+> A 500-on-create bug in the resellers outstanding-mapping was found and fixed during validation (`3c5b36c`).
+> See the STATUS blocks in `RUNBOOK-resellers-registry.md` and `RUNBOOK-employee-201.md`.
+> **Everything below is the historical build plan, kept for reference.**
+
 **Audience:** Claude Code (Sonnet) executing **one session per run**. Sessions S-A1…S-A3 then S-B1…S-B3.
 **Branches:** Phase A → `feat/resellers-distributors-registry` · Phase B → `feat/employee-201-records`.
 

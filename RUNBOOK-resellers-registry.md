@@ -1,6 +1,16 @@
 # Runbook — Resellers & Distributors registry (Phase A)
 
-## 🟡 STATUS: BUILT — in PR #5, NOT yet tested / merged / deployed (updated 2026-07-09)
+## ✅ STATUS: DEPLOYED — 2026-07-11
+Merged into `main` via PR #5 (merge commit `dff8b60`), pushed to `origin/main`, and deployed via
+`docker compose up -d --build`. `flyway_schema_history` confirms **V98** (`resellers registry`) applied
+successfully on the live DB (2026-07-11 02:40, schema now at v99). Validated on an isolated Postgres clone
+before merge (§3 all green). During validation a 500-on-create bug in `ResellerRepository.outstandingForReseller`
+result mapping was found and fixed (commit `3c5b36c`). Live `GET /api/resellers` returns 200; frontend
+cache-bust is `u27` (bumped past `main`'s `u25`). **Do not re-run §2 deploy steps — this is done.**
+Everything below is kept for reference/rollback only.
+
+<!-- superseded build-status note below -->
+### 🟡 (historical) BUILT — in PR #5, NOT yet tested / merged / deployed (updated 2026-07-09)
 All three build sessions are complete and pushed to `feat/resellers-distributors-registry`:
 - **S-A1** backend — `da142fa` (V98 schema, `/api/resellers` CRUD + price map + order hook). Backend
   `./mvnw compile` is **green**.
