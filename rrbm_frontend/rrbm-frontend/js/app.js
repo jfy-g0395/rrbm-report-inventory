@@ -187,8 +187,8 @@
     'STANDARD_USER':  ['orders','rejected-items','receive-stocks','inventory','delivery-reports'],
     'ACCOUNTING':     ['dashboard','orders','void-cancel-orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','add-rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
     'DELIVERY_MANAGEMENT':['dashboard','orders','delivery-schedule','inventory','delivery-reports'],
-    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
-    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
+    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','employee-201','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
+    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','employee-201','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
     'SUPER_ADMIN':    null
   };
 
@@ -390,6 +390,7 @@
       'delivery-rep': 'delivery-reports',
       'activity-log': 'activity-log',
       'emp': 'employees',
+      'emp201': 'employee-201',
       'agents': 'agents',
       'resellers': 'resellers',
       'expenses': 'expenses',
@@ -5129,6 +5130,320 @@
     reader.readAsDataURL(input.files[0]);
   };
 
+  // ================================================================
+  // Employee 201 records (S-B2) — list, tabbed registration, timeline
+  // ================================================================
+  var _emp201Photo = null;        // base64 data-URL of the 2x2 (downscaled)
+  var _emp201Editing = null;      // employee id when editing, else null
+  var _emp201BenefitTypes = [];
+  var _emp201Levels = ['PRIMARY','SECONDARY','TERTIARY','VOCATIONAL','GRADUATE'];
+
+  var EMP201_STATUS_BADGE = {
+    PROBATIONARY: { bg:'#FEF3C7', fg:'#92400E', label:'Probationary' },
+    REGULAR:      { bg:'#D1FAE5', fg:'#065F46', label:'Regular' },
+    CONTRACTUAL:  { bg:'#DBEAFE', fg:'#1E40AF', label:'Contractual' }
+  };
+
+  window.loadEmployees201 = async function () {
+    var tb = $('emp201-tbody');
+    if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>';
+    try {
+      var q = (($('emp201-search') || {}).value || '').trim();
+      var res = await fetch(API_BASE + '/api/employees' + (q ? '?q=' + encodeURIComponent(q) : ''), { headers: authHeaders() });
+      if (!res.ok) { if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#EF4444;padding:24px;">Failed to load.</td></tr>'; return; }
+      var list = await res.json();
+      if (!Array.isArray(list) || list.length === 0) {
+        if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">No employees registered yet.</td></tr>';
+        return;
+      }
+      if (tb) tb.innerHTML = list.map(function (e) {
+        var b = EMP201_STATUS_BADGE[e.employmentStatus] || { bg:'#F3F4F6', fg:'#6B7280', label:(e.employmentStatus||'') };
+        var img = e.photo
+          ? '<img src="' + e.photo + '" style="width:36px;height:36px;border-radius:6px;object-fit:cover;">'
+          : '<div style="width:36px;height:36px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;color:var(--text-muted);"><i class="ti ti-user"></i></div>';
+        return '<tr style="cursor:pointer;" onclick="openEmp201Register(' + e.id + ')">' +
+          '<td>' + img + '</td>' +
+          '<td><div style="font-weight:600;">' + escapeHtml(e.fullName || '') + '</div><div style="font-size:11px;color:var(--text-muted);font-family:monospace;">' + escapeHtml(e.employeeCode || '') + '</div></td>' +
+          '<td>' + escapeHtml(e.position || '') + '</td>' +
+          '<td><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + b.bg + ';color:' + b.fg + ';">' + b.label + '</span></td>' +
+          '<td style="font-size:12px;">' + escapeHtml(e.dateOfEmployment || '') + '</td>' +
+          '</tr>';
+      }).join('');
+    } catch (err) {
+      if (tb) tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#EF4444;padding:24px;">Error loading.</td></tr>';
+    }
+  };
+
+  window.switchEmp201Tab = function (tab) {
+    ['personal','education','work','comp','timeline'].forEach(function (t) {
+      var pane = $('emp201-tab-' + t);
+      if (pane) pane.style.display = t === tab ? '' : 'none';
+      var btn = $('emp201-tabbtn-' + t);
+      if (btn) btn.classList.toggle('active', t === tab);
+    });
+    if (tab === 'timeline') loadEmp201Timeline();
+  };
+
+  // 2x2 photo: downscale via canvas to <=400px before storing (keeps payload small).
+  window.previewEmp201Photo = function (input) {
+    if (!input.files || !input.files[0]) return;
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var img = new Image();
+      img.onload = function () {
+        var max = 400, w = img.width, h = img.height;
+        if (w > h && w > max) { h = Math.round(h * max / w); w = max; }
+        else if (h > max)     { w = Math.round(w * max / h); h = max; }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        _emp201Photo = canvas.toDataURL('image/jpeg', 0.85);
+        var prev = $('emp201-photo-preview');
+        if (prev) prev.innerHTML = '<img src="' + _emp201Photo + '" style="width:100%;height:100%;object-fit:cover;">';
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(input.files[0]);
+  };
+
+  window.onEmp201BirthdateChange = function () {
+    var v = ($('emp201-birthdate') || {}).value;
+    var out = $('emp201-age');
+    if (!out) return;
+    if (!v) { out.textContent = '—'; return; }
+    var b = new Date(v), now = new Date();
+    var age = now.getFullYear() - b.getFullYear();
+    if (now.getMonth() < b.getMonth() || (now.getMonth() === b.getMonth() && now.getDate() < b.getDate())) age--;
+    out.textContent = (age >= 0 && age < 130) ? age + ' yrs' : '—';
+  };
+
+  window.onEmp201CivilChange = function () {
+    var v = ($('emp201-civil') || {}).value;
+    var wrap = $('emp201-spouse-wrap');
+    if (wrap) wrap.style.display = (v === 'MARRIED') ? '' : 'none';
+  };
+
+  window.onEmp201StatusChange = function () {
+    var v = ($('emp201-empstatus') || {}).value;
+    var wrap = $('emp201-probation-wrap');
+    if (wrap) wrap.style.display = (v === 'PROBATIONARY') ? '' : 'none';
+  };
+
+  window.addEmp201WorkRow = function (data) {
+    var box = $('emp201-work-rows');
+    if (!box) return;
+    var d = data || {};
+    var row = document.createElement('div');
+    row.className = 'emp201-work-row';
+    row.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr 28px;gap:6px;margin-bottom:6px;';
+    row.innerHTML =
+      '<input class="form-control form-control-sm emp201-work-employer" placeholder="Employer" value="' + escapeHtml(d.employerName || '') + '">' +
+      '<input class="form-control form-control-sm emp201-work-start" placeholder="From" value="' + escapeHtml(d.yearStarted || '') + '">' +
+      '<input class="form-control form-control-sm emp201-work-end" placeholder="To" value="' + escapeHtml(d.yearEnded || '') + '">' +
+      '<input class="form-control form-control-sm emp201-work-position" placeholder="Position" value="' + escapeHtml(d.position || '') + '">' +
+      '<button class="btn btn-sm btn-outline" onclick="this.parentNode.remove()" title="Remove">&times;</button>';
+    box.appendChild(row);
+  };
+
+  function renderEmp201Benefits(selected) {
+    var box = $('emp201-benefits');
+    if (!box) return;
+    var byId = {};
+    (selected || []).forEach(function (s) { byId[String(s.benefitTypeId)] = s; });
+    box.innerHTML = (_emp201BenefitTypes || []).map(function (bt) {
+      var sel = byId[String(bt.id)];
+      var checked = sel ? 'checked' : '';
+      var gov = bt.isGovernment ? ' <span style="font-size:10px;color:var(--text-muted);">(gov)</span>' : '';
+      return '<div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px;">' +
+        '<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;">' +
+          '<input type="checkbox" class="emp201-benefit-chk" data-bid="' + bt.id + '" ' + checked + ' onchange="this.closest(\'div\').querySelector(\'.emp201-benefit-detail\').style.display=this.checked?\'\':\'none\'"> ' + escapeHtml(bt.name) + gov +
+        '</label>' +
+        '<div class="emp201-benefit-detail" style="display:' + (sel ? '' : 'none') + ';margin-top:6px;gap:6px;grid-template-columns:1fr 2fr;display:grid;">' +
+          '<input type="number" min="0" step="0.01" class="form-control form-control-sm emp201-benefit-amount" placeholder="Amount" value="' + (sel && sel.amount != null ? Number(sel.amount) : '') + '">' +
+          '<input type="text" class="form-control form-control-sm emp201-benefit-notes" placeholder="Notes" value="' + (sel && sel.notes ? escapeHtml(sel.notes) : '') + '">' +
+        '</div></div>';
+    }).join('');
+  }
+
+  window.addBenefitType = async function () {
+    var name = prompt('New benefit type name:');
+    if (!name || !name.trim()) return;
+    try {
+      var res = await fetch(API_BASE + '/api/employees/benefit-types', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ name: name.trim() })
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast('Error: ' + (data.error || res.status), 'error'); return; }
+      await loadEmp201BenefitTypes();
+      renderEmp201Benefits(collectEmp201Benefits());
+    } catch (e) { showToast('Connection error', 'error'); }
+  };
+
+  async function loadEmp201BenefitTypes() {
+    try {
+      var res = await fetch(API_BASE + '/api/employees/benefit-types', { headers: authHeaders() });
+      _emp201BenefitTypes = res.ok ? await res.json() : [];
+    } catch (e) { _emp201BenefitTypes = []; }
+  }
+
+  window.openEmp201Register = async function (id) {
+    _emp201Editing = id || null;
+    _emp201Photo = null;
+    await loadEmp201BenefitTypes();
+
+    // reset fields
+    ['lastname','firstname','middlename','maidenname','birthdate','nationality','position','doe',
+     'email','spouse','contact','address','sss','pagibig','philhealth','wage','probation']
+      .forEach(function (f) { if ($('emp201-' + f)) $('emp201-' + f).value = ''; });
+    if ($('emp201-civil'))     $('emp201-civil').value = '';
+    if ($('emp201-gender'))    $('emp201-gender').value = '';
+    if ($('emp201-empstatus')) $('emp201-empstatus').value = 'PROBATIONARY';
+    if ($('emp201-age'))       $('emp201-age').textContent = '—';
+    if ($('emp201-photo-preview')) $('emp201-photo-preview').innerHTML = '<i class="ti ti-user" style="font-size:28px;color:var(--text-muted);"></i>';
+    _emp201Levels.forEach(function (lv) {
+      if ($('emp201-edu-' + lv + '-school')) $('emp201-edu-' + lv + '-school').value = '';
+      if ($('emp201-edu-' + lv + '-year'))   $('emp201-edu-' + lv + '-year').value = '';
+    });
+    if ($('emp201-work-rows')) $('emp201-work-rows').innerHTML = '';
+    onEmp201CivilChange(); onEmp201StatusChange();
+    renderEmp201Benefits([]);
+    if ($('emp201-modal-title')) $('emp201-modal-title').textContent = 'Register Employee';
+    var tlTab = $('emp201-tabbtn-timeline'); if (tlTab) tlTab.style.display = id ? '' : 'none';
+    switchEmp201Tab('personal');
+
+    if (id) {
+      try {
+        var res = await fetch(API_BASE + '/api/employees/' + id, { headers: authHeaders() });
+        if (res.ok) {
+          var e = await res.json();
+          var set = function (f, v) { if ($('emp201-' + f)) $('emp201-' + f).value = (v == null ? '' : v); };
+          set('lastname', e.lastName); set('firstname', e.firstName); set('middlename', e.middleName);
+          set('maidenname', e.maidenName); set('birthdate', e.birthdate); set('nationality', e.nationality);
+          set('position', e.position); set('doe', e.dateOfEmployment); set('email', e.email);
+          set('spouse', e.spouseName); set('contact', e.contactNumber); set('address', e.address);
+          set('sss', e.sssNumber); set('pagibig', e.pagibigNumber); set('philhealth', e.philhealthNumber);
+          set('wage', e.dailyWage); set('probation', e.probationEndDate);
+          if ($('emp201-civil'))     $('emp201-civil').value = e.civilStatus || '';
+          if ($('emp201-gender'))    $('emp201-gender').value = e.gender || '';
+          if ($('emp201-empstatus')) $('emp201-empstatus').value = e.employmentStatus || 'PROBATIONARY';
+          if (e.photo) { _emp201Photo = e.photo; if ($('emp201-photo-preview')) $('emp201-photo-preview').innerHTML = '<img src="' + e.photo + '" style="width:100%;height:100%;object-fit:cover;">'; }
+          (e.education || []).forEach(function (ed) {
+            if ($('emp201-edu-' + ed.level + '-school')) $('emp201-edu-' + ed.level + '-school').value = ed.schoolName || '';
+            if ($('emp201-edu-' + ed.level + '-year'))   $('emp201-edu-' + ed.level + '-year').value = ed.yearGraduated || '';
+          });
+          (e.workHistory || []).forEach(function (w) { addEmp201WorkRow(w); });
+          renderEmp201Benefits(e.benefits || []);
+          onEmp201BirthdateChange(); onEmp201CivilChange(); onEmp201StatusChange();
+          if ($('emp201-modal-title')) $('emp201-modal-title').textContent = 'Edit ' + (e.fullName || 'Employee');
+        }
+      } catch (err) { /* ignore — form stays blank */ }
+    }
+    if ($('modal-emp201')) $('modal-emp201').classList.add('open');
+  };
+
+  window.closeEmp201Modal = function () { if ($('modal-emp201')) $('modal-emp201').classList.remove('open'); };
+
+  function collectEmp201Benefits() {
+    var out = [];
+    document.querySelectorAll('#emp201-benefits .emp201-benefit-chk:checked').forEach(function (chk) {
+      var wrap = chk.closest('div').parentNode;
+      var detail = chk.closest('div').querySelector('.emp201-benefit-detail');
+      out.push({
+        benefitTypeId: parseInt(chk.getAttribute('data-bid')),
+        amount: detail && detail.querySelector('.emp201-benefit-amount').value ? parseFloat(detail.querySelector('.emp201-benefit-amount').value) : null,
+        notes: detail ? detail.querySelector('.emp201-benefit-notes').value : null
+      });
+    });
+    return out;
+  }
+
+  window.submitEmp201 = async function () {
+    var val = function (f) { return (($('emp201-' + f) || {}).value || '').trim(); };
+    var payload = {
+      lastName: val('lastname'), firstName: val('firstname'), middleName: val('middlename'),
+      maidenName: val('maidenname'), birthdate: val('birthdate') || null,
+      nationality: val('nationality'), civilStatus: ($('emp201-civil') || {}).value || null,
+      gender: ($('emp201-gender') || {}).value || null, position: val('position'),
+      dateOfEmployment: val('doe') || null, email: val('email'),
+      spouseName: (($('emp201-civil') || {}).value === 'MARRIED') ? val('spouse') : null,
+      contactNumber: val('contact'), address: val('address'),
+      sssNumber: val('sss'), pagibigNumber: val('pagibig'), philhealthNumber: val('philhealth'),
+      photo: _emp201Photo,
+      employmentStatus: ($('emp201-empstatus') || {}).value || 'PROBATIONARY',
+      probationEndDate: val('probation') || null,
+      dailyWage: val('wage') !== '' ? parseFloat(val('wage')) : null,
+      education: _emp201Levels.map(function (lv) {
+        return { level: lv, schoolName: (($('emp201-edu-' + lv + '-school') || {}).value || '').trim(), yearGraduated: (($('emp201-edu-' + lv + '-year') || {}).value || '').trim() };
+      }),
+      workHistory: Array.prototype.slice.call(document.querySelectorAll('#emp201-work-rows .emp201-work-row')).map(function (r) {
+        return {
+          employerName: r.querySelector('.emp201-work-employer').value.trim(),
+          yearStarted:  r.querySelector('.emp201-work-start').value.trim(),
+          yearEnded:    r.querySelector('.emp201-work-end').value.trim(),
+          position:     r.querySelector('.emp201-work-position').value.trim()
+        };
+      }),
+      benefits: collectEmp201Benefits()
+    };
+    if (!payload.lastName)      { showToast('Last name is required', 'error'); switchEmp201Tab('personal'); return; }
+    if (!payload.firstName)     { showToast('First name is required', 'error'); switchEmp201Tab('personal'); return; }
+    if (!payload.birthdate)     { showToast('Birthdate is required', 'error'); switchEmp201Tab('personal'); return; }
+    if (!payload.position)      { showToast('Position is required', 'error'); switchEmp201Tab('personal'); return; }
+    if (!payload.dateOfEmployment) { showToast('Date of employment is required', 'error'); switchEmp201Tab('personal'); return; }
+    if (!payload.contactNumber) { showToast('Contact number is required', 'error'); switchEmp201Tab('personal'); return; }
+
+    try {
+      var res = await fetch(API_BASE + '/api/employees' + (_emp201Editing ? '/' + _emp201Editing : ''), {
+        method: _emp201Editing ? 'PUT' : 'POST', headers: authHeaders(), body: JSON.stringify(payload)
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast('Error: ' + (data.error || data.message || res.status), 'error'); return; }
+      showToast(_emp201Editing ? 'Employee updated' : (data.employeeCode || 'Employee') + ' registered', 'success');
+      closeEmp201Modal();
+      loadEmployees201();
+    } catch (e) { showToast('Connection error', 'error'); }
+  };
+
+  async function loadEmp201Timeline() {
+    var box = $('emp201-timeline');
+    if (!box || !_emp201Editing) { if (box) box.innerHTML = '<div style="color:var(--text-muted);padding:8px;font-size:12px;">Save the employee first to start a timeline.</div>'; return; }
+    box.innerHTML = '<div style="color:var(--text-muted);padding:8px;">Loading…</div>';
+    try {
+      var res = await fetch(API_BASE + '/api/employees/' + _emp201Editing, { headers: authHeaders() });
+      var e = await res.json();
+      var events = e.events || [];
+      var typeBadge = { SALARY_CHANGE:'#059669', POSITION_CHANGE:'#7C3AED', STATUS_CHANGE:'#2563EB', MEMO:'#D97706', ADDENDUM:'#DC2626', NOTE:'#6B7280' };
+      var rows = events.length ? events.map(function (ev) {
+        var color = typeBadge[ev.eventType] || '#6B7280';
+        var change = (ev.oldValue || ev.newValue) ? '<div style="font-size:12px;">' + escapeHtml(ev.oldValue || '—') + ' → <strong>' + escapeHtml(ev.newValue || '—') + '</strong></div>' : '';
+        var details = ev.details ? '<div style="font-size:12px;color:var(--text-secondary);">' + escapeHtml(ev.details) + '</div>' : '';
+        return '<div style="border-left:3px solid ' + color + ';padding:6px 10px;margin-bottom:8px;">' +
+          '<div style="font-size:11px;font-weight:600;color:' + color + ';">' + escapeHtml(ev.eventType.replace(/_/g,' ')) + ' <span style="color:var(--text-muted);font-weight:400;">· ' + escapeHtml(ev.eventDate || '') + '</span></div>' +
+          change + details + '</div>';
+      }).join('') : '<div style="color:var(--text-muted);padding:8px;font-size:12px;">No milestones yet.</div>';
+      box.innerHTML =
+        '<div style="display:flex;gap:6px;margin-bottom:10px;">' +
+          '<select id="emp201-event-type" class="form-control form-control-sm" style="width:130px;"><option value="MEMO">Memo</option><option value="ADDENDUM">Addendum</option><option value="NOTE">Note</option></select>' +
+          '<input id="emp201-event-details" class="form-control form-control-sm" placeholder="Details…" style="flex:1;">' +
+          '<button class="btn btn-sm btn-primary" onclick="addEmp201Event()">Add</button>' +
+        '</div>' + rows;
+    } catch (e) { box.innerHTML = '<div style="color:#EF4444;padding:8px;">Error loading timeline.</div>'; }
+  }
+
+  window.addEmp201Event = async function () {
+    if (!_emp201Editing) return;
+    var type = ($('emp201-event-type') || {}).value;
+    var details = (($('emp201-event-details') || {}).value || '').trim();
+    if (!details) { showToast('Enter details', 'error'); return; }
+    try {
+      var res = await fetch(API_BASE + '/api/employees/' + _emp201Editing + '/events', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ eventType: type, details: details })
+      });
+      if (!res.ok) { showToast('Failed to add', 'error'); return; }
+      loadEmp201Timeline();
+    } catch (e) { showToast('Connection error', 'error'); }
+  };
+
   window.askAddEmployee = function () {
     if (!canManageEmployees()) { showToast('Administrator access required', 'error'); return; }
     // Clear all fields
@@ -5777,7 +6092,8 @@
       resellers:      ['Resellers & Distributors', 'Registered resellers/distributors, pricing & order tracking'],
       'import':       ['Add Records',        'Add backdated orders & expenses'],
       transactions:   ['Transaction Ledger', 'Accounting ledger entries'],
-      emp:            ['Employee List',      'Manage employees'],
+      emp:            ['User List',          'Manage system users'],
+      emp201:         ['Employee 201',       'Employee records — personal, benefits & milestones'],
       expenses:       ['Expenses',           'Daily expense tracking'],
       payables:       ['Payables',          'Company payable records'],
       suppliers:      ['Suppliers',         'Manage supplier accounts'],
@@ -5827,6 +6143,7 @@
     if (view === 'payables')     loadPayables();
     if (view === 'suppliers')    loadSuppliers();
     if (view === 'emp')          renderUsers();
+    if (view === 'emp201')       loadEmployees201();
     if (view === 'dash')         { renderDashboard(); renderTopProductsToday(); loadProductAnalytics(); }
     if (view === 'set')          loadSettings();
   };

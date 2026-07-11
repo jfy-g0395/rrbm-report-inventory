@@ -190,7 +190,10 @@
           <i class="ti ti-file-import"></i><span>Add Records</span>
         </button>
         <button class="nav-item" id="nav-emp" data-view="emp" onclick="navigateTo('emp')">
-          <i class="ti ti-users"></i><span>Employee List</span>
+          <i class="ti ti-users"></i><span>User List</span>
+        </button>
+        <button class="nav-item" id="nav-emp201" data-view="emp201" onclick="navigateTo('emp201')">
+          <i class="ti ti-id-badge-2"></i><span>Employee 201</span>
         </button>
         <button class="nav-item" id="nav-set" data-view="set" onclick="navigateTo('set')">
           <i class="ti ti-settings"></i><span>Settings</span>
@@ -2686,7 +2689,7 @@
         <section class="view" id="view-emp">
           <div class="card">
             <div class="card-header">
-              <div class="card-title">Employee List</div>
+              <div class="card-title">User List</div>
               <button class="btn btn-primary btn-sm" id="btn-add-employee" onclick="askAddEmployee()" style="display:none;">
                 <i class="ti ti-user-plus"></i> Add Employee
               </button>
@@ -2703,6 +2706,27 @@
                 <tbody id="emp-tbody">
                   <tr><td colspan="9" style="text-align:center;color:#999;padding:24px;">Loading…</td></tr>
                 </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====================================================
+             VIEW: EMPLOYEE 201 RECORDS
+             ==================================================== -->
+        <section class="view" id="view-emp201">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><i class="ti ti-id-badge-2" style="margin-right:6px;"></i>Employee 201 Records</div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input id="emp201-search" type="text" placeholder="Search name / position / code…" oninput="loadEmployees201()" style="padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;background:var(--card-bg);color:var(--text);width:220px;">
+                <button class="btn btn-primary btn-sm" onclick="openEmp201Register()"><i class="ti ti-user-plus"></i> Register</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="table">
+                <thead><tr><th style="width:48px;">Photo</th><th>Name</th><th>Position</th><th>Standing</th><th>Date Hired</th></tr></thead>
+                <tbody id="emp201-tbody"><tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -3995,6 +4019,7 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="delivery-reports" checked /> Delivery Reports</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="activity-log" checked /> Activity Log</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="employees" checked /> Employees</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="employee-201" checked /> Employee 201</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="expenses" checked /> Expenses</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="payables" checked /> Payables</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="suppliers" checked /> Suppliers</label>
@@ -4160,6 +4185,7 @@
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="delivery-reports" /> Delivery Reports</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="activity-log" /> Activity Log</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="employees" /> Employees</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="employee-201" /> Employee 201</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="expenses" /> Expenses</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="payables" /> Payables</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" value="suppliers" /> Suppliers</label>
@@ -5494,8 +5520,105 @@
     </div>
   </div>
 
+  <!-- ============================================================
+       MODAL: EMPLOYEE 201 — tabbed registration / edit
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-emp201">
+    <div class="modal" style="max-width:760px;">
+      <div class="modal-header">
+        <div class="modal-title" id="emp201-modal-title">Register Employee</div>
+        <button class="icon-btn" onclick="closeEmp201Modal()"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="slide-panel-tabs" style="margin-bottom:14px;">
+          <button class="slide-panel-tab active" id="emp201-tabbtn-personal"  onclick="switchEmp201Tab('personal')">Personal Info</button>
+          <button class="slide-panel-tab"        id="emp201-tabbtn-education" onclick="switchEmp201Tab('education')">Education</button>
+          <button class="slide-panel-tab"        id="emp201-tabbtn-work"     onclick="switchEmp201Tab('work')">Employment History</button>
+          <button class="slide-panel-tab"        id="emp201-tabbtn-comp"     onclick="switchEmp201Tab('comp')">Compensation &amp; Benefits</button>
+          <button class="slide-panel-tab"        id="emp201-tabbtn-timeline" onclick="switchEmp201Tab('timeline')" style="display:none;">Timeline</button>
+        </div>
+
+        <!-- Tab: Personal Info -->
+        <div id="emp201-tab-personal">
+          <div style="display:flex;gap:16px;">
+            <div style="flex:0 0 120px;text-align:center;">
+              <div id="emp201-photo-preview" style="width:120px;height:120px;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--bg-secondary);"><i class="ti ti-user" style="font-size:28px;color:var(--text-muted);"></i></div>
+              <label class="form-label" style="font-size:11px;margin-top:6px;display:block;">2×2 Photo</label>
+              <input type="file" accept="image/*" onchange="previewEmp201Photo(this)" style="font-size:11px;width:120px;">
+            </div>
+            <div style="flex:1;" class="row g-2">
+              <div class="col-md-4"><label class="form-label">Last Name <span class="text-danger">*</span></label><input class="form-control" id="emp201-lastname"></div>
+              <div class="col-md-4"><label class="form-label">First Name <span class="text-danger">*</span></label><input class="form-control" id="emp201-firstname"></div>
+              <div class="col-md-4"><label class="form-label">Middle Name</label><input class="form-control" id="emp201-middlename"></div>
+              <div class="col-md-4"><label class="form-label">Maiden Name</label><input class="form-control" id="emp201-maidenname"></div>
+              <div class="col-md-4"><label class="form-label">Birthdate <span class="text-danger">*</span></label><input type="date" class="form-control" id="emp201-birthdate" onchange="onEmp201BirthdateChange()"></div>
+              <div class="col-md-4"><label class="form-label">Age</label><div id="emp201-age" style="padding:7px 0;font-weight:600;">—</div></div>
+              <div class="col-md-4"><label class="form-label">Gender</label><select class="form-select" id="emp201-gender"><option value="">—</option><option value="MALE">Male</option><option value="FEMALE">Female</option></select></div>
+              <div class="col-md-4"><label class="form-label">Civil Status</label><select class="form-select" id="emp201-civil" onchange="onEmp201CivilChange()"><option value="">—</option><option value="SINGLE">Single</option><option value="MARRIED">Married</option><option value="WIDOWED">Widowed</option><option value="SEPARATED">Separated</option></select></div>
+              <div class="col-md-4" id="emp201-spouse-wrap" style="display:none;"><label class="form-label">Spouse Name</label><input class="form-control" id="emp201-spouse"></div>
+              <div class="col-md-4"><label class="form-label">Nationality</label><input class="form-control" id="emp201-nationality"></div>
+              <div class="col-md-4"><label class="form-label">Position <span class="text-danger">*</span></label><input class="form-control" id="emp201-position"></div>
+              <div class="col-md-4"><label class="form-label">Date of Employment <span class="text-danger">*</span></label><input type="date" class="form-control" id="emp201-doe"></div>
+              <div class="col-md-4"><label class="form-label">Contact Number <span class="text-danger">*</span></label><input class="form-control" id="emp201-contact"></div>
+              <div class="col-md-4"><label class="form-label">Email</label><input class="form-control" id="emp201-email"></div>
+              <div class="col-md-12"><label class="form-label">Address</label><input class="form-control" id="emp201-address"></div>
+              <div class="col-md-4"><label class="form-label">SSS Number</label><input class="form-control" id="emp201-sss"></div>
+              <div class="col-md-4"><label class="form-label">Pag-IBIG Number</label><input class="form-control" id="emp201-pagibig"></div>
+              <div class="col-md-4"><label class="form-label">PhilHealth Number</label><input class="form-control" id="emp201-philhealth"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Education -->
+        <div id="emp201-tab-education" style="display:none;">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">All optional — fill what applies.</div>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:4px;font-size:12px;">Level</th><th style="text-align:left;padding:4px;font-size:12px;">School Name</th><th style="text-align:left;padding:4px;font-size:12px;width:120px;">Year Graduated</th></tr></thead>
+            <tbody>
+              <tr><td style="padding:4px;font-size:13px;">Primary</td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-PRIMARY-school"></td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-PRIMARY-year"></td></tr>
+              <tr><td style="padding:4px;font-size:13px;">Secondary</td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-SECONDARY-school"></td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-SECONDARY-year"></td></tr>
+              <tr><td style="padding:4px;font-size:13px;">Tertiary</td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-TERTIARY-school"></td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-TERTIARY-year"></td></tr>
+              <tr><td style="padding:4px;font-size:13px;">Vocational</td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-VOCATIONAL-school"></td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-VOCATIONAL-year"></td></tr>
+              <tr><td style="padding:4px;font-size:13px;">Graduate School</td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-GRADUATE-school"></td><td style="padding:4px;"><input class="form-control form-control-sm" id="emp201-edu-GRADUATE-year"></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tab: Employment History -->
+        <div id="emp201-tab-work" style="display:none;">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1.5fr 28px;gap:6px;font-size:11px;color:var(--text-muted);margin-bottom:4px;"><div>Employer</div><div>From</div><div>To</div><div>Position</div><div></div></div>
+          <div id="emp201-work-rows"></div>
+          <button class="btn btn-sm btn-outline" onclick="addEmp201WorkRow()"><i class="ti ti-plus"></i> Add Employer</button>
+        </div>
+
+        <!-- Tab: Compensation & Benefits -->
+        <div id="emp201-tab-comp" style="display:none;">
+          <div class="row g-2" style="margin-bottom:12px;">
+            <div class="col-md-4"><label class="form-label">Daily Wage (₱)</label><input type="number" min="0" step="0.01" class="form-control" id="emp201-wage"></div>
+            <div class="col-md-4"><label class="form-label">Employment Status</label><select class="form-select" id="emp201-empstatus" onchange="onEmp201StatusChange()"><option value="PROBATIONARY">Probationary</option><option value="REGULAR">Regular</option><option value="CONTRACTUAL">Contractual</option></select></div>
+            <div class="col-md-4" id="emp201-probation-wrap"><label class="form-label">Probation End Date</label><input type="date" class="form-control" id="emp201-probation"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <label class="form-label" style="margin:0;">Benefits</label>
+            <button class="btn btn-sm btn-outline" onclick="addBenefitType()" style="font-size:11px;"><i class="ti ti-plus"></i> New Type</button>
+          </div>
+          <div id="emp201-benefits"></div>
+        </div>
+
+        <!-- Tab: Timeline -->
+        <div id="emp201-tab-timeline" style="display:none;">
+          <div id="emp201-timeline"><div style="color:var(--text-muted);padding:8px;font-size:12px;">Save the employee first to start a timeline.</div></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeEmp201Modal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitEmp201()"><i class="ti ti-check"></i> Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u26"></script>
+  <script src="js/app.js?v=u27"></script>
 </body>
 </html>
