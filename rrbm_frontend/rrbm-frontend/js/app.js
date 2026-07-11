@@ -2258,7 +2258,17 @@
     const key = ($('addprod-key-input') || {}).value || '';
     if (!key) { showToast('Master key is required', 'error'); return; }
     try {
-      await fetch('' + API_BASE + '/api/reports/daily-status', { headers: authHeaders() });
+      // Validate the master key server-side against ACTIVE keys before unlocking the form.
+      // (Previously this only pinged an unrelated endpoint, so ANY string opened the modal.)
+      const res = await fetch('' + API_BASE + '/api/auth/verify-master-key', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ masterKey: key })
+      });
+      if (!res.ok) {
+        showToast(res.status === 403 ? 'Invalid master key' : 'Master key verification failed', 'error');
+        return;
+      }
       appState.addProductVerifiedKey = key;
       closeModal('modal-addprod-key');
       openAddProductForm();
