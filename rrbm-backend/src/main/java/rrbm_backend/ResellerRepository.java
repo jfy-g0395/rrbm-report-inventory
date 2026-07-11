@@ -26,7 +26,7 @@ public interface ResellerRepository extends JpaRepository<Reseller, Long> {
     // Outstanding (pending-collection) order count + amount for a reseller.
     @Query("SELECT COUNT(o), COALESCE(SUM(o.total), 0) FROM Order o " +
            "WHERE o.resellerId = :resellerId AND o.status = 'PENDING_COLLECTION'")
-    Object[] outstandingForReseller(@Param("resellerId") Long resellerId);
+    List<Object[]> outstandingForReseller(@Param("resellerId") Long resellerId);
 
     // Max 4-digit sequence for a code prefix (e.g. 'RSL-2026-%'). SUBSTRING position 10
     // extracts NNNN from "RSL-YYYY-NNNN" (positions 1-9 = "RSL-YYYY-").

@@ -325,7 +325,8 @@ public class ResellerController {
     private boolean isBlank(String s) { return s == null || s.isEmpty(); }
 
     private Map<String, Object> toMap(Reseller r) {
-        Object[] outstanding = resellerRepository.outstandingForReseller(r.getId());
+        List<Object[]> outstandingRows = resellerRepository.outstandingForReseller(r.getId());
+        Object[] outstanding = (outstandingRows != null && !outstandingRows.isEmpty()) ? outstandingRows.get(0) : null;
         long outCount = outstanding != null && outstanding[0] != null ? ((Number) outstanding[0]).longValue() : 0L;
         BigDecimal outAmt = outstanding != null && outstanding[1] instanceof BigDecimal
                 ? (BigDecimal) outstanding[1] : BigDecimal.ZERO;
