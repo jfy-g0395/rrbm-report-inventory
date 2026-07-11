@@ -39,6 +39,7 @@ public class OrderController {
     private final MasterKeyService masterKeyService;
     private final ProductRepository productRepository;
     private final AgentRepository agentRepository;
+    private final ResellerRepository resellerRepository;
     private final CommissionService commissionService;
     private final CashLedgerService cashLedgerService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -53,6 +54,7 @@ public class OrderController {
                            MasterKeyService masterKeyService,
                            ProductRepository productRepository,
                            AgentRepository agentRepository,
+                           ResellerRepository resellerRepository,
                            CommissionService commissionService,
                            CashLedgerService cashLedgerService) {
         this.orderService          = orderService;
@@ -65,6 +67,7 @@ public class OrderController {
         this.masterKeyService      = masterKeyService;
         this.productRepository     = productRepository;
         this.agentRepository       = agentRepository;
+        this.resellerRepository    = resellerRepository;
         this.commissionService     = commissionService;
         this.cashLedgerService     = cashLedgerService;
     }
@@ -253,6 +256,32 @@ public class OrderController {
                     m.put("id",        a.getId());
                     m.put("fullName",  a.getFullName());
                     m.put("agentCode", a.getAgentCode());
+                    return m;
+                })
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(options);
+    }
+
+    /**
+     * Minimal active reseller/distributor list for the New Order form's picker (S-A1).
+     * GET /api/orders/reseller-options?type=RESELLER|DISTRIBUTOR
+     *
+     * Lives under /api/orders so PageAccessInterceptor gates it by the "orders" page —
+     * order creators who lack the Resellers page can still assign one (the /api/resellers
+     * endpoints remain gated to the "resellers" page).
+     */
+    @GetMapping("/reseller-options")
+    public ResponseEntity<?> getResellerOptions(@RequestParam(value = "type", required = false) String type) {
+        List<Reseller> resellers = (type != null && !type.isBlank())
+                ? resellerRepository.findByTypeAndStatusOrderByNameAsc(type.toUpperCase(), "ACTIVE")
+                : resellerRepository.findByStatusOrderByNameAsc("ACTIVE");
+        List<Map<String, Object>> options = resellers.stream()
+                .map(r -> {
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id",           r.getId());
+                    m.put("name",         r.getName());
+                    m.put("resellerCode", r.getResellerCode());
+                    m.put("type",         r.getType());
                     return m;
                 })
                 .collect(Collectors.toList());

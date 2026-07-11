@@ -56,6 +56,7 @@ public class PageAccessInterceptor implements HandlerInterceptor {
         new Rule("/api/employees",                "employee-201"),
         new Rule("/api/activity-log",             "activity-log"),
         new Rule("/api/agents",                   "agents"),
+        new Rule("/api/resellers",                "resellers"),
         new Rule("/api/dashboard",               "dashboard"),
         new Rule("/api/import",                  "import"),
         new Rule("/api/transactions",            "ledger"),

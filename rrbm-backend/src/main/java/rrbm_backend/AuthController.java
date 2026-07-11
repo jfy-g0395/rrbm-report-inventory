@@ -251,6 +251,34 @@ public class AuthController {
         return ResponseEntity.status(403).body(Map.of("message", "No Super Admin key matched"));
     }
 
+    /**
+     * Verify a master key — used to gate privileged modals (e.g. Add Product) before opening,
+     * so the client never assumes a key is valid without checking it against ACTIVE keys.
+     * POST /api/auth/verify-master-key
+     * Body: { "masterKey": "..." }
+     * Returns 200 {"valid":true} if it matches any ACTIVE master key; 403 otherwise.
+     */
+    @PostMapping("/verify-master-key")
+    public ResponseEntity<?> verifyMasterKey(
+            @RequestBody Map<String, String> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        Long userId = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try { userId = jwtUtil.extractUserId(authHeader.substring(7)); } catch (Exception ignored) {}
+        }
+        if (userId == null)
+            return ResponseEntity.status(401).body(Map.of("message", "Unauthorized"));
+
+        String provided = body.getOrDefault("masterKey", "").trim();
+        if (provided.isEmpty())
+            return ResponseEntity.badRequest().body(Map.of("message", "masterKey is required"));
+
+        if (masterKeyService.validateMasterKey(provided))
+            return ResponseEntity.ok(Map.of("valid", true));
+        return ResponseEntity.status(403).body(Map.of("message", "Invalid master key"));
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<?> logout(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {

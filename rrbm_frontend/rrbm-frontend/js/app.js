@@ -185,10 +185,10 @@
 
   const ROLE_DEFAULT_PAGES = {
     'STANDARD_USER':  ['orders','rejected-items','receive-stocks','inventory','delivery-reports'],
-    'ACCOUNTING':     ['dashboard','orders','void-cancel-orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','add-rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'ACCOUNTING':     ['dashboard','orders','void-cancel-orders','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','add-rejected-items','reports','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
     'DELIVERY_MANAGEMENT':['dashboard','orders','delivery-schedule','inventory','delivery-reports'],
-    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','employee-201','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
-    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','employee-201','expenses','payables','suppliers','collections','ledger','agents','import','cash-flow'],
+    'ADMINISTRATOR':  ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','employee-201','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
+    'ADMIN':          ['dashboard','orders','order-history','daily-reports','inventory','purchase-orders','receive-stocks','rejected-items','reports','delivery-schedule','delivery-reports','activity-log','employees','employee-201','expenses','payables','suppliers','collections','ledger','agents','resellers','import','cash-flow'],
     'SUPER_ADMIN':    null
   };
 
@@ -392,6 +392,7 @@
       'emp': 'employees',
       'emp201': 'employee-201',
       'agents': 'agents',
+      'resellers': 'resellers',
       'expenses': 'expenses',
       'payables': 'payables',
       'suppliers': 'suppliers',
@@ -1288,6 +1289,14 @@
     } catch (err) {
       if (tb) tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#EF4444;padding:24px;">Failed to load: ' + (err.message||err) + '</td></tr>';
     }
+  };
+
+  window.filterCollectionsBySource = function () {
+    var src = (($('collections-source-filter') || {}).value) || 'ALL';
+    var all = _collectionsParsed || [];
+    var filtered = src === 'ALL' ? all : all.filter(function (o) { return o.source === src; });
+    renderCollectionRows(filtered);
+    updateCollectionsBadge(filtered.length);
   };
 
   window.renderCollectionRows = function (orders) {
@@ -2259,7 +2268,17 @@
     const key = ($('addprod-key-input') || {}).value || '';
     if (!key) { showToast('Master key is required', 'error'); return; }
     try {
-      await fetch('' + API_BASE + '/api/reports/daily-status', { headers: authHeaders() });
+      // Validate the master key server-side against ACTIVE keys before unlocking the form.
+      // (Previously this only pinged an unrelated endpoint, so ANY string opened the modal.)
+      const res = await fetch('' + API_BASE + '/api/auth/verify-master-key', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ masterKey: key })
+      });
+      if (!res.ok) {
+        showToast(res.status === 403 ? 'Invalid master key' : 'Master key verification failed', 'error');
+        return;
+      }
       appState.addProductVerifiedKey = key;
       closeModal('modal-addprod-key');
       openAddProductForm();
@@ -6070,6 +6089,7 @@
       'delivery-rep': ['Delivery Reports',  'Received stock history'],
       'activity-log': ['Activity Log',      'Admin action history'],
       agents:         ['Agent Registry',     'View and manage agents'],
+      resellers:      ['Resellers & Distributors', 'Registered resellers/distributors, pricing & order tracking'],
       'import':       ['Add Records',        'Add backdated orders & expenses'],
       transactions:   ['Transaction Ledger', 'Accounting ledger entries'],
       emp:            ['User List',          'Manage system users'],
@@ -6116,6 +6136,7 @@
     if (view === 'delivery-rep') renderDeliveryReports(true);
     if (view === 'activity-log') renderActivityLog(true);
     if (view === 'agents')       loadAgents();
+    if (view === 'resellers')    loadResellers();
     if (view === 'import')       initAddRecords();
     if (view === 'transactions') loadTransactions();
     if (view === 'expenses')     initExpensesView();
@@ -7146,7 +7167,86 @@
     // Load agent dropdown and show/hide per-item O.P. fields
     if (v === 'AGENT') loadAgentOptions();
     $$('.agent-op-row').forEach(function(r) { r.style.display = v === 'AGENT' ? '' : 'none'; });
+    // Reseller/Distributor: load registered options for the picker; reset any prior price map.
+    _resellerPriceMap = {};
+    if ($('field-reseller-id')) $('field-reseller-id').value = '';
+    if (v === 'RESELLER' || v === 'DISTRIBUTOR') loadResellerOptions(v);
   };
+
+  // ── S-A2: Reseller/Distributor order-form picker (mirrors the agent autocomplete) ──
+  var _cachedResellers = [];
+  var _resellerPriceMap = {};   // productId -> unitPrice for the currently selected reseller
+
+  async function loadResellerOptions(type) {
+    var input = $('field-reseller-input');
+    if (input) input.placeholder = 'Loading…';
+    try {
+      var res = await fetch(API_BASE + '/api/orders/reseller-options?type=' + encodeURIComponent(type), { headers: authHeaders() });
+      if (!res.ok) { if (input) input.placeholder = 'Failed to load'; return; }
+      _cachedResellers = await res.json();
+      if (input) input.placeholder = 'Type to search ' + (type === 'DISTRIBUTOR' ? 'distributors' : 'resellers') + '…';
+      setupResellerAutocomplete();
+    } catch (e) {
+      if (input) input.placeholder = 'Failed to load';
+    }
+  }
+
+  function setupResellerAutocomplete() {
+    var input    = $('field-reseller-input');
+    var dropdown = $('field-reseller-dropdown');
+    if (!input || !dropdown) return;
+    var fresh = input.cloneNode(true);
+    input.parentNode.replaceChild(fresh, input);
+    var filterAndRender = function () {
+      var t = this.value.toLowerCase().trim();
+      renderResellerDropdown(dropdown, t.length === 0 ? _cachedResellers : _cachedResellers.filter(function (r) {
+        return (r.name || '').toLowerCase().includes(t) || (r.resellerCode || '').toLowerCase().includes(t);
+      }));
+    };
+    fresh.addEventListener('input', filterAndRender);
+    fresh.addEventListener('focus', filterAndRender);
+    document.addEventListener('click', function (e) {
+      if (!fresh.contains(e.target) && !dropdown.contains(e.target)) dropdown.classList.remove('show');
+    });
+  }
+
+  function renderResellerDropdown(dropdown, resellers) {
+    if (!dropdown) return;
+    if (!resellers || resellers.length === 0) {
+      dropdown.innerHTML = '<div class="product-dropdown-item" style="color:#999;cursor:default;">None registered</div>';
+      dropdown.classList.add('show');
+      return;
+    }
+    dropdown.innerHTML = resellers.map(function (r) {
+      return '<div class="product-dropdown-item" data-id="' + r.id + '" data-name="' + escapeHtml(r.name) + '" data-code="' + escapeHtml(r.resellerCode) + '">'
+        + '<strong>' + escapeHtml(r.name) + '</strong>'
+        + ' <span style="font-size:11px;color:var(--text-muted);">(' + escapeHtml(r.resellerCode) + ')</span>'
+        + '</div>';
+    }).join('');
+    dropdown.classList.add('show');
+    dropdown.querySelectorAll('.product-dropdown-item[data-id]').forEach(function (item) {
+      item.addEventListener('click', function () {
+        var rInput  = $('field-reseller-input');
+        var rHidden = $('field-reseller-id');
+        var rid = this.getAttribute('data-id');
+        if (rInput)  rInput.value  = this.getAttribute('data-name') + ' (' + this.getAttribute('data-code') + ')';
+        if (rHidden) rHidden.value = rid;
+        dropdown.classList.remove('show');
+        loadResellerPriceMap(rid);
+      });
+    });
+  }
+
+  // Fetch the chosen reseller's product price map so lines auto-fill their negotiated price.
+  async function loadResellerPriceMap(resellerId) {
+    _resellerPriceMap = {};
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + resellerId + '/prices', { headers: authHeaders() });
+      if (!res.ok) return;
+      var rows = await res.json();
+      (rows || []).forEach(function (p) { _resellerPriceMap[String(p.productId)] = p.unitPrice; });
+    } catch (e) { /* non-fatal — lines just keep the normal price */ }
+  }
 
   var _cachedAgents = [];
 
@@ -7372,6 +7472,13 @@
           if (ab !== '' && ab != null && $('basePrice-' + rn)) $('basePrice-' + rn).value = parseFloat(ab);
           _recomputeOverPrice('unitPrice-' + rn, 'basePrice-' + rn, 'opPerUnit-' + rn);
         }
+        // Reseller/Distributor auto-pricing: if this reseller has a mapped price for the
+        // product, auto-fill it (still editable). Unmapped products keep the normal price.
+        var _srcVal = ($('field-source') || {}).value;
+        if ((_srcVal === 'RESELLER' || _srcVal === 'DISTRIBUTOR')
+            && _resellerPriceMap && _resellerPriceMap[this.getAttribute('data-id')] != null) {
+          $('unitPrice-' + rn).value = parseFloat(_resellerPriceMap[this.getAttribute('data-id')]);
+        }
         const si = $('stockInfo-' + rn);
         const qEl = $('quantity-' + rn);
         if (isSetItem) {
@@ -7471,8 +7578,8 @@
         }
       });
     }
-    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller'))
-      $('field-reseller').value = order.agentName || '';
+    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller-input'))
+      $('field-reseller-input').value = order.agentName || '';
     if (order.source === 'FACEBOOK_PAGE' && $('field-fb'))
       $('field-fb').value       = order.fbPage || '';
     if (order.source === 'ECOMMERCE' && $('ecommercePlatform'))
@@ -7521,8 +7628,8 @@
     if ($('field-customer'))   $('field-customer').value   = order.customerName || '';
     if ($('field-source'))     $('field-source').value     = order.source       || '';
     if (typeof window.onSourceChange === 'function') window.onSourceChange();
-    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller'))
-      $('field-reseller').value = order.agentName || '';
+    if ((order.source === 'RESELLER' || order.source === 'DISTRIBUTOR') && $('field-reseller-input'))
+      $('field-reseller-input').value = order.agentName || '';
     if (order.source === 'FACEBOOK_PAGE' && $('field-fb'))
       $('field-fb').value = order.fbPage || '';
     if (order.source === 'ECOMMERCE' && $('ecommercePlatform'))
@@ -7544,7 +7651,7 @@
     const customerName = (($('field-customer')  || {}).value || '').trim();
     const source       = ($('field-source')     || {}).value;
     const agentId      = source === 'AGENT' ? (parseInt(($('field-agent-id') || {}).value) || null) : null;
-    const resellerName = ($('field-reseller')   || {}).value || '';
+    const resellerId   = (source === 'RESELLER' || source === 'DISTRIBUTOR') ? (parseInt(($('field-reseller-id') || {}).value) || null) : null;
     const fbPage       = ($('field-fb')         || {}).value || '';
     const paymentMode  = ($('field-payment')    || {}).value;
     const orderType    = ($('field-order-type') || {}).value || 'STANDARD';
@@ -7557,6 +7664,7 @@
     if (!source)       { showToast('Please select order source', 'error'); return; }
     if (!paymentMode)  { showToast('Please select payment mode', 'error'); return; }
     if (source === 'AGENT' && !agentId) { showToast('Please select an agent', 'error'); return; }
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && !resellerId) { showToast('Please select a registered reseller/distributor', 'error'); return; }
 
     let ecommercePlatform = null;
     if (source === 'ECOMMERCE') {
@@ -7569,7 +7677,10 @@
     }
 
     let contactName = null;
-    if (source === 'RESELLER' || source === 'DISTRIBUTOR') contactName = resellerName;
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && resellerId) {
+      var _selR = _cachedResellers.find(function (x) { return x.id === resellerId; });
+      contactName = _selR ? _selR.name : null;
+    }
 
     const itemRows = $$('.order-item-row');
     if (itemRows.length === 0) { showToast('Please add at least one item', 'error'); return; }
@@ -7602,6 +7713,7 @@
     const orderRequest = {
       customerName, source,
       agentId:          agentId,
+      resellerId:       resellerId,
       agentName:        contactName || null,
       fbPage:           source === 'FACEBOOK_PAGE' ? fbPage : null,
       ecommercePlatform,
@@ -7656,7 +7768,7 @@
     const customerName = (($('field-customer')  || {}).value || '').trim();
     const source       = ($('field-source')     || {}).value;
     const agentId      = source === 'AGENT' ? (parseInt(($('field-agent-id') || {}).value) || null) : null;
-    const resellerName = ($('field-reseller')   || {}).value || '';
+    const resellerId   = (source === 'RESELLER' || source === 'DISTRIBUTOR') ? (parseInt(($('field-reseller-id') || {}).value) || null) : null;
     const fbPage       = ($('field-fb')         || {}).value || '';
     const paymentMode  = ($('field-payment')    || {}).value;
     const orderType    = ($('field-order-type') || {}).value || 'STANDARD';
@@ -7669,6 +7781,7 @@
     if (!source)       { showToast('Please select order source', 'error'); return; }
     if (!paymentMode)  { showToast('Please select payment mode', 'error'); return; }
     if (source === 'AGENT' && !agentId) { showToast('Please select an agent', 'error'); return; }
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && !resellerId) { showToast('Please select a registered reseller/distributor', 'error'); return; }
 
     let ecommercePlatform = null;
     if (source === 'ECOMMERCE') {
@@ -7681,7 +7794,10 @@
     }
 
     let contactName = null;
-    if (source === 'RESELLER' || source === 'DISTRIBUTOR') contactName = resellerName;
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && resellerId) {
+      var _selR = _cachedResellers.find(function (x) { return x.id === resellerId; });
+      contactName = _selR ? _selR.name : null;
+    }
 
     const itemRows = $$('.order-item-row');
     if (itemRows.length === 0) { showToast('Please add at least one item', 'error'); return; }
@@ -7732,6 +7848,7 @@
     const orderRequest = {
       customerName, source,
       agentId:          agentId,
+      resellerId:       resellerId,
       agentName:        contactName || null,
       fbPage:           source === 'FACEBOOK_PAGE' ? fbPage : null,
       ecommercePlatform,
@@ -7774,7 +7891,8 @@
     if ($('field-source'))           $('field-source').value = '';
     if ($('field-agent-id'))          $('field-agent-id').value    = '';
     if ($('field-agent-input'))       $('field-agent-input').value  = '';
-    if ($('field-reseller'))         $('field-reseller').value = '';
+    if ($('field-reseller-input'))   $('field-reseller-input').value = '';
+    if ($('field-reseller-id'))      $('field-reseller-id').value = '';
     if ($('field-fb'))               $('field-fb').value = '';
     if ($('field-payment'))          $('field-payment').value = '';
     if ($('field-order-type'))       $('field-order-type').value = 'STANDARD';
@@ -12013,11 +12131,19 @@
   /** Generate and open a printable daily report PDF for the given date (defaults to today) */
   window.downloadDailyReportPdf = function(dateStr) {
     var date = dateStr || new Date().toISOString().slice(0,10);
+
+    // Open the report window synchronously, inside the click gesture. Opening it later
+    // (after the async fetch resolves) detaches it from the user gesture and popup
+    // blockers silently block it — which looked like "nothing happens".
+    var w = window.open('', '_blank', 'width=900,height=780');
+    if (!w) { showToast('Popup blocked — please allow popups for this site to download the report.', 'error'); return; }
+    w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Report ' + date + '</title></head>' +
+      '<body style="font-family:Arial,sans-serif;padding:28px;color:#666;">Generating daily report…</body></html>');
     showToast('Generating daily report…', 'success');
 
     _fetchDailyReportData(date)
       .then(function(d) {
-        if (!d.rep || d.rep.message) { showToast('No report data for ' + date, 'error'); return; }
+        if (!d.rep || d.rep.message) { showToast('No report data for ' + date, 'error'); try { w.close(); } catch (e) {} return; }
         var content = _buildDailyReportHTML(d.rep, d.orders, d.logs, {pdf:true}, d.cash, d.expenseBreakdown);
         var dateLabel = new Date(date + 'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'});
         var genTs = new Date().toLocaleString('en-PH',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -12077,11 +12203,12 @@
           '<\/script>' +
           '</body></html>';
 
-        var w = window.open('', '_blank', 'width=900,height=780');
-        if (w) { w.document.write(html); w.document.close(); w.focus(); }
-        else { showToast('Popup blocked — please allow popups for this site to download the report.', 'error'); }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+        w.focus();
       })
-      .catch(function(err) { showToast('Error generating report: ' + (err.message||err), 'error'); });
+      .catch(function(err) { showToast('Error generating report: ' + (err.message||err), 'error'); try { w.close(); } catch (e) {} });
   };
 
   /** Modal "Download PDF" button — global wrapper that closes over _drepCurrentDate
@@ -13662,6 +13789,275 @@
   };
 
   // ================================================================
+  // Resellers & Distributors (S-A2) — registry page, panel, modal, price map
+  // ================================================================
+  var _resellerTypeFilter = 'ALL';
+  var _currentReseller = null;
+
+  window.filterResellers = function (type) {
+    if (type) _resellerTypeFilter = type;
+    document.querySelectorAll('.reseller-type-tab').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-type') === _resellerTypeFilter);
+    });
+    var q = (($('reseller-search') || {}).value || '').trim();
+    var params = '?type=' + encodeURIComponent(_resellerTypeFilter);
+    if (q) params += '&q=' + encodeURIComponent(q);
+    loadResellers(params);
+  };
+
+  window.loadResellers = async function (queryParams) {
+    var grid = $('resellers-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">Loading…</div>';
+    try {
+      var res = await fetch(API_BASE + '/api/resellers' + (queryParams || ''), { headers: authHeaders() });
+      if (!res.ok) { grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">Failed to load.</div>'; return; }
+      var list = await res.json();
+      if (!Array.isArray(list) || list.length === 0) {
+        grid.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;grid-column:1/-1;">No resellers/distributors registered yet.</div>';
+        return;
+      }
+      grid.innerHTML = list.map(function (r) {
+        var isDist   = r.type === 'DISTRIBUTOR';
+        var typeBg   = isDist ? '#EDE9FE' : '#FEF3C7';
+        var typeFg   = isDist ? '#5B21B6' : '#92400E';
+        var statusBg = r.status === 'ACTIVE' ? '#D1FAE5' : '#F3F4F6';
+        var statusFg = r.status === 'ACTIVE' ? '#065F46' : '#6B7280';
+        var outAmt   = '₱' + Number(r.outstandingAmount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return '<div class="agent-card" onclick="openResellerPanel(' + r.id + ')">' +
+          '<div class="agent-card-top">' +
+            '<span class="agent-card-code">' + escapeHtml(r.resellerCode || '') + '</span>' +
+            '<span class="agent-card-status" style="background:' + typeBg + ';color:' + typeFg + ';">' + (isDist ? 'Distributor' : 'Reseller') + '</span>' +
+          '</div>' +
+          '<div class="agent-card-name">' + escapeHtml(r.name || '') + '</div>' +
+          '<div class="agent-card-territory">' + escapeHtml(r.contactPerson || '') + ' · ' + escapeHtml(r.contactNumber || '') + '</div>' +
+          '<div class="agent-card-stats">' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value">' + (r.totalOrders || 0) + '</div><div class="agent-card-stat-label">Orders</div></div>' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value">' + (r.outstandingCount || 0) + '</div><div class="agent-card-stat-label">To Collect</div></div>' +
+            '<div class="agent-card-stat"><div class="agent-card-stat-value" style="color:' + ((r.outstandingCount||0) > 0 ? '#DC2626' : '#10B981') + ';">' + outAmt + '</div><div class="agent-card-stat-label">Outstanding</div></div>' +
+          '</div>' +
+          '<div style="margin-top:6px;"><span class="agent-card-status" style="background:' + statusBg + ';color:' + statusFg + ';">' + escapeHtml(r.status || '') + '</span></div>' +
+        '</div>';
+      }).join('');
+    } catch (err) {
+      grid.innerHTML = '<div style="text-align:center;color:red;padding:24px;grid-column:1/-1;">Error loading resellers.</div>';
+    }
+  };
+
+  // ── Register / edit modal ──
+  window.openResellerRegister = function (id) {
+    _currentReseller = null;
+    ['reseller-name','reseller-contact-person','reseller-contact-number','reseller-address','reseller-notes','reseller-delivery-time']
+      .forEach(function (f) { if ($(f)) $(f).value = ''; });
+    document.querySelectorAll('.reseller-day-chk').forEach(function (c) { c.checked = false; });
+    if ($('reseller-type')) { $('reseller-type').value = 'RESELLER'; $('reseller-type').disabled = false; }
+    if ($('reseller-modal-title')) $('reseller-modal-title').textContent = 'Register Reseller / Distributor';
+
+    if (id) {
+      fetch(API_BASE + '/api/resellers/' + id, { headers: authHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          _currentReseller = r;
+          if ($('reseller-type'))            { $('reseller-type').value = r.type; $('reseller-type').disabled = true; }
+          if ($('reseller-name'))            $('reseller-name').value = r.name || '';
+          if ($('reseller-contact-person'))  $('reseller-contact-person').value = r.contactPerson || '';
+          if ($('reseller-contact-number'))  $('reseller-contact-number').value = r.contactNumber || '';
+          if ($('reseller-address'))         $('reseller-address').value = r.address || '';
+          if ($('reseller-notes'))           $('reseller-notes').value = r.notes || '';
+          if ($('reseller-delivery-time'))   $('reseller-delivery-time').value = r.deliveryTimeWindow || '';
+          var days = (r.deliveryDays || '').split(',');
+          document.querySelectorAll('.reseller-day-chk').forEach(function (c) { c.checked = days.indexOf(c.value) !== -1; });
+          if ($('reseller-modal-title')) $('reseller-modal-title').textContent = 'Edit ' + (r.name || 'Reseller');
+        });
+    }
+    if ($('modal-reseller')) $('modal-reseller').classList.add('open');
+  };
+
+  window.closeResellerModal = function () { if ($('modal-reseller')) $('modal-reseller').classList.remove('open'); };
+
+  window.submitReseller = async function () {
+    var payload = {
+      type:               ($('reseller-type') || {}).value,
+      name:               (($('reseller-name') || {}).value || '').trim(),
+      contactPerson:      (($('reseller-contact-person') || {}).value || '').trim(),
+      contactNumber:      (($('reseller-contact-number') || {}).value || '').trim(),
+      address:            (($('reseller-address') || {}).value || '').trim(),
+      notes:              (($('reseller-notes') || {}).value || '').trim(),
+      deliveryTimeWindow: (($('reseller-delivery-time') || {}).value || '').trim(),
+      deliveryDays:       Array.prototype.slice.call(document.querySelectorAll('.reseller-day-chk:checked')).map(function (c) { return c.value; }).join(',')
+    };
+    if (!payload.name)          { showToast('Name is required', 'error'); return; }
+    if (!payload.contactPerson) { showToast('Contact person is required', 'error'); return; }
+    if (!payload.contactNumber) { showToast('Contact number is required', 'error'); return; }
+    if (!payload.address)       { showToast('Address is required', 'error'); return; }
+
+    var editing = _currentReseller && _currentReseller.id;
+    try {
+      var res = await fetch(API_BASE + '/api/resellers' + (editing ? '/' + _currentReseller.id : ''), {
+        method: editing ? 'PUT' : 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(payload)
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast('Error: ' + (data.error || data.message || res.status), 'error'); return; }
+      showToast(editing ? 'Reseller updated' : (data.resellerCode || 'Reseller') + ' registered', 'success');
+      closeResellerModal();
+      filterResellers();
+      if (editing && $('reseller-panel-overlay') && $('reseller-panel-overlay').classList.contains('open')) openResellerPanel(_currentReseller.id);
+    } catch (e) { showToast('Connection error', 'error'); }
+  };
+
+  window.toggleResellerStatus = async function (id, currentStatus) {
+    var newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    if (!confirm(newStatus === 'INACTIVE' ? 'Deactivate? They will not appear in the order form picker.' : 'Reactivate this reseller/distributor?')) return;
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + id + '/status', {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ status: newStatus })
+      });
+      if (!res.ok) { showToast('Failed to update status', 'error'); return; }
+      showToast('Status updated', 'success');
+      openResellerPanel(id);
+      filterResellers();
+    } catch (e) { showToast('Error updating status', 'error'); }
+  };
+
+  // ── Slide-out panel: details + Orders / Price Mapping tabs ──
+  window.openResellerPanel = async function (id) {
+    var body = $('reseller-panel-body');
+    var title = $('reseller-panel-title');
+    if (!body) return;
+    body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</div>';
+    if ($('reseller-panel-overlay')) $('reseller-panel-overlay').classList.add('open');
+    if ($('reseller-slide-panel'))   $('reseller-slide-panel').classList.add('open');
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + id, { headers: authHeaders() });
+      if (!res.ok) { body.innerHTML = '<div style="color:red;padding:16px;">Failed to load.</div>'; return; }
+      var r = await res.json();
+      _currentReseller = r;
+      if (title) title.textContent = r.name || 'Reseller';
+      var statusBg = r.status === 'ACTIVE' ? '#D1FAE5' : '#F3F4F6';
+      var statusFg = r.status === 'ACTIVE' ? '#065F46' : '#6B7280';
+      var outAmt = '₱' + Number(r.outstandingAmount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      body.innerHTML =
+        '<div class="slide-panel-info">' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Code</span><span class="slide-panel-info-value" style="font-family:monospace;">' + escapeHtml(r.resellerCode || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Type</span><span class="slide-panel-info-value">' + escapeHtml(r.type || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Contact Person</span><span class="slide-panel-info-value">' + escapeHtml(r.contactPerson || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Contact No.</span><span class="slide-panel-info-value">' + escapeHtml(r.contactNumber || '') + '</span></div>' +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Address</span><span class="slide-panel-info-value">' + escapeHtml(r.address || '') + '</span></div>' +
+          (r.deliveryDays ? '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Delivery Days</span><span class="slide-panel-info-value">' + escapeHtml(r.deliveryDays) + (r.deliveryTimeWindow ? ' · ' + escapeHtml(r.deliveryTimeWindow) : '') + '</span></div>' : '') +
+          (r.notes ? '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Notes</span><span class="slide-panel-info-value">' + escapeHtml(r.notes) + '</span></div>' : '') +
+          '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Status</span><span class="slide-panel-info-value"><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + statusBg + ';color:' + statusFg + ';">' + escapeHtml(r.status || '') + '</span></span></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin:10px 0;">' +
+          '<button class="btn btn-sm btn-outline" onclick="openResellerRegister(' + r.id + ')"><i class="ti ti-edit"></i> Edit</button>' +
+          '<button class="btn btn-sm btn-outline" onclick="toggleResellerStatus(' + r.id + ',\'' + r.status + '\')">' + (r.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate') + '</button>' +
+        '</div>' +
+        '<div class="slide-panel-stats">' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + (r.totalOrders || 0) + '</div><div class="slide-panel-stat-label">Orders</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + (r.outstandingCount || 0) + '</div><div class="slide-panel-stat-label">To Collect</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-value" style="color:' + ((r.outstandingCount||0) > 0 ? '#DC2626' : '#10B981') + ';">' + outAmt + '</div><div class="slide-panel-stat-label">Outstanding</div></div>' +
+        '</div>' +
+        '<div class="slide-panel-tabs">' +
+          '<button class="slide-panel-tab active" onclick="switchResellerTab(\'orders\')">Order History</button>' +
+          '<button class="slide-panel-tab" onclick="switchResellerTab(\'prices\')">Price Mapping</button>' +
+        '</div>' +
+        '<div id="reseller-tab-content"><div style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</div></div>';
+      switchResellerTab('orders');
+    } catch (e) {
+      body.innerHTML = '<div style="color:red;padding:16px;">Error loading reseller.</div>';
+    }
+  };
+
+  window.closeResellerPanel = function () {
+    if ($('reseller-panel-overlay')) $('reseller-panel-overlay').classList.remove('open');
+    if ($('reseller-slide-panel'))   $('reseller-slide-panel').classList.remove('open');
+    _currentReseller = null;
+  };
+
+  window.switchResellerTab = function (tab) {
+    var tabs = document.querySelectorAll('#reseller-panel-body .slide-panel-tab');
+    tabs.forEach(function (t) { t.classList.remove('active'); });
+    if (tab === 'orders') { if (tabs[0]) tabs[0].classList.add('active'); loadResellerOrdersTab(); }
+    else                  { if (tabs[1]) tabs[1].classList.add('active'); loadResellerPricesTab(); }
+  };
+
+  async function loadResellerOrdersTab() {
+    var c = $('reseller-tab-content');
+    if (!c || !_currentReseller) return;
+    c.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading orders…</div>';
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + _currentReseller.id + '/orders', { headers: authHeaders() });
+      var data = await res.json();
+      var orders = (data && data.orders) || [];
+      if (orders.length === 0) { c.innerHTML = '<div style="color:var(--text-muted);padding:12px;font-size:13px;">No orders yet.</div>'; return; }
+      var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+      var rows = orders.map(function (o) {
+        var payFg = o.status === 'PENDING_COLLECTION' ? '#DC2626' : (o.status === 'DELIVERED' ? '#059669' : '#6B7280');
+        var payLabel = o.status === 'PENDING_COLLECTION' ? 'TO COLLECT' : (o.paymentStatus || o.status || '');
+        var items = (o.items || []).slice(0, 2).map(function (i) { return (i.quantity || 1) + '× ' + (i.productName || ''); }).join(', ');
+        return '<tr>' +
+          '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(o.orderId || '') + '</td>' +
+          '<td style="font-size:11px;">' + escapeHtml(o.date || '') + '</td>' +
+          '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(items) + '</td>' +
+          '<td style="text-align:right;font-weight:600;">' + fmt(o.total) + '</td>' +
+          '<td style="text-align:right;font-size:11px;font-weight:600;color:' + payFg + ';">' + escapeHtml(payLabel) + '</td>' +
+          '</tr>';
+      }).join('');
+      c.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+        '<thead><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:4px;">Order</th><th style="text-align:left;padding:4px;">Date</th><th style="text-align:left;padding:4px;">Items</th><th style="text-align:right;padding:4px;">Total</th><th style="text-align:right;padding:4px;">Status</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table>';
+    } catch (e) { c.innerHTML = '<div style="color:red;padding:12px;">Error loading orders.</div>'; }
+  }
+
+  async function loadResellerPricesTab() {
+    var c = $('reseller-tab-content');
+    if (!c || !_currentReseller) return;
+    c.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading…</div>';
+    try {
+      var prodRes = await fetch(API_BASE + '/api/products', { headers: authHeaders() });
+      var products = await prodRes.json();
+      var priceRes = await fetch(API_BASE + '/api/resellers/' + _currentReseller.id + '/prices', { headers: authHeaders() });
+      var prices = await priceRes.json();
+      var priceById = {};
+      (prices || []).forEach(function (p) { priceById[String(p.productId)] = p.unitPrice; });
+      _resellerPriceEditProducts = products || [];
+      var rows = (products || []).map(function (p) {
+        var mapped = priceById[String(p.id)];
+        return '<tr>' +
+          '<td style="font-size:12px;padding:3px 4px;">' + escapeHtml(p.name || '') + '</td>' +
+          '<td style="text-align:right;font-size:11px;color:var(--text-muted);padding:3px 4px;">₱' + Number(p.unitPrice || 0).toFixed(2) + '</td>' +
+          '<td style="padding:3px 4px;"><input type="number" min="0" step="0.01" class="form-control form-control-sm reseller-price-in" data-pid="' + p.id + '" value="' + (mapped != null ? Number(mapped) : '') + '" placeholder="—" style="width:110px;padding:3px 6px;font-size:12px;"></td>' +
+          '</tr>';
+      }).join('');
+      c.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Set a custom unit price per product. Blank = use the normal price. Auto-fills (editable) at order entry.</div>' +
+        '<div style="max-height:340px;overflow:auto;"><table style="width:100%;border-collapse:collapse;">' +
+        '<thead><tr style="border-bottom:1px solid var(--border);"><th style="text-align:left;padding:4px;font-size:11px;">Product</th><th style="text-align:right;padding:4px;font-size:11px;">Normal</th><th style="text-align:left;padding:4px;font-size:11px;">Mapped ₱</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div>' +
+        '<button class="btn btn-primary btn-sm" style="margin-top:10px;" onclick="saveResellerPrices()"><i class="ti ti-device-floppy"></i> Save Price Mapping</button>';
+    } catch (e) { c.innerHTML = '<div style="color:red;padding:12px;">Error loading price map.</div>'; }
+  }
+  var _resellerPriceEditProducts = [];
+
+  window.saveResellerPrices = async function () {
+    if (!_currentReseller) return;
+    var prices = [];
+    document.querySelectorAll('.reseller-price-in').forEach(function (inp) {
+      var v = inp.value.trim();
+      if (v !== '' && !isNaN(parseFloat(v)) && parseFloat(v) >= 0) {
+        prices.push({ productId: parseInt(inp.getAttribute('data-pid')), unitPrice: parseFloat(v) });
+      }
+    });
+    try {
+      var res = await fetch(API_BASE + '/api/resellers/' + _currentReseller.id + '/prices', {
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify({ prices: prices })
+      });
+      if (!res.ok) { showToast('Failed to save price map', 'error'); return; }
+      showToast('Price mapping saved (' + prices.length + ' products)', 'success');
+    } catch (e) { showToast('Connection error', 'error'); }
+  };
+
+  // ================================================================
   // Agent Slide-out Panel
   // ================================================================
 
@@ -13719,9 +14115,9 @@
           '<div class="slide-panel-info-item"><span class="slide-panel-info-label">Status</span><span class="slide-panel-info-value"><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + statusBg + ';color:' + statusFg + ';">' + escapeHtml(a.status || '') + '</span></span></div>' +
         '</div>' +
         '<div class="slide-panel-stats">' +
-          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + (a.totalOrders || 0) + '</div><div class="slide-panel-stat-label">Orders</div></div>' +
-          '<div class="slide-panel-stat"><div class="slide-panel-stat-value">' + pending + '</div><div class="slide-panel-stat-label">Pending Commission</div></div>' +
-          '<div class="slide-panel-stat"><div class="slide-panel-stat-value" style="color:#10B981;">' + lifetime + '</div><div class="slide-panel-stat-label">Lifetime Commission</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-icon" style="background:#FBEFD0;color:#B8860B;"><i class="ti ti-clipboard-list"></i></div><div class="slide-panel-stat-value">' + (a.totalOrders || 0) + '</div><div class="slide-panel-stat-label">Orders</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-icon" style="background:#FBEFD0;color:#B8860B;"><i class="ti ti-currency-peso"></i></div><div class="slide-panel-stat-value">' + pending + '</div><div class="slide-panel-stat-label">Pending Commission</div></div>' +
+          '<div class="slide-panel-stat"><div class="slide-panel-stat-icon" style="background:#D1FAE5;color:#10B981;"><i class="ti ti-coins"></i></div><div class="slide-panel-stat-value" style="color:#10B981;">' + lifetime + '</div><div class="slide-panel-stat-label">Lifetime Commission</div></div>' +
         '</div>' +
         '<div class="slide-panel-tabs">' +
           '<button class="slide-panel-tab active" onclick="switchAgentTab(\'orders\')">Orders</button>' +
@@ -13886,6 +14282,10 @@
     var content = $('agent-tab-content');
     if (!content) return;
 
+    // Released periods are hidden from the table by default to keep it uncluttered;
+    // they remain selectable in the Period dropdown and toggleable via this flag.
+    var showReleased = !!window._agentCommShowReleased;
+
     // Build period dropdown grouped by year
     var periods = _currentAgentPeriods || [];
     var periodDropdown = '<div style="margin-bottom:12px;display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">' +
@@ -13921,6 +14321,12 @@
       '<option value="csv">CSV</option>' +
       '<option value="excel">Excel</option>' +
       '</select></div>' +
+      '<div style="display:flex;align-items:flex-end;">' +
+      '<label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:6px;">' +
+      '<input type="checkbox" id="agent-comm-show-released"' + (showReleased ? ' checked' : '') +
+      ' onchange="window._agentCommShowReleased=this.checked; loadAgentCommission(' + agentId +
+      ', (document.getElementById(\'agent-panel-commission-period-select\')||{}).value||null);">' +
+      'Show released periods</label></div>' +
       '</div>';
 
     content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading commission data…</div>';
@@ -13940,30 +14346,56 @@
         var m = { OPEN: 'background:#DBEAFE;color:#1E40AF;', CLOSED: 'background:#FEF3C7;color:#92400E;', RELEASED: 'background:#D1FAE5;color:#065F46;' };
         return '<span style="padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;' + (m[s] || 'background:#F3F4F6;color:#6B7280;') + '">' + (s || '—') + '</span>';
       };
-      var filtered = periodId ? summary.filter(function (r) { return r.periodId == periodId; }) : summary;
+      // Default view hides RELEASED periods to avoid clutter; selecting a specific period
+      // in the dropdown, or ticking "Show released", reveals them.
+      var releasedHidden = 0;
+      var filtered;
+      if (periodId) {
+        filtered = summary.filter(function (r) { return r.periodId == periodId; });
+      } else if (showReleased) {
+        filtered = summary;
+      } else {
+        filtered = summary.filter(function (r) { return r.status !== 'RELEASED'; });
+        releasedHidden = summary.length - filtered.length;
+      }
       var rows = filtered.map(function (r) {
         var relAt = r.releasedAt ? r.releasedAt.replace('T', ' ').substring(0, 19) : '';
         var releaseBtn = r.status === 'CLOSED'
-          ? '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;margin-right:4px;" onclick="releaseFromAgentPanel(' + r.periodId + ',' + agentId + ')"><i class="ti ti-affiliate"></i> Release</button>'
+          ? '<button class="btn btn-outline comm-btn" onclick="releaseFromAgentPanel(' + r.periodId + ',' + agentId + ')"><i class="ti ti-affiliate"></i> Release</button>'
           : '';
-        return '<tr>' +
-          '<td><code style="font-size:11px;">' + escapeHtml(r.periodCode || '') + '</code></td>' +
-          '<td>' + (r.startDate || '') + '</td>' +
-          '<td>' + (r.endDate || '') + '</td>' +
-          '<td style="text-align:right;">' + fmt(r.totalOp) + '</td>' +
-          '<td style="text-align:right;color:#10B981;">' + fmt(r.netCommission) + '</td>' +
-          '<td>' + statusBadgeMini(r.status) + '</td>' +
-          '<td style="font-size:11px;color:var(--text-muted);">' + relAt + '</td>' +
-          '<td style="text-align:center;">' + releaseBtn + '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px;" onclick="downloadCommissionStatement(' + agentId + ',' + r.periodId + ')"><i class="ti ti-download"></i></button></td>' +
-        '</tr>';
+        return '<div class="comm-card">' +
+            '<div class="comm-card-top">' +
+              '<div><code class="comm-card-code">' + escapeHtml(r.periodCode || '') + '</code>' +
+              '<div class="comm-card-dates">' + (r.startDate || '') + ' — ' + (r.endDate || '') + '</div></div>' +
+              statusBadgeMini(r.status) +
+            '</div>' +
+            '<div class="comm-card-figs">' +
+              '<div class="comm-card-fig"><span class="comm-card-fig-label">O.P.</span><span class="comm-card-fig-val">' + fmt(r.totalOp) + '</span></div>' +
+              '<div class="comm-card-fig"><span class="comm-card-fig-label">Net Commission</span><span class="comm-card-fig-val" style="color:#10B981;">' + fmt(r.netCommission) + '</span></div>' +
+              (relAt ? '<div class="comm-card-fig"><span class="comm-card-fig-label">Released</span><span class="comm-card-fig-val" style="font-size:12px;font-weight:500;color:var(--text-muted);">' + relAt + '</span></div>' : '') +
+            '</div>' +
+            '<div class="comm-card-actions">' +
+              '<button class="btn btn-outline comm-btn" onclick="viewCommissionStatement(' + agentId + ',' + r.periodId + ')"><i class="ti ti-eye"></i> View</button>' +
+              '<button class="btn btn-primary comm-btn" onclick="downloadCommissionStatement(' + agentId + ',' + r.periodId + ')"><i class="ti ti-download"></i> Download</button>' +
+              releaseBtn +
+            '</div>' +
+          '</div>';
       }).join('');
 
-      var html = '<div class="table-scroll"><table class="table">' +
-        '<thead><tr><th>Period</th><th>Start</th><th>End</th><th style="text-align:right;">O.P.</th><th style="text-align:right;">Net Commission</th><th>Status</th><th>Released At</th><th style="text-align:center;">Actions</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table></div>';
+      var hint = releasedHidden > 0
+        ? '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">' +
+            releasedHidden + ' released period' + (releasedHidden > 1 ? 's' : '') + ' hidden. ' +
+            '<a href="#" onclick="window._agentCommShowReleased=true; loadAgentCommission(' + agentId + ', null); return false;" style="color:var(--primary,#B8860B);font-weight:600;">Show</a>' +
+          '</div>'
+        : '';
 
-      content.innerHTML = periodDropdown + html;
+      var html = filtered.length === 0
+        ? '<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:13px;">' +
+            (releasedHidden > 0 ? 'No active periods — all are released.' : 'No commission periods found.') +
+          '</div>'
+        : '<div class="comm-card-list">' + rows + '</div>';
+
+      content.innerHTML = periodDropdown + hint + html;
     } catch (err) {
       content.innerHTML = periodDropdown + '<div style="color:red;padding:16px;">Error loading commission data.</div>';
       console.error('loadAgentCommission', err);
@@ -13993,17 +14425,35 @@
       };
 
       var rows = periods.length ? periods.map(function (p) {
-        var closeBtn   = p.status === 'OPEN'
-          ? '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:3px 8px;" onclick="closePeriod(' + p.id + ')"><i class="ti ti-lock"></i> Close</button>' : '';
-        var releaseBtn = p.status === 'CLOSED'
-          ? '<button class="btn btn-sm btn-outline" style="font-size:10px;padding:3px 8px;" onclick="releasePeriod(' + p.id + ')"><i class="ti ti-affiliate"></i> Release</button>' : '';
+        var actions = '';
+        if (p.status === 'OPEN') {
+          actions =
+            '<button class="btn btn-sm btn-outline" style="font-size:11px;padding:5px 10px;" onclick="showPeriodEditForm(' + p.id + ',\'' + (p.startDate||'') + '\',\'' + (p.endDate||'') + '\')"><i class="ti ti-edit"></i> Edit</button>' +
+            '<button class="btn btn-sm btn-outline" style="font-size:11px;padding:5px 10px;" onclick="closePeriod(' + p.id + ')"><i class="ti ti-lock"></i> Close</button>' +
+            '<button class="btn btn-sm btn-outline" style="font-size:11px;padding:5px 10px;color:#B91C1C;border-color:#FCA5A5;" onclick="deletePeriod(' + p.id + ',\'' + escapeHtml(p.periodCode||'') + '\')"><i class="ti ti-trash"></i> Delete</button>';
+        } else if (p.status === 'CLOSED') {
+          actions = '<button class="btn btn-sm btn-outline" style="font-size:11px;padding:5px 10px;" onclick="releasePeriod(' + p.id + ')"><i class="ti ti-affiliate"></i> Release</button>';
+        }
         return '<tr>' +
           '<td><code style="font-size:11px;">' + escapeHtml(p.periodCode||'') + '</code></td>' +
           '<td style="font-size:11px;">' + (p.startDate||'—') + ' — ' + (p.endDate||'—') + '</td>' +
           '<td>' + statusBadge(p.status) + '</td>' +
-          '<td style="display:flex;gap:4px;">' + closeBtn + releaseBtn + '</td>' +
+          '<td><div style="display:flex;gap:6px;flex-wrap:wrap;">' + actions + '</div></td>' +
           '</tr>';
       }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:16px;">No commission periods found.</td></tr>';
+
+      var ec = window._periodEditCtx;
+      var editForm = ec
+        ? '<div id="period-edit-form" style="margin-bottom:12px;padding:12px;border:1px solid #E0A800;border-radius:6px;background:#FFFBEF;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">' +
+            '<div style="width:100%;font-size:12px;font-weight:700;color:#5C1A0E;margin-bottom:2px;">Edit period dates — entries re-sort automatically</div>' +
+            '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">Start Date</label><input type="date" id="period-edit-start" class="form-control" style="width:150px;font-size:12px;" value="' + (ec.start||'') + '"></div>' +
+            '<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px;">End Date</label><input type="date" id="period-edit-end" class="form-control" style="width:150px;font-size:12px;" value="' + (ec.end||'') + '"></div>' +
+            '<div style="display:flex;gap:4px;">' +
+              '<button class="btn btn-sm btn-primary" onclick="savePeriodEdit()" style="font-size:12px;">Save</button>' +
+              '<button class="btn btn-sm btn-outline" onclick="cancelPeriodEdit()" style="font-size:12px;">Cancel</button>' +
+            '</div>' +
+          '</div>'
+        : '';
 
       var newForm = focusNew
         ? '<div id="period-new-form" style="margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">' +
@@ -14022,6 +14472,7 @@
           '<div style="font-size:12px;font-weight:600;">' + periods.length + ' period(s)</div>' +
           '<button class="btn btn-sm btn-primary" onclick="showNewPeriodForm()" style="font-size:12px;margin-left:auto;"><i class="ti ti-plus"></i> Open New Period</button>' +
         '</div>' +
+        editForm +
         newForm +
         '<div class="table-scroll"><table class="table" style="font-size:12px;">' +
           '<thead><tr><th>Code</th><th>Dates</th><th>Status</th><th>Actions</th></tr></thead>' +
@@ -14041,6 +14492,62 @@
   window.cancelNewPeriod = function () {
     var container = $('commission-period-modal-body');
     if (container) renderPeriodList(container, false);
+  };
+
+  window.showPeriodEditForm = function (id, start, end) {
+    window._periodEditCtx = { id: id, start: start, end: end };
+    var container = $('commission-period-modal-body');
+    if (container) renderPeriodList(container, false);
+  };
+
+  window.cancelPeriodEdit = function () {
+    window._periodEditCtx = null;
+    var container = $('commission-period-modal-body');
+    if (container) renderPeriodList(container, false);
+  };
+
+  window.savePeriodEdit = async function () {
+    var ec = window._periodEditCtx;
+    if (!ec) return;
+    var start = ($('period-edit-start') || {}).value;
+    var end   = ($('period-edit-end')   || {}).value;
+    if (!start || !end) { showToast('Start date and end date are required.', 'error'); return; }
+    try {
+      var res = await fetch(API_BASE + '/api/commissions/periods/' + ec.id, {
+        method: 'PUT',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ startDate: start, endDate: end })
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast(data.message || 'Failed to update period.', 'error'); return; }
+      showToast('Period ' + (data.periodCode || '') + ' updated.', 'success');
+      if (data.resync) {
+        showToast('Entries re-synced: +' + (data.resync.entriesCreated || 0) + ' added, −' + (data.resync.entriesRemoved || 0) + ' removed.', 'info');
+      }
+      window._periodEditCtx = null;
+      var container = $('commission-period-modal-body');
+      if (container) renderPeriodList(container, false);
+    } catch (err) {
+      showToast('Error updating period.', 'error');
+      console.error('savePeriodEdit', err);
+    }
+  };
+
+  window.deletePeriod = async function (id, code) {
+    if (!confirm('Delete period ' + (code || '') + '?\n\nOnly an empty open period can be deleted. Released or recorded commissions are never touched.')) return;
+    try {
+      var res = await fetch(API_BASE + '/api/commissions/periods/' + id, {
+        method: 'DELETE', headers: authHeaders()
+      });
+      var data = await res.json();
+      if (!res.ok) { showToast(data.message || 'Failed to delete period.', 'error'); return; }
+      showToast(data.message || 'Period deleted.', 'success');
+      var container = $('commission-period-modal-body');
+      if (container) renderPeriodList(container, false);
+    } catch (err) {
+      showToast('Error deleting period.', 'error');
+      console.error('deletePeriod', err);
+    }
   };
 
   window.saveNewPeriod = async function () {
@@ -14154,6 +14661,78 @@
       showToast('Export failed', 'error');
     }
   };
+
+  // ── In-app commission statement viewer (read-only, styled with logo palette) ──
+  window.viewCommissionStatement = async function (agentId, periodId) {
+    try {
+      var res = await fetch(API_BASE + '/api/commissions/periods/' + periodId + '/agents/' + agentId + '/statement', { headers: authHeaders() });
+      if (!res.ok) { showToast('Failed to load statement (' + res.status + ')', 'error'); return; }
+      var s = await res.json();
+      renderStatementModal(s, agentId, periodId);
+    } catch (err) {
+      console.error('viewCommissionStatement', err);
+      showToast('Error loading statement', 'error');
+    }
+  };
+
+  function renderStatementModal(s, agentId, periodId) {
+    var money = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    var agent = s.agent || {}, period = s.period || {}, summary = s.summary || {};
+    var entries = s.entries || [], adjustments = s.adjustments || [];
+
+    var entryRows = entries.length ? entries.map(function (e) {
+      return '<tr>' +
+        '<td>' + escapeHtml(e.orderId || '') + '</td>' +
+        '<td>' + escapeHtml(e.orderDate || '') + '</td>' +
+        '<td>' + escapeHtml(e.productName || '') + '</td>' +
+        '<td style="text-align:right;">' + (e.quantity != null ? e.quantity : '') + '</td>' +
+        '<td style="text-align:right;">' + money(e.opAmount) + '</td>' +
+        '<td>' + escapeHtml(e.status || '') + '</td>' +
+      '</tr>';
+    }).join('') : '<tr><td colspan="6" style="text-align:center;color:#999;padding:12px;">No entries for this period.</td></tr>';
+
+    var adjBlock = adjustments.length
+      ? '<h4 class="stmt-h">Adjustments</h4><table class="stmt-table"><thead><tr><th>Type</th><th style="text-align:right;">Amount</th><th>Reason</th></tr></thead><tbody>' +
+        adjustments.map(function (a) {
+          return '<tr><td>' + escapeHtml(a.adjustmentType || '') + '</td><td style="text-align:right;">' + money(a.amount) + '</td><td>' + escapeHtml(a.reason || '') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '';
+
+    var existing = document.getElementById('stmt-view-overlay');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'stmt-view-overlay';
+    overlay.className = 'stmt-overlay';
+    overlay.onclick = function (e) { if (e.target === overlay) overlay.remove(); };
+
+    overlay.innerHTML =
+      '<div class="stmt-modal">' +
+        '<div class="stmt-head">' +
+          '<img src="assets/logo-two.png" alt="RBM Packaging Supplies" class="stmt-logo">' +
+          '<button class="stmt-close" onclick="document.getElementById(\'stmt-view-overlay\').remove();" aria-label="Close">&times;</button>' +
+        '</div>' +
+        '<div class="stmt-title">Commission Statement</div>' +
+        '<div class="stmt-meta">' +
+          '<div><div class="stmt-meta-label">Agent</div><div class="stmt-meta-val">' + escapeHtml(agent.agentCode || '') + '</div><div class="stmt-meta-sub">' + escapeHtml(agent.fullName || '') + '</div></div>' +
+          '<div><div class="stmt-meta-label">Period</div><div class="stmt-meta-val">' + escapeHtml(period.periodCode || '') + '</div><div class="stmt-meta-sub">' + escapeHtml((period.startDate || '') + ' — ' + (period.endDate || '')) + ' &middot; ' + escapeHtml(period.status || '') + '</div></div>' +
+        '</div>' +
+        '<h4 class="stmt-h">Commission Entries</h4>' +
+        '<table class="stmt-table"><thead><tr><th>Order</th><th>Date</th><th>Product</th><th style="text-align:right;">Qty</th><th style="text-align:right;">O.P.</th><th>Status</th></tr></thead>' +
+        '<tbody>' + entryRows + '</tbody></table>' +
+        adjBlock +
+        '<div class="stmt-totals">' +
+          '<div class="stmt-total-row"><span>Total O.P.</span><span>' + money(summary.totalOp) + '</span></div>' +
+          '<div class="stmt-total-row"><span>Total Adjustments</span><span>' + money(summary.totalAdjustments) + '</span></div>' +
+          '<div class="stmt-total-row stmt-total-net"><span>Net Commission</span><span>' + money(summary.netCommission) + '</span></div>' +
+        '</div>' +
+        '<div class="stmt-actions">' +
+          '<button class="btn btn-outline comm-btn" onclick="document.getElementById(\'stmt-view-overlay\').remove();">Close</button>' +
+          '<button class="btn btn-primary comm-btn" onclick="downloadCommissionStatement(' + agentId + ',' + periodId + ')"><i class="ti ti-download"></i> Download</button>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(overlay);
+  }
 
   window.openEditAgentModal = async function (agentId) {
     var res;
@@ -14568,6 +15147,7 @@
     if (!source)       { showToast('Please select order source', 'error'); return; }
     if (!paymentMode)  { showToast('Please select payment mode', 'error'); return; }
     if (source === 'AGENT' && !agentId) { showToast('Please select an agent', 'error'); return; }
+    if ((source === 'RESELLER' || source === 'DISTRIBUTOR') && !resellerId) { showToast('Please select a registered reseller/distributor', 'error'); return; }
 
     var ecommercePlatform = null;
     if (source === 'ECOMMERCE') {

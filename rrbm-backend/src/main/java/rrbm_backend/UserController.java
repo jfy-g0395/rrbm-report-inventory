@@ -25,7 +25,7 @@ public class UserController {
         List.of("SUPER_ADMIN", "ADMIN", "ADMINISTRATOR", "ACCOUNTING", "DELIVERY_MANAGEMENT", "STANDARD_USER");
 
     private static final String ALL_PAGES =
-        "[\"dashboard\",\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-schedule\",\"delivery-reports\",\"activity-log\",\"employees\",\"employee-201\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\",\"cash-flow\"]";
+        "[\"dashboard\",\"orders\",\"order-history\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"reports\",\"delivery-schedule\",\"delivery-reports\",\"activity-log\",\"employees\",\"employee-201\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"resellers\",\"import\",\"cash-flow\"]";
 
     private static final Map<String, String> ROLE_DEFAULT_PAGES;
     static {
@@ -36,7 +36,7 @@ public class UserController {
         // REJECT_MANAGEMENT/ACCOUNTING_PLUS roles were retired: void/cancel orders and
         // add manual rejected items. (Existing accounting users are backfilled by V91.)
         m.put("ACCOUNTING",
-            "[\"dashboard\",\"orders\",\"void-cancel-orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"add-rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"import\"]");
+            "[\"dashboard\",\"orders\",\"void-cancel-orders\",\"daily-reports\",\"inventory\",\"purchase-orders\",\"receive-stocks\",\"rejected-items\",\"add-rejected-items\",\"reports\",\"expenses\",\"payables\",\"suppliers\",\"collections\",\"ledger\",\"agents\",\"resellers\",\"import\"]");
         // Delivery Management — specialized role that manages the Delivery Schedule (stock moves + order deliveries).
         m.put("DELIVERY_MANAGEMENT",
             "[\"dashboard\",\"orders\",\"delivery-schedule\",\"inventory\",\"delivery-reports\"]");
