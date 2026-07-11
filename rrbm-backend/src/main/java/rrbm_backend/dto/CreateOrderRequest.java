@@ -20,6 +20,11 @@ public class CreateOrderRequest {
     private BigDecimal discount;
     private BigDecimal deliveryFee;
     private String notes;
+    // Fix 5 — delivery coordination, used by edit-order-items on scheduled deliveries.
+    private String deliveryDriver;
+    private String deliveryHelpers;       // one helper name per line
+    private String deliveryCoordinatedBy;
+    private String deliveryNotes;
     // Deferred delivery (V93) — when present the order is created as
     // SCHEDULED_DELIVERY and records nothing until fulfilled on the delivery day.
     private LocalDate scheduledDeliveryDate;

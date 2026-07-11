@@ -70,6 +70,12 @@ public class OrderResponse {
     private boolean deliveryConfirmed;
     private OffsetDateTime deliveryConfirmedAt;
 
+    // Fix 5 (V100) — delivery crew / coordination for scheduled order deliveries.
+    private String deliveryDriver;
+    private String deliveryHelpers;       // one helper name per line
+    private String deliveryCoordinatedBy;
+    private String deliveryNotes;
+
     @Data
     @AllArgsConstructor
     public static class OrderItemResponse {

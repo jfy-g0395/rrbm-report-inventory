@@ -895,7 +895,9 @@ public class OrderController {
                         .body(Map.of("message", "Invalid or missing authentication token"));
 
             Order updated = orderService.editScheduledDeliveryItems(
-                    id, body.getItems(), body.getDiscount(), body.getDeliveryFee(), userId);
+                    id, body.getItems(), body.getDiscount(), body.getDeliveryFee(),
+                    body.getDeliveryDriver(), body.getDeliveryHelpers(),
+                    body.getDeliveryCoordinatedBy(), body.getDeliveryNotes(), userId);
             return ResponseEntity.ok(convertToResponse(updated));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
@@ -911,6 +913,7 @@ public class OrderController {
      */
     @PostMapping("/{id}/confirm-delivery")
     public ResponseEntity<?> confirmDelivery(@PathVariable String id,
+                                             @RequestBody(required = false) Map<String, String> body,
                                              @RequestHeader("Authorization") String authHeader) {
         try {
             Long userId = userIdFromHeader(authHeader);
@@ -918,7 +921,9 @@ public class OrderController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("message", "Invalid or missing authentication token"));
 
-            Order confirmed = orderService.confirmScheduledDelivery(id, userId);
+            Map<String, String> b = body != null ? body : java.util.Collections.emptyMap();
+            Order confirmed = orderService.confirmScheduledDelivery(id, userId,
+                    b.get("driver"), b.get("helpers"), b.get("coordinatedBy"), b.get("notes"));
             return ResponseEntity.ok(convertToResponse(confirmed));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
@@ -1422,7 +1427,11 @@ public class OrderController {
             order.getDeliveredAt(),
             order.getDeliveryChangeLog(),
             order.isDeliveryConfirmed(),
-            order.getDeliveryConfirmedAt()
+            order.getDeliveryConfirmedAt(),
+            order.getDeliveryDriver(),
+            order.getDeliveryHelpers(),
+            order.getDeliveryCoordinatedBy(),
+            order.getDeliveryNotes()
         );
     }
 }

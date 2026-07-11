@@ -402,7 +402,9 @@ public class OrderService {
     @Transactional
     public Order editScheduledDeliveryItems(String orderId,
                                             java.util.List<CreateOrderRequest.OrderItemRequest> items,
-                                            BigDecimal discount, BigDecimal deliveryFee, Long userId) {
+                                            BigDecimal discount, BigDecimal deliveryFee,
+                                            String driver, String helpers,
+                                            String coordinatedBy, String notes, Long userId) {
         Order order = orderRepository.findByIdForUpdateWithItems(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
 
@@ -448,6 +450,11 @@ public class OrderService {
         // Optional order-level adjustments — preserve existing values when not supplied.
         if (discount != null)    order.setDiscount(discount);
         if (deliveryFee != null) order.setDeliveryFee(deliveryFee);
+        // Fix 5: delivery crew is editable here too (a blank value clears the field).
+        if (driver != null)        order.setDeliveryDriver(driver.isBlank() ? null : driver.trim());
+        if (helpers != null)       order.setDeliveryHelpers(helpers.isBlank() ? null : helpers.trim());
+        if (coordinatedBy != null) order.setDeliveryCoordinatedBy(coordinatedBy.isBlank() ? null : coordinatedBy.trim());
+        if (notes != null)         order.setDeliveryNotes(notes.isBlank() ? null : notes.trim());
         order.calculateTotals();
 
         // Editing clears the confirmation gate — the new list must be re-confirmed.
@@ -471,7 +478,9 @@ public class OrderService {
      * Idempotent: confirming an already-confirmed order is a no-op.
      */
     @Transactional
-    public Order confirmScheduledDelivery(String orderId, Long userId) {
+    public Order confirmScheduledDelivery(String orderId, Long userId,
+                                          String driver, String helpers,
+                                          String coordinatedBy, String notes) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
 
@@ -480,20 +489,37 @@ public class OrderService {
                     + order.getStatus() + ")");
         }
 
-        if (order.isDeliveryConfirmed()) {
-            return order; // already confirmed — idempotent
-        }
+        // Fix 5: the delivery crew is captured (and required) at final-order confirmation.
+        if (driver == null || driver.isBlank())
+            throw new RuntimeException("Driver is required to confirm the delivery");
+        if (helpers == null || helpers.isBlank())
+            throw new RuntimeException("At least one helper is required to confirm the delivery");
 
         User actor = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found: " + userId));
 
+        order.setDeliveryDriver(driver.trim());
+        order.setDeliveryHelpers(helpers.trim());
+        order.setDeliveryCoordinatedBy(
+                (coordinatedBy != null && !coordinatedBy.isBlank()) ? coordinatedBy.trim() : actor.getFullName());
+        order.setDeliveryNotes((notes != null && !notes.isBlank()) ? notes.trim() : null);
+
+        if (order.isDeliveryConfirmed()) {
+            // Already confirmed — just refresh the crew details; don't re-flip the gate or re-log.
+            orderRepository.save(order);
+            return order;
+        }
+
         order.setDeliveryConfirmed(true);
         order.setDeliveryConfirmedAt(OffsetDateTime.now());
-        order.appendDeliveryLog(LocalDate.now() + " — final order confirmed by " + actor.getFullName());
+        order.appendDeliveryLog(LocalDate.now() + " — final order confirmed by " + actor.getFullName()
+                + " · driver: " + order.getDeliveryDriver()
+                + ", helper(s): " + order.getDeliveryHelpers().replace("\n", ", "));
         orderRepository.save(order);
 
         activityLogService.log(userId, actor.getFullName(), "CONFIRM_DELIVERY",
-                "Confirmed final order for scheduled delivery " + orderId + " — ₱" + order.getTotal(),
+                "Confirmed final order for scheduled delivery " + orderId + " — ₱" + order.getTotal()
+                        + " (driver " + order.getDeliveryDriver() + ")",
                 "ORDER", orderId);
 
         return order;

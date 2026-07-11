@@ -175,6 +175,21 @@ public class Order {
     @Column(name = "delivery_confirmed_at")
     private OffsetDateTime deliveryConfirmedAt;
 
+    // Fix 5 (V100): delivery crew / coordination for scheduled order deliveries.
+    // Captured at final-order confirmation (driver + at least one helper required) and
+    // editable via the order-delivery editor. Helpers stored as one text blob (one per line).
+    @Column(name = "delivery_driver", columnDefinition = "TEXT")
+    private String deliveryDriver;
+
+    @Column(name = "delivery_helpers", columnDefinition = "TEXT")
+    private String deliveryHelpers;
+
+    @Column(name = "delivery_coordinated_by", columnDefinition = "TEXT")
+    private String deliveryCoordinatedBy;
+
+    @Column(name = "delivery_notes", columnDefinition = "TEXT")
+    private String deliveryNotes;
+
     /** Append one timestamped line to the delivery change log (audit trail). */
     public void appendDeliveryLog(String line) {
         this.deliveryChangeLog = (this.deliveryChangeLog == null || this.deliveryChangeLog.isBlank())

@@ -6758,6 +6758,31 @@
   var _deEditId = null;
   var _deLineCounter = 0;
 
+  // Fix 5: reusable delivery-crew helper-row UI (shared by the edit + confirm modals).
+  window.addHelperRow = function (containerId, value) {
+    var c = $(containerId); if (!c) return;
+    var row = document.createElement('div');
+    row.className = 'helper-row';
+    row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;';
+    row.innerHTML = '<input type="text" class="form-control helper-input" placeholder="Helper name" autocomplete="off" style="flex:1;">'
+      + '<button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'.helper-row\').remove()"><i class="ti ti-x"></i></button>';
+    c.appendChild(row);
+    if (value) row.querySelector('.helper-input').value = value;
+  };
+  function _setHelperRows(containerId, helpersText) {
+    var c = $(containerId); if (!c) return;
+    c.innerHTML = '';
+    var names = (helpersText || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (!names.length) { window.addHelperRow(containerId); return; }
+    names.forEach(function (n) { window.addHelperRow(containerId, n); });
+  }
+  function _collectHelpers(containerId) {
+    var c = $(containerId); if (!c) return '';
+    var vals = [];
+    c.querySelectorAll('.helper-input').forEach(function (i) { var v = i.value.trim(); if (v) vals.push(v); });
+    return vals.join('\n');
+  }
+
   window.openDeliveryEditModal = async function (id) {
     if (!appState.cachedProducts || !appState.cachedProducts.length) { await loadProducts(); }
     var o = _findDelivery(id);
@@ -6770,8 +6795,13 @@
     if (!(o.items || []).length) addDeliveryEditLine();
     if ($('de-discount')) $('de-discount').value = Number(o.discount || 0);
     if ($('de-delivery-fee')) $('de-delivery-fee').value = Number(o.deliveryFee || 0);
+    // Fix 5: prefill delivery crew.
+    if ($('ode-driver')) $('ode-driver').value = o.deliveryDriver || '';
+    if ($('ode-coordinated')) $('ode-coordinated').value = o.deliveryCoordinatedBy || currentUserName();
+    if ($('ode-notes')) $('ode-notes').value = o.deliveryNotes || '';
+    _setHelperRows('ode-helpers-container', o.deliveryHelpers || '');
     deRecalcTotal();
-    openModal('modal-delivery-edit');
+    openModal('modal-order-delivery-edit');
   };
 
   window.addDeliveryEditLine = function (prefill) {
@@ -6905,7 +6935,7 @@
     var t = $('de-total'); if (t) t.textContent = _pesos(subtotal - disc + fee);
   };
 
-  window.submitDeliveryEdit = async function () {
+  window.submitOrderDeliveryEdit = async function () {
     if (!_deEditId) return;
     var container = $('de-lines-container');
     if (!container) return;
@@ -6927,6 +6957,10 @@
       items: items,
       discount: parseFloat(($('de-discount') || {}).value) || 0,
       deliveryFee: parseFloat(($('de-delivery-fee') || {}).value) || 0,
+      deliveryDriver: (($('ode-driver') || {}).value || '').trim(),
+      deliveryHelpers: _collectHelpers('ode-helpers-container'),
+      deliveryCoordinatedBy: (($('ode-coordinated') || {}).value || '').trim(),
+      deliveryNotes: (($('ode-notes') || {}).value || '').trim(),
     };
     var btn = $('de-save-btn'); if (btn) btn.disabled = true;
     try {
@@ -6938,7 +6972,7 @@
         return;
       }
       showToast('Order items updated — please confirm the final order', 'success');
-      closeModal('modal-delivery-edit');
+      closeModal('modal-order-delivery-edit');
       _deEditId = null;
       loadOrderDeliveries();
     } catch (e) {
@@ -6964,15 +6998,29 @@
     }).join('');
     var box = $('dc-items'); if (box) box.innerHTML = rows || '<div style="color:var(--text-muted);font-size:12px;">No items.</div>';
     var t = $('dc-total'); if (t) t.textContent = _pesos(o.total);
+    // Fix 5: prefill the delivery crew (driver + helper(s) are required to confirm).
+    if ($('dc-driver')) $('dc-driver').value = o.deliveryDriver || '';
+    if ($('dc-coordinated')) $('dc-coordinated').value = o.deliveryCoordinatedBy || currentUserName();
+    if ($('dc-notes')) $('dc-notes').value = o.deliveryNotes || '';
+    _setHelperRows('dc-helpers-container', o.deliveryHelpers || '');
     openModal('modal-delivery-confirm');
   };
 
   window.confirmFinalOrder = async function () {
     if (!_dcConfirmId) return;
+    // Fix 5: driver + at least one helper are required to confirm.
+    var driver = (($('dc-driver') || {}).value || '').trim();
+    var helpers = _collectHelpers('dc-helpers-container');
+    if (!driver) { showToast('Driver is required to confirm the delivery', 'error'); return; }
+    if (!helpers) { showToast('Add at least one helper to confirm the delivery', 'error'); return; }
     var btn = $('dc-confirm-btn'); if (btn) btn.disabled = true;
     try {
       var res = await fetch(API_BASE + '/api/orders/' + _dcConfirmId + '/confirm-delivery',
-        { method: 'POST', headers: authHeaders() });
+        { method: 'POST', headers: authHeaders(), body: JSON.stringify({
+          driver: driver, helpers: helpers,
+          coordinatedBy: (($('dc-coordinated') || {}).value || '').trim(),
+          notes: (($('dc-notes') || {}).value || '').trim()
+        }) });
       if (!res.ok) {
         var d = await res.json().catch(function () { return {}; });
         showToast(d.message || 'Failed to confirm order', 'error');

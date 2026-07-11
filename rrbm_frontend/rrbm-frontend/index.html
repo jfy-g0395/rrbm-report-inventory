@@ -5377,11 +5377,11 @@
        Change products / qty / unit price before delivery. Records
        nothing (order stays inert); saving clears the confirmation.
        ============================================================ -->
-  <div class="modal-overlay" id="modal-delivery-edit">
+  <div class="modal-overlay" id="modal-order-delivery-edit">
     <div class="modal-box" style="max-width:820px;">
       <div class="modal-header">
         <div style="font-size:14px;font-weight:600;"><i class="ti ti-edit" style="margin-right:6px;color:#D4860A;"></i>Edit Order Items — <span id="de-order-id-label"></span></div>
-        <button class="icon-btn" onclick="closeModal('modal-delivery-edit')"><i class="ti ti-x"></i></button>
+        <button class="icon-btn" onclick="closeModal('modal-order-delivery-edit')"><i class="ti ti-x"></i></button>
       </div>
       <div class="modal-body">
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Adjust the final order before delivery. Nothing is recorded yet — saving will require the order to be <strong>confirmed</strong> again before it can be delivered.</p>
@@ -5394,10 +5394,31 @@
             <input type="number" class="form-control" id="de-delivery-fee" min="0" step="0.00001" value="0" oninput="deRecalcTotal()"></div>
         </div>
         <div style="text-align:right;font-size:15px;font-weight:700;margin-top:12px;">Total: <span id="de-total">₱0.00</span></div>
+
+        <!-- Fix 5: delivery crew / coordination -->
+        <hr style="margin:16px 0 12px;border-color:var(--border);">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Delivery crew</div>
+        <div class="row g-2">
+          <div class="col-6"><label class="form-label" style="font-size:11px;">Driver</label>
+            <input type="text" class="form-control" id="ode-driver" autocomplete="off" placeholder="Driver name"></div>
+          <div class="col-6"><label class="form-label" style="font-size:11px;">Coordinated by</label>
+            <input type="text" class="form-control" id="ode-coordinated" autocomplete="off"></div>
+        </div>
+        <div style="margin-top:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label class="form-label" style="font-size:11px;margin:0;">Helper(s)</label>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addHelperRow('ode-helpers-container')"><i class="ti ti-plus"></i> Add helper</button>
+          </div>
+          <div id="ode-helpers-container" style="margin-top:6px;"></div>
+        </div>
+        <div style="margin-top:10px;">
+          <label class="form-label" style="font-size:11px;">Delivery notes</label>
+          <input type="text" class="form-control" id="ode-notes" autocomplete="off" placeholder="Optional notes for this delivery">
+        </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeModal('modal-delivery-edit')">Cancel</button>
-        <button class="btn btn-primary" id="de-save-btn" onclick="submitDeliveryEdit()">Save changes</button>
+        <button class="btn btn-secondary" onclick="closeModal('modal-order-delivery-edit')">Cancel</button>
+        <button class="btn btn-primary" id="de-save-btn" onclick="submitOrderDeliveryEdit()">Save changes</button>
       </div>
     </div>
   </div>
@@ -5417,6 +5438,27 @@
         <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Review the final order. Once confirmed it can be delivered. If anything changes later, edit the items — that will require confirming again.</p>
         <div id="dc-items"></div>
         <div style="text-align:right;font-size:15px;font-weight:700;margin-top:12px;">Total: <span id="dc-total">₱0.00</span></div>
+
+        <!-- Fix 5: assign the delivery crew (driver + at least one helper required) -->
+        <hr style="margin:14px 0 12px;border-color:var(--border);">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Assign delivery crew</div>
+        <div class="row g-2">
+          <div class="col-6"><label class="form-label" style="font-size:11px;">Driver <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="dc-driver" autocomplete="off" placeholder="Driver name"></div>
+          <div class="col-6"><label class="form-label" style="font-size:11px;">Coordinated by</label>
+            <input type="text" class="form-control" id="dc-coordinated" autocomplete="off"></div>
+        </div>
+        <div style="margin-top:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <label class="form-label" style="font-size:11px;margin:0;">Helper(s) <span class="text-danger">*</span></label>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addHelperRow('dc-helpers-container')"><i class="ti ti-plus"></i> Add helper</button>
+          </div>
+          <div id="dc-helpers-container" style="margin-top:6px;"></div>
+        </div>
+        <div style="margin-top:10px;">
+          <label class="form-label" style="font-size:11px;">Delivery notes</label>
+          <input type="text" class="form-control" id="dc-notes" autocomplete="off" placeholder="Optional">
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-delivery-confirm')">Cancel</button>
@@ -5619,6 +5661,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u29"></script>
+  <script src="js/app.js?v=u30"></script>
 </body>
 </html>
