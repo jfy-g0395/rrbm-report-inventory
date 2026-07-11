@@ -45,6 +45,7 @@ public class OrderService {
     private final ProductRepository  productRepository;
     private final CashLedgerService  cashLedgerService;
     private final AgentRepository    agentRepository;
+    private final ResellerRepository resellerRepository;
 
     public OrderService(OrderRepository orderRepository,
                         OrderIdGenerator orderIdGenerator,
@@ -57,7 +58,8 @@ public class OrderService {
                         DailyReportRepository dailyReportRepository,
                         ProductRepository productRepository,
                         CashLedgerService cashLedgerService,
-                        AgentRepository agentRepository) {
+                        AgentRepository agentRepository,
+                        ResellerRepository resellerRepository) {
         this.orderRepository    = orderRepository;
         this.orderIdGenerator   = orderIdGenerator;
         this.userRepository     = userRepository;
@@ -70,6 +72,7 @@ public class OrderService {
         this.productRepository  = productRepository;
         this.cashLedgerService  = cashLedgerService;
         this.agentRepository    = agentRepository;
+        this.resellerRepository = resellerRepository;
     }
 
     /**
@@ -139,6 +142,19 @@ public class OrderService {
             linkedAgent = found;
         } else {
             linkedAgent = null;
+        }
+
+        // ── S-A1: Reseller/Distributor linking — parallel to agent linking ──
+        // When a registered reseller is chosen, link the FK and reuse agent_name for its
+        // display name (keeps existing name-based display/reporting paths working). Free-text
+        // names remain accepted at the API level for backward compatibility (e.g. CSV import);
+        // the New Order UI restricts these sources to registered, ACTIVE resellers.
+        if (request.getResellerId() != null) {
+            Reseller reseller = resellerRepository.findById(request.getResellerId()).orElse(null);
+            if (reseller == null || "INACTIVE".equals(reseller.getStatus()))
+                throw new RuntimeException("Reseller/Distributor not found or inactive");
+            order.setResellerId(reseller.getId());
+            order.setAgentName(reseller.getName());
         }
 
         // ── Build OrderItems (+ commission opAmount, U15 flat-amount model) ──

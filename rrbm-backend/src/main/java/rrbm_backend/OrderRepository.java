@@ -77,6 +77,10 @@ public interface OrderRepository extends JpaRepository<Order, String> {
     @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.agentId = :agentId ORDER BY o.createdAt DESC")
     List<Order> findByAgentIdWithItems(@Param("agentId") Long agentId);
 
+    // Orders for a specific reseller/distributor, newest first, with items eagerly fetched (S-A1).
+    @Query("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.resellerId = :resellerId ORDER BY o.createdAt DESC")
+    List<Order> findByResellerIdWithItems(@Param("resellerId") Long resellerId);
+
     // All orders needing payment collection: only PENDING_COLLECTION status.
     // PENDING (on-hold) orders are excluded — they are visible in the Order List
     // and will resume to ACTIVE via the normal hold-resume flow. Mixing them into
