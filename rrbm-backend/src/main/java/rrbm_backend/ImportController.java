@@ -221,6 +221,15 @@ public class ImportController {
     private final CashLedgerService               cashLedgerService;
     private final BCryptPasswordEncoder          passwordEncoder = new BCryptPasswordEncoder();
 
+    // Used to clear the persistence context between rows during commit. With open-session-in-view,
+    // one Hibernate session is bound to the whole /commit request; every imported order leaves its
+    // entities (order, items, movements, transactions, commission entries) managed in it. Each query
+    // that auto-flushes (e.g. sumStockById in logMovement) then dirty-checks the ENTIRE growing set,
+    // making a large import O(N^2) — slow enough to exceed the proxy timeout so the result never
+    // returns. Clearing per row keeps each flush cheap (O(N) overall).
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
     public ImportController(UserRepository userRepository,
                             JwtUtil jwtUtil,
                             AgentRepository agentRepository,
@@ -1053,6 +1062,10 @@ public class ImportController {
 
         // ── Commit Sales → Orders (backdated to row date) ─────────────────────
         for (ParsedSaleRow saleRow : session.validSales()) {
+            // Detach the previous order's entities so the persistence context stays small and
+            // per-order auto-flushes don't degrade to O(N^2) across a large import (see field doc).
+            entityManager.clear();
+
             Map<String, Object> override = orderOverrides.get(saleRow.receiptNum());
 
             // Check include flag (default: included)
@@ -1176,6 +1189,7 @@ public class ImportController {
 
         // ── Commit Expenses ───────────────────────────────────────────────────
         for (ParsedExpenseRow expRow : session.validExpenses()) {
+            entityManager.clear();
             Map<String, Object> override = expenseOverrides.get(expRow.referenceNumber());
 
             if (override != null && Boolean.FALSE.equals(override.get("include"))) { skipped++; skippedExpenseRefs.add(expRow.referenceNumber()); continue; }
