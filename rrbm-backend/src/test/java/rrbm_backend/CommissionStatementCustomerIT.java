@@ -88,20 +88,35 @@ class CommissionStatementCustomerIT {
                 .andReturn().getResponse().getContentAsString();
         orderId = MAPPER.readTree(json).get("id").asText();
 
-        // Persist a commission entry pointing at that order.
+        // Persist a commission entry pointing at that order (later date).
         CommissionEntry e = new CommissionEntry();
         e.setPeriodId(period.getId());
         e.setAgentId(agent.getId());
         e.setOrderId(orderId);
         e.setOrderDate(LocalDate.now());
-        e.setProductName(product.getName());
+        e.setProductName("LaterWidget-" + RUN);
         e.setQuantity(2);
-        e.setBasePrice(new BigDecimal("100.00"));
+        e.setBasePrice(new BigDecimal("100.00000"));
         e.setOpRate(new BigDecimal("0.0500"));
         e.setOpPerUnit(new BigDecimal("5.00"));
-        e.setOpAmount(new BigDecimal("10.00"));
+        e.setOpAmount(new BigDecimal("1234.50000"));
         e.setStatus("PENDING");
         commissionEntryRepository.save(e);
+
+        // A second entry with an EARLIER order date — must sort before the later one.
+        CommissionEntry e2 = new CommissionEntry();
+        e2.setPeriodId(period.getId());
+        e2.setAgentId(agent.getId());
+        e2.setOrderId(orderId);
+        e2.setOrderDate(LocalDate.now().minusDays(5));
+        e2.setProductName("EarlierWidget-" + RUN);
+        e2.setQuantity(1);
+        e2.setBasePrice(new BigDecimal("50.00000"));
+        e2.setOpRate(new BigDecimal("0.0500"));
+        e2.setOpPerUnit(new BigDecimal("2.50"));
+        e2.setOpAmount(new BigDecimal("2.50000"));
+        e2.setStatus("PENDING");
+        commissionEntryRepository.save(e2);
     }
 
     @AfterAll
@@ -150,6 +165,23 @@ class CommissionStatementCustomerIT {
         assertThat(pdf).contains(CUSTOMER);
         assertThat(pdf).contains("O.P. Total");
         assertThat(pdf).doesNotContain("O.P. Amount");
+    }
+
+    @Test
+    void t05_pdfExport_dropsRateColumn_currency3dp_andSortsByDate() throws Exception {
+        String pdf = export("pdf");
+        // Rate column removed.
+        assertThat(pdf).doesNotContain(">Rate</th>");
+        // Amounts are peso currency with exactly 3 decimals (₱1,234.500 not 1234.50000).
+        assertThat(pdf).contains("₱1,234.500");
+        assertThat(pdf).contains("₱100.000");
+        assertThat(pdf).doesNotContain("1234.50000");
+        // Entries sorted by order date ascending — earlier product row comes first.
+        int earlier = pdf.indexOf("EarlierWidget-" + RUN);
+        int later   = pdf.indexOf("LaterWidget-" + RUN);
+        assertThat(earlier).isGreaterThan(-1);
+        assertThat(later).isGreaterThan(-1);
+        assertThat(earlier).isLessThan(later);
     }
 
     @Test

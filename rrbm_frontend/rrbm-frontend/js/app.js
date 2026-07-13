@@ -14164,7 +14164,7 @@
 
       // Fetch periods for the dropdown
       try {
-        var perfRes = await fetch(API_BASE + '/api/agents/' + agentId + '/performance', { headers: authHeaders() });
+        var perfRes = await fetch(API_BASE + '/api/agents/' + agentId + '/performance', { headers: authHeaders(), cache: 'no-store' });
         if (perfRes.ok) {
           var perfData = await perfRes.json();
           _currentAgentPeriods = perfData.commissionSummary || [];
@@ -14404,7 +14404,7 @@
 
     content.innerHTML = periodDropdown + '<div style="text-align:center;color:var(--text-muted);padding:16px;">Loading commission data…</div>';
     try {
-      var res = await fetch(API_BASE + '/api/agents/' + agentId + '/performance', { headers: authHeaders() });
+      var res = await fetch(API_BASE + '/api/agents/' + agentId + '/performance', { headers: authHeaders(), cache: 'no-store' });
       if (!res.ok) { content.innerHTML = periodDropdown + '<div style="color:red;padding:16px;">Failed to load commission data.</div>'; return; }
       var d = await res.json();
       var summary = d.commissionSummary || [];
@@ -14487,7 +14487,7 @@
 
   async function renderPeriodList(container, focusNew) {
     try {
-      var res = await fetch(API_BASE + '/api/commissions/periods', { headers: authHeaders() });
+      var res = await fetch(API_BASE + '/api/commissions/periods', { headers: authHeaders(), cache: 'no-store' });
       if (!res.ok) { container.innerHTML = '<div style="color:red;padding:16px;">Failed to load periods.</div>'; return; }
       var periods = await res.json();
       if (!Array.isArray(periods)) periods = [];
@@ -14586,7 +14586,7 @@
   async function _syncAgentPanelPeriods() {
     if (!_currentAgentId) return;
     try {
-      var perfRes = await fetch(API_BASE + '/api/agents/' + _currentAgentId + '/performance', { headers: authHeaders() });
+      var perfRes = await fetch(API_BASE + '/api/agents/' + _currentAgentId + '/performance', { headers: authHeaders(), cache: 'no-store' });
       if (perfRes.ok) {
         var perfData = await perfRes.json();
         _currentAgentPeriods = perfData.commissionSummary || [];

@@ -598,7 +598,7 @@ public class CommissionController {
         Map<String, String> customerByOrder = customerNamesFor(entries);
         List<Map<String, Object>> entriesList = new ArrayList<>();
         BigDecimal totalOp = BigDecimal.ZERO;
-        for (CommissionEntry e : entries) {
+        for (CommissionEntry e : stmtSortedByDate(entries)) {
             Map<String, Object> em = new HashMap<>();
             em.put("orderId",     e.getOrderId());
             em.put("customerName", e.getOrderId() != null ? customerByOrder.getOrDefault(e.getOrderId(), "") : "");
@@ -1009,19 +1009,18 @@ public class CommissionController {
         } else {
             sb.append("<table><thead><tr>");
             for (String col : new String[]{"Order ID", "Customer", "Date", "Product", "Qty",
-                                           "Base Price", "Rate", "O.P. Total", "Status"})
+                                           "Base Price", "O.P. Total", "Status"})
                 sb.append("<th>").append(col).append("</th>");
             sb.append("</tr></thead><tbody>");
-            for (CommissionEntry e : entries) {
+            for (CommissionEntry e : stmtSortedByDate(entries)) {
                 sb.append("<tr>");
                 stmtTd(sb, e.getOrderId());
                 stmtTd(sb, e.getOrderId() != null ? customerByOrder.getOrDefault(e.getOrderId(), "") : "");
                 stmtTd(sb, e.getOrderDate() != null ? e.getOrderDate().toString() : "");
                 stmtTd(sb, e.getProductName());
                 stmtTd(sb, String.valueOf(e.getQuantity()));
-                stmtTd(sb, e.getBasePrice()  != null ? e.getBasePrice().toPlainString()  : "");
-                stmtTd(sb, e.getOpRate()     != null ? e.getOpRate().toPlainString()      : "");
-                stmtTd(sb, e.getOpAmount()   != null ? e.getOpAmount().toPlainString()    : "0.00");
+                stmtTd(sb, stmtMoney(e.getBasePrice()));
+                stmtTd(sb, stmtMoney(e.getOpAmount()));
                 stmtTd(sb, e.getStatus());
                 sb.append("</tr>");
             }
@@ -1037,7 +1036,7 @@ public class CommissionController {
             for (CommissionAdjustment adj : adjustments) {
                 sb.append("<tr>");
                 stmtTd(sb, adj.getAdjustmentType());
-                stmtTd(sb, adj.getAmount() != null ? adj.getAmount().toPlainString() : "0.00");
+                stmtTd(sb, stmtMoney(adj.getAmount()));
                 stmtTd(sb, adj.getReason());
                 sb.append("</tr>");
             }
@@ -1046,11 +1045,11 @@ public class CommissionController {
 
         sb.append("<div class=\"sbox\">");
         sb.append("<div class=\"srow\"><span>Total O.P.</span><span>")
-          .append(totalOp.toPlainString()).append("</span></div>");
+          .append(stmtMoney(totalOp)).append("</span></div>");
         sb.append("<div class=\"srow\"><span>Total Adjustments</span><span>")
-          .append(totalAdjustments.toPlainString()).append("</span></div>");
+          .append(stmtMoney(totalAdjustments)).append("</span></div>");
         sb.append("<div class=\"srow stot\"><span>Net Commission</span><span>")
-          .append(netCommission.toPlainString()).append("</span></div>");
+          .append(stmtMoney(netCommission)).append("</span></div>");
         sb.append("</div>");
 
         sb.append("<div class=\"footer\">RRBM Management System &middot; Confidential &middot; Internal use only</div>");
@@ -1144,6 +1143,24 @@ public class CommissionController {
 
     private static void stmtTd(StringBuilder sb, String value) {
         sb.append("<td>").append(shEsc(value)).append("</td>");
+    }
+
+    /** Commission entries ordered by order date (oldest first); null dates last, then by order id. */
+    private static List<CommissionEntry> stmtSortedByDate(List<CommissionEntry> entries) {
+        List<CommissionEntry> sorted = new ArrayList<>(entries);
+        sorted.sort(java.util.Comparator
+                .comparing(CommissionEntry::getOrderDate,
+                           java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+                .thenComparing(e -> e.getOrderId() == null ? "" : e.getOrderId()));
+        return sorted;
+    }
+
+    /** Peso currency for the statement: thousands separators + 3 decimals (e.g. ₱1,234.500).
+     *  The literal ₱ passes through shEsc() unchanged, so it is safe in both escaped table
+     *  cells and raw summary rows. */
+    private static String stmtMoney(BigDecimal v) {
+        if (v == null) v = BigDecimal.ZERO;
+        return "₱" + new java.text.DecimalFormat("#,##0.000").format(v);
     }
 
     private static String stmtCsv(String value) {
