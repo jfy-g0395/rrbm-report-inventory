@@ -227,6 +227,24 @@ public class TransactionService {
      */
     @Transactional
     public Transaction recordDeferralVoid(Order order, Long userId) {
+        // Default: the SALE being neutralised was recorded at order-creation time,
+        // so the void hits the order's creation date.
+        return recordDeferralVoid(order, userId, order.getCreatedAt().toLocalDate());
+    }
+
+    /**
+     * Overload that lets the caller choose the effective date of the COLL-DEFER.
+     *
+     * Force-close and backdated-UNPAID orders record their SALE on the order-creation
+     * date, so the default overload (effective_date = createdAt) nets them to zero.
+     * A scheduled delivery marked "for collection", however, records its SALE on the
+     * DELIVERY day ({@link OrderService#fulfillScheduledDelivery}), not on createdAt —
+     * so its COLL-DEFER must be dated the delivery day to net on the same (still-open)
+     * daily report. Financial totals are ledger-driven by effective_date, so mis-dating
+     * the void would split SALE(+X) and COLL-DEFER(-X) across two different reports.
+     */
+    @Transactional
+    public Transaction recordDeferralVoid(Order order, Long userId, LocalDate effectiveDate) {
         Transaction txn = new Transaction();
         txn.setTransactionCode("COLL-DEFER-" + order.getId());
         txn.setOrderId(order.getId());
@@ -242,8 +260,8 @@ public class TransactionService {
         txn.setReferenceId(order.getId());
         txn.setNotes("Deferred to collection — " + order.getCustomerName());
         txn.setCreatedBy(userId);
-        // Hits the SAME date as the original SALE so it nets to zero
-        txn.setEffectiveDate(order.getCreatedAt().toLocalDate());
+        // Hits the SAME date as the SALE it neutralises so it nets to zero.
+        txn.setEffectiveDate(effectiveDate);
         return transactionRepository.save(txn);
     }
 

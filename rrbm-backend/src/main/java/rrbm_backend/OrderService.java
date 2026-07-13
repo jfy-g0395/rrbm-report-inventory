@@ -302,8 +302,32 @@ public class OrderService {
      * so today's live report and the eventual close snapshot both pick it up without any manual
      * daily-report patch (unlike collections, which book to a past, already-closed day).
      */
-    @Transactional
     public Order fulfillScheduledDelivery(String orderId, Long userId) {
+        return fulfillScheduledDelivery(orderId, userId, false);
+    }
+
+    /**
+     * Overload with the Fix 1 "for collection" branch.
+     *
+     * <p><b>forCollection = false (Paid)</b> — the original behavior: the order becomes a real,
+     * fully-recorded DELIVERED sale (stock deducted, SALE dated today, commission, cash-if-cash).
+     *
+     * <p><b>forCollection = true (For collection)</b> — terms clients: the boxes are physically
+     * delivered (stock deducted) but payment is deferred. This mirrors the backdated-UNPAID path
+     * exactly so every downstream guard (collect / cancel / replacement) treats it identically to
+     * any other PENDING_COLLECTION order:
+     * <ul>
+     *   <li>status → PENDING_COLLECTION (+ pendingCollectionAt), paymentStatus → UNPAID</li>
+     *   <li>SALE dated today + COLL-DEFER dated today → nets to ₱0 (net not inflated until collected)</li>
+     *   <li>no commission, no cash — both are created later by the /collect endpoint</li>
+     *   <li>stock still deducted (goods left the warehouse)</li>
+     * </ul>
+     * The order is settled later through the existing {@code PATCH /api/orders/{id}/collect}
+     * (PENDING_COLLECTION path), which posts COLL-SALE + commission + cash on the collection day.
+     * deliveredAt is stamped in both branches so the order surfaces in the delivery day's list (Fix 3).
+     */
+    @Transactional
+    public Order fulfillScheduledDelivery(String orderId, Long userId, boolean forCollection) {
         Order order = orderRepository.findByIdForUpdateWithItems(orderId)
                 .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
 
@@ -322,9 +346,39 @@ public class OrderService {
 
         final LocalDate today = LocalDate.now();
 
-        // Flip to a real, recorded order — on the delivery day.
-        order.setStatus("DELIVERED");
+        // The goods are delivered on the delivery day in both branches — stamp deliveredAt so
+        // the order shows in the delivery day's order list (Fix 3).
         order.setDeliveredAt(OffsetDateTime.now());
+
+        if (forCollection) {
+            // Deferred payment: delivered but not yet collected.
+            order.setStatus("PENDING_COLLECTION");
+            order.setPendingCollectionAt(OffsetDateTime.now());
+            order.setPaymentStatus("UNPAID");
+            order.appendDeliveryLog(today + " — delivered FOR COLLECTION (payment deferred) by "
+                    + actor.getFullName());
+            orderRepository.save(order);
+
+            // SALE dated today, immediately neutralised by a COLL-DEFER dated today → net ₱0
+            // until the payment is actually collected (revenue recognised on the collection day).
+            transactionService.recordSale(order, userId, today);
+            transactionService.recordDeferralVoid(order, userId, today);
+
+            // Commission and cash are BOTH deferred — the /collect endpoint creates them on the
+            // collection day (matches the backdated-UNPAID and force-close deferral behavior).
+
+            // Deduct stock last — short stock throws → whole fulfilment rolls back.
+            inventoryService.deductStockForOrder(order, userId);
+
+            activityLogService.log(userId, actor.getFullName(), "ORDER_DELIVERED_FOR_COLLECTION",
+                    "Delivered scheduled order " + orderId + " for collection — ₱" + order.getTotal()
+                            + " deferred on " + today + " (awaiting collection)",
+                    "ORDER", orderId);
+            return order;
+        }
+
+        // ── Paid: flip to a real, recorded order — on the delivery day. ──
+        order.setStatus("DELIVERED");
         order.appendDeliveryLog(today + " — delivered & recorded by " + actor.getFullName());
         orderRepository.save(order);
 
@@ -677,10 +731,15 @@ public class OrderService {
     }
 
     /**
-     * Get today's orders (for the New Order view summary table)
+     * Get today's orders (for the New Order view summary + Order List view).
+     *
+     * Fix 3: includes orders DELIVERED today as well as those created today, so a
+     * scheduled delivery (which keeps its scheduling-day createdAt but is recorded on
+     * the delivery day) shows up in the delivery day's list like a normal order —
+     * paid → DELIVERED, for-collection → PENDING_COLLECTION.
      */
     public List<Order> getTodaysOrders() {
-        return orderRepository.findByCreatedAtDate(LocalDate.now());
+        return orderRepository.findForTodayList(LocalDate.now());
     }
 
     /**

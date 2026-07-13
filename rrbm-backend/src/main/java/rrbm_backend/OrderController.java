@@ -780,13 +780,20 @@ public class OrderController {
      * POST /api/orders/{id}/fulfill-delivery
      *
      * Deferred delivery (V93) — "Mark Delivered" and "Deliver now" both call this.
-     * Records the order on the delivery day (stock + SALE dated today + commission +
-     * cash-if-CASH) and moves it to DELIVERED. No security key required — recording a
-     * delivery is no more privileged than creating a normal order (which also records
-     * a SALE immediately). Gated to the orders page via PageAccessInterceptor.
+     * Records the order on the delivery day and moves it out of SCHEDULED_DELIVERY.
+     *
+     * Body (optional): { "mode": "PAID" | "FOR_COLLECTION" } (default PAID).
+     *   - PAID           → DELIVERED (stock + SALE dated today + commission + cash-if-CASH).
+     *   - FOR_COLLECTION → PENDING_COLLECTION (stock + SALE/COLL-DEFER net ₱0; payment deferred,
+     *     settled later via /collect). Fix 1.
+     *
+     * No security key required — recording a delivery is no more privileged than creating a
+     * normal order. The privileged step for a for-collection order is the later /collect, which
+     * does require the admin's personal security key. Gated to the orders page via PageAccessInterceptor.
      */
     @PostMapping("/{id}/fulfill-delivery")
     public ResponseEntity<?> fulfillDelivery(@PathVariable String id,
+                                             @RequestBody(required = false) Map<String, String> body,
                                              @RequestHeader("Authorization") String authHeader) {
         try {
             Long userId = userIdFromHeader(authHeader);
@@ -794,7 +801,10 @@ public class OrderController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("message", "Invalid or missing authentication token"));
 
-            Order delivered = orderService.fulfillScheduledDelivery(id, userId);
+            String mode = (body != null) ? body.getOrDefault("mode", "PAID") : "PAID";
+            boolean forCollection = "FOR_COLLECTION".equalsIgnoreCase(mode == null ? "" : mode.trim());
+
+            Order delivered = orderService.fulfillScheduledDelivery(id, userId, forCollection);
             return ResponseEntity.ok(convertToResponse(delivered));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));

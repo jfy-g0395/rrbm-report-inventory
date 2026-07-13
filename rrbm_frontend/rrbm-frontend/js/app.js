@@ -6691,6 +6691,13 @@
     $('dlv-action-summary').textContent = cfg.summary;
     $('dlv-action-date-group').style.display = cfg.date ? '' : 'none';
     $('dlv-action-reason-group').style.display = cfg.reason ? '' : 'none';
+    // Fix 1: payment choice (Paid vs For collection) only on fulfil. Reset to Paid each open.
+    var payGroup = $('dlv-action-paymode-group');
+    if (payGroup) {
+      payGroup.style.display = (type === 'fulfill') ? '' : 'none';
+      var paidRadio = document.querySelector('input[name="dlv-paymode"][value="PAID"]');
+      if (paidRadio) paidRadio.checked = true;
+    }
     // Oversell warning only matters when we are about to deduct stock (fulfil).
     var ov = $('dlv-action-oversell');
     if (ov) {
@@ -6712,12 +6719,31 @@
     openModal('modal-delivery-action');
   }
 
+  function _dlvPayMode() {
+    var sel = document.querySelector('input[name="dlv-paymode"]:checked');
+    return sel ? sel.value : 'PAID';
+  }
+
+  // Fix 1: reflect the Paid vs For-collection choice in the confirm button label.
+  window.onDlvPayModeChange = function () {
+    if (!_dlvAction || _dlvAction.type !== 'fulfill') return;
+    var o = _findDelivery(_dlvAction.id);
+    var due = !o.scheduledDeliveryDate || o.scheduledDeliveryDate <= _todayStr();
+    var btn = $('dlv-action-confirm-btn');
+    if (btn) {
+      btn.textContent = (_dlvPayMode() === 'FOR_COLLECTION')
+        ? 'Deliver for collection'
+        : (due ? 'Mark Delivered' : 'Deliver Now');
+    }
+  };
+
   window.confirmDeliveryAction = async function () {
     if (!_dlvAction) return;
     var id = _dlvAction.id, type = _dlvAction.type;
     var url, payload = null;
     if (type === 'fulfill') {
       url = API_BASE + '/api/orders/' + id + '/fulfill-delivery';
+      payload = { mode: _dlvPayMode() };
     } else if (type === 'reschedule') {
       var nd = (($('dlv-action-date') || {}).value || '').trim();
       if (!nd) { showToast('Pick a new delivery date', 'error'); return; }
@@ -6741,7 +6767,10 @@
         return;
       }
       var labels = { fulfill: 'Delivery recorded', reschedule: 'Delivery rescheduled', cancel: 'Scheduled delivery cancelled' };
-      showToast(labels[type], 'success');
+      var msg = (type === 'fulfill' && payload && payload.mode === 'FOR_COLLECTION')
+        ? 'Delivered — payment pending collection'
+        : labels[type];
+      showToast(msg, 'success');
       closeModal('modal-delivery-action');
       _dlvAction = null;
       // Fulfilment moves stock — refresh the product cache so the next oversell hint is accurate.

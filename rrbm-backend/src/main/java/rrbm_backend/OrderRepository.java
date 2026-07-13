@@ -18,6 +18,15 @@ public interface OrderRepository extends JpaRepository<Order, String> {
     // Find orders created today
     @Query("SELECT o FROM Order o WHERE CAST(o.createdAt AS date) = :date ORDER BY o.createdAt DESC")
     List<Order> findByCreatedAtDate(LocalDate date);
+
+    // Order-list view (Fix 3): orders created on :date OR delivered on :date. A scheduled
+    // delivery keeps its original (scheduling-day) createdAt but is recorded on the delivery
+    // day; deliveredAt is stamped only at fulfilment, so this surfaces it in the delivery
+    // day's order list without rewriting createdAt. Kept separate from findByCreatedAtDate so
+    // dashboard/report queries (createdAt-only) are unaffected.
+    @Query("SELECT o FROM Order o WHERE CAST(o.createdAt AS date) = :date "
+         + "OR CAST(o.deliveredAt AS date) = :date ORDER BY o.createdAt DESC")
+    List<Order> findForTodayList(LocalDate date);
     
     // Find orders by status
     List<Order> findByStatusOrderByCreatedAtDesc(String status);
