@@ -206,7 +206,12 @@ public class CommissionController {
         period.setStartDate(startDate);
         period.setEndDate(endDate);
         if (body.containsKey("notes")) period.setNotes((String) body.get("notes"));
-        CommissionPeriod saved = periodRepository.save(period);
+        // saveAndFlush (not save): the date change MUST be flushed to the DB now, because the
+        // resync below runs deletePendingOutsideRange — a @Modifying(clearAutomatically = true)
+        // bulk query that clears the persistence context. With a plain save() the still-dirty,
+        // un-flushed date change would be detached and silently discarded (the response would
+        // show the new date from the in-memory object while the DB kept the old one).
+        CommissionPeriod saved = periodRepository.saveAndFlush(period);
 
         // Re-sort entries to the new range: drop out-of-range PENDING entries, backfill new ones.
         Map<String, Object> resync = commissionService.resyncOpenPeriodEntries(saved);
