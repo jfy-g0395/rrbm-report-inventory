@@ -14579,6 +14579,25 @@
     if (container) renderPeriodList(container, false);
   };
 
+  // After any commission-period mutation (edit/create/delete/close/release), the open
+  // agent panel still holds the period list it cached when it opened (_currentAgentPeriods),
+  // so its Orders/Commission tab dropdowns show stale dates until reopened. Re-fetch the
+  // cache and re-render whichever tab dropdown is currently visible so edits show at once.
+  async function _syncAgentPanelPeriods() {
+    if (!_currentAgentId) return;
+    try {
+      var perfRes = await fetch(API_BASE + '/api/agents/' + _currentAgentId + '/performance', { headers: authHeaders() });
+      if (perfRes.ok) {
+        var perfData = await perfRes.json();
+        _currentAgentPeriods = perfData.commissionSummary || [];
+      }
+    } catch (e) { /* keep the existing cache on error */ }
+    var commSel = document.getElementById('agent-panel-commission-period-select');
+    if (commSel) { loadAgentCommission(_currentAgentId, commSel.value || null); return; }
+    var ordSel = document.getElementById('agent-panel-period-select');
+    if (ordSel) { loadAgentOrders(_currentAgentId, ordSel.value || null); }
+  }
+
   window.savePeriodEdit = async function () {
     var ec = window._periodEditCtx;
     if (!ec) return;
@@ -14600,6 +14619,7 @@
       window._periodEditCtx = null;
       var container = $('commission-period-modal-body');
       if (container) renderPeriodList(container, false);
+      _syncAgentPanelPeriods();
     } catch (err) {
       showToast('Error updating period.', 'error');
       console.error('savePeriodEdit', err);
@@ -14617,6 +14637,7 @@
       showToast(data.message || 'Period deleted.', 'success');
       var container = $('commission-period-modal-body');
       if (container) renderPeriodList(container, false);
+      _syncAgentPanelPeriods();
     } catch (err) {
       showToast('Error deleting period.', 'error');
       console.error('deletePeriod', err);
@@ -14642,6 +14663,7 @@
       }
       var container = $('commission-period-modal-body');
       if (container) renderPeriodList(container, false);
+      _syncAgentPanelPeriods();
     } catch (err) {
       showToast('Error creating period.', 'error');
       console.error('saveNewPeriod', err);
@@ -14658,6 +14680,7 @@
       showToast('Period closed.', 'success');
       var container = $('commission-period-modal-body');
       if (container) renderPeriodList(container, false);
+      _syncAgentPanelPeriods();
     } catch (err) {
       showToast('Error closing period.', 'error');
       console.error('closePeriod', err);
@@ -14678,6 +14701,7 @@
       showToast('Period released.', 'success');
       var container = $('commission-period-modal-body');
       if (container) renderPeriodList(container, false);
+      _syncAgentPanelPeriods();
     } catch (err) {
       showToast('Error releasing period.', 'error');
       console.error('releasePeriod', err);
@@ -14756,13 +14780,14 @@
     var entryRows = entries.length ? entries.map(function (e) {
       return '<tr>' +
         '<td>' + escapeHtml(e.orderId || '') + '</td>' +
+        '<td>' + escapeHtml(e.customerName || '') + '</td>' +
         '<td>' + escapeHtml(e.orderDate || '') + '</td>' +
         '<td>' + escapeHtml(e.productName || '') + '</td>' +
         '<td style="text-align:right;">' + (e.quantity != null ? e.quantity : '') + '</td>' +
         '<td style="text-align:right;">' + money(e.opAmount) + '</td>' +
         '<td>' + escapeHtml(e.status || '') + '</td>' +
       '</tr>';
-    }).join('') : '<tr><td colspan="6" style="text-align:center;color:#999;padding:12px;">No entries for this period.</td></tr>';
+    }).join('') : '<tr><td colspan="7" style="text-align:center;color:#999;padding:12px;">No entries for this period.</td></tr>';
 
     var adjBlock = adjustments.length
       ? '<h4 class="stmt-h">Adjustments</h4><table class="stmt-table"><thead><tr><th>Type</th><th style="text-align:right;">Amount</th><th>Reason</th></tr></thead><tbody>' +
@@ -14790,7 +14815,7 @@
           '<div><div class="stmt-meta-label">Period</div><div class="stmt-meta-val">' + escapeHtml(period.periodCode || '') + '</div><div class="stmt-meta-sub">' + escapeHtml((period.startDate || '') + ' — ' + (period.endDate || '')) + ' &middot; ' + escapeHtml(period.status || '') + '</div></div>' +
         '</div>' +
         '<h4 class="stmt-h">Commission Entries</h4>' +
-        '<table class="stmt-table"><thead><tr><th>Order</th><th>Date</th><th>Product</th><th style="text-align:right;">Qty</th><th style="text-align:right;">O.P.</th><th>Status</th></tr></thead>' +
+        '<table class="stmt-table"><thead><tr><th>Order</th><th>Customer</th><th>Date</th><th>Product</th><th style="text-align:right;">Qty</th><th style="text-align:right;">O.P. Total</th><th>Status</th></tr></thead>' +
         '<tbody>' + entryRows + '</tbody></table>' +
         adjBlock +
         '<div class="stmt-totals">' +

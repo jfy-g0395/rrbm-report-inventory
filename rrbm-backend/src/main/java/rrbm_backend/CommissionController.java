@@ -594,11 +594,14 @@ public class CommissionController {
 
         // Commission entries
         List<CommissionEntry> entries = entryRepository.findByPeriodIdAndAgentId(id, agentId);
+        // Customer name per order — CommissionEntry stores only orderId, so look it up live.
+        Map<String, String> customerByOrder = customerNamesFor(entries);
         List<Map<String, Object>> entriesList = new ArrayList<>();
         BigDecimal totalOp = BigDecimal.ZERO;
         for (CommissionEntry e : entries) {
             Map<String, Object> em = new HashMap<>();
             em.put("orderId",     e.getOrderId());
+            em.put("customerName", e.getOrderId() != null ? customerByOrder.getOrDefault(e.getOrderId(), "") : "");
             em.put("orderDate",   e.getOrderDate() != null ? e.getOrderDate().toString() : null);
             em.put("productName", e.getProductName());
             em.put("quantity",    e.getQuantity());
@@ -901,6 +904,7 @@ public class CommissionController {
                     .body("Agent not found".getBytes(StandardCharsets.UTF_8));
 
         List<CommissionEntry> entries = entryRepository.findByPeriodIdAndAgentId(id, agentId);
+        Map<String, String> customerByOrder = customerNamesFor(entries);
         BigDecimal totalOp = BigDecimal.ZERO;
         for (CommissionEntry e : entries) {
             if (e.getOpAmount() != null) totalOp = totalOp.add(e.getOpAmount());
@@ -921,12 +925,12 @@ public class CommissionController {
         String fileName;
 
         if ("csv".equalsIgnoreCase(format)) {
-            content     = stmtCsvContent(entries, totalOp, totalAdjustments, netCommission)
+            content     = stmtCsvContent(entries, customerByOrder, totalOp, totalAdjustments, netCommission)
                             .getBytes(StandardCharsets.UTF_8);
             contentType = "text/csv; charset=UTF-8";
             fileName    = "statement-" + agent.getAgentCode() + "-" + period.getPeriodCode() + ".csv";
         } else if ("excel".equalsIgnoreCase(format)) {
-            content     = stmtExcelHtml(agent, period, entries, totalOp, totalAdjustments, netCommission)
+            content     = stmtExcelHtml(agent, period, entries, customerByOrder, totalOp, totalAdjustments, netCommission)
                             .getBytes(StandardCharsets.UTF_8);
             contentType = "application/vnd.ms-excel";
             fileName    = "statement-" + agent.getAgentCode() + "-" + period.getPeriodCode() + ".xls";
@@ -997,12 +1001,7 @@ public class CommissionController {
           .append(shEsc(period.getStatus())).append("</span></div></div></div>");
 
         // Customer name per order — looked up live (CommissionEntry stores only orderId).
-        // Batched into a single query; adjustment lines with no order resolve to blank.
-        java.util.Map<String, String> customerByOrder = new java.util.HashMap<>();
-        for (CommissionEntry e : entries)
-            if (e.getOrderId() != null) customerByOrder.put(e.getOrderId(), "");
-        for (Order o : orderRepository.findAllById(customerByOrder.keySet()))
-            customerByOrder.put(o.getId(), o.getCustomerName() != null ? o.getCustomerName() : "");
+        Map<String, String> customerByOrder = customerNamesFor(entries);
 
         sb.append("<h3>Commission Entries</h3>");
         if (entries.isEmpty()) {
@@ -1010,7 +1009,7 @@ public class CommissionController {
         } else {
             sb.append("<table><thead><tr>");
             for (String col : new String[]{"Order ID", "Customer", "Date", "Product", "Qty",
-                                           "Base Price", "Rate", "O.P. Amount", "Status"})
+                                           "Base Price", "Rate", "O.P. Total", "Status"})
                 sb.append("<th>").append(col).append("</th>");
             sb.append("</tr></thead><tbody>");
             for (CommissionEntry e : entries) {
@@ -1060,13 +1059,29 @@ public class CommissionController {
         return sb.toString();
     }
 
-    private String stmtCsvContent(List<CommissionEntry> entries,
+    /**
+     * Resolve customer names for a set of commission entries in one batched query.
+     * CommissionEntry stores only orderId; this maps orderId → customerName (blank when the
+     * order can't be found). Shared by the in-app statement JSON and every export format so
+     * "who was this order for" shows consistently alongside the Order ID.
+     */
+    private Map<String, String> customerNamesFor(List<CommissionEntry> entries) {
+        Map<String, String> customerByOrder = new HashMap<>();
+        for (CommissionEntry e : entries)
+            if (e.getOrderId() != null) customerByOrder.put(e.getOrderId(), "");
+        for (Order o : orderRepository.findAllById(customerByOrder.keySet()))
+            customerByOrder.put(o.getId(), o.getCustomerName() != null ? o.getCustomerName() : "");
+        return customerByOrder;
+    }
+
+    private String stmtCsvContent(List<CommissionEntry> entries, Map<String, String> customerByOrder,
                                    BigDecimal totalOp, BigDecimal totalAdjustments,
                                    BigDecimal netCommission) {
         StringBuilder sb = new StringBuilder();
-        sb.append("orderId,orderDate,productName,quantity,basePrice,opRate,opPerUnit,opAmount,status\n");
+        sb.append("orderId,customerName,orderDate,productName,quantity,basePrice,opRate,opPerUnit,opTotal,status\n");
         for (CommissionEntry e : entries) {
             sb.append(stmtCsv(e.getOrderId())).append(",");
+            sb.append(stmtCsv(e.getOrderId() != null ? customerByOrder.getOrDefault(e.getOrderId(), "") : "")).append(",");
             sb.append(stmtCsv(e.getOrderDate() != null ? e.getOrderDate().toString() : "")).append(",");
             sb.append(stmtCsv(e.getProductName())).append(",");
             sb.append(stmtCsv(String.valueOf(e.getQuantity()))).append(",");
@@ -1084,7 +1099,7 @@ public class CommissionController {
     }
 
     private String stmtExcelHtml(Agent agent, CommissionPeriod period,
-                                  List<CommissionEntry> entries,
+                                  List<CommissionEntry> entries, Map<String, String> customerByOrder,
                                   BigDecimal totalOp, BigDecimal totalAdjustments,
                                   BigDecimal netCommission) {
         StringBuilder sb = new StringBuilder();
@@ -1099,13 +1114,14 @@ public class CommissionController {
           .append(shEsc(period.getStartDate().toString())).append(" to ")
           .append(shEsc(period.getEndDate().toString())).append("</p>");
         sb.append("<table><thead><tr>");
-        for (String col : new String[]{"Order ID", "Date", "Product", "Qty",
-                                       "Base Price", "Rate", "O.P. Amount", "Status"})
+        for (String col : new String[]{"Order ID", "Customer", "Date", "Product", "Qty",
+                                       "Base Price", "Rate", "O.P. Total", "Status"})
             sb.append("<th>").append(col).append("</th>");
         sb.append("</tr></thead><tbody>");
         for (CommissionEntry e : entries) {
             sb.append("<tr>");
             sb.append("<td>").append(shEsc(e.getOrderId())).append("</td>");
+            sb.append("<td>").append(shEsc(e.getOrderId() != null ? customerByOrder.getOrDefault(e.getOrderId(), "") : "")).append("</td>");
             sb.append("<td>").append(shEsc(e.getOrderDate() != null ? e.getOrderDate().toString() : "")).append("</td>");
             sb.append("<td>").append(shEsc(e.getProductName())).append("</td>");
             sb.append("<td>").append(e.getQuantity()).append("</td>");
