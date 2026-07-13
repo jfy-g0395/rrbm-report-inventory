@@ -1053,7 +1053,8 @@ public class CommissionController {
         sb.append("</div>");
 
         sb.append("<div class=\"footer\">RRBM Management System &middot; Confidential &middot; Internal use only</div>");
-        sb.append("<script>window.onload=function(){window.print();};<\\/script>");
+        // Print is triggered by the opener (downloadCommissionStatement) after the document
+        // renders — no self-print script here, so the Save-as-PDF dialog opens exactly once.
         sb.append("</body></html>");
         return sb.toString();
     }

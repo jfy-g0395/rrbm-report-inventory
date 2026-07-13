@@ -14741,6 +14741,12 @@
         w.document.open();
         w.document.write(html);
         w.document.close();
+        // The document is written into an already-loaded blank window, so the page's own
+        // onload print handler never fires. Trigger the print / "Save as PDF" dialog from
+        // here once the statement has rendered (logo + fonts). This is the download step.
+        w.focus();
+        setTimeout(function () { try { w.print(); } catch (e) {} }, 500);
+        showToast('Opening print dialog — choose “Save as PDF” to download', 'info');
       } else {
         var blob = await res.blob();
         var ext  = fmt === 'excel' ? 'xls' : 'csv';
