@@ -170,8 +170,9 @@ class CommissionStatementCustomerIT {
     @Test
     void t05_pdfExport_dropsRateColumn_currency3dp_andSortsByDate() throws Exception {
         String pdf = export("pdf");
-        // Rate column removed.
+        // Rate and Status columns removed from the PDF.
         assertThat(pdf).doesNotContain(">Rate</th>");
+        assertThat(pdf).doesNotContain(">Status</th>");
         // Amounts are peso currency with exactly 3 decimals (₱1,234.500 not 1234.50000).
         assertThat(pdf).contains("₱1,234.500");
         assertThat(pdf).contains("₱100.000");

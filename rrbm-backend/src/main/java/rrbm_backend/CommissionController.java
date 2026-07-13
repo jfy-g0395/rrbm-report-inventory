@@ -1014,7 +1014,7 @@ public class CommissionController {
         } else {
             sb.append("<table><thead><tr>");
             for (String col : new String[]{"Order ID", "Customer", "Date", "Product", "Qty",
-                                           "Base Price", "O.P. Total", "Status"})
+                                           "Base Price", "O.P. Total"})
                 sb.append("<th>").append(col).append("</th>");
             sb.append("</tr></thead><tbody>");
             for (CommissionEntry e : stmtSortedByDate(entries)) {
@@ -1026,7 +1026,6 @@ public class CommissionController {
                 stmtTd(sb, String.valueOf(e.getQuantity()));
                 stmtTd(sb, stmtMoney(e.getBasePrice()));
                 stmtTd(sb, stmtMoney(e.getOpAmount()));
-                stmtTd(sb, e.getStatus());
                 sb.append("</tr>");
             }
             sb.append("</tbody></table>");
