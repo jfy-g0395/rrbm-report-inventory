@@ -10047,13 +10047,27 @@
     $('modal-import-ecom').classList.add('open');
   };
 
+  // Decode CSV bytes as UTF-8 when they are valid UTF-8, otherwise fall back to Windows-1252.
+  // Shopee/Excel CSV exports are frequently Windows-1252 (ANSI), where accented characters are
+  // single bytes (é = 0xE9). Reading those as UTF-8 (the old readAsText default) turned every
+  // accent into the replacement char '�' — permanently, before the row was ever sent. Strict
+  // UTF-8 first preserves genuine UTF-8 files; the fallback recovers legacy-encoded ones so
+  // "café", "ñ", etc. import intact.
+  function decodeCsvBytes(buffer) {
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    } catch (e) {
+      return new TextDecoder('windows-1252').decode(buffer);
+    }
+  }
+
   window.onImportFileChange = function(input) {
     var file = input.files && input.files[0];
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function(e) {
       try {
-        _lastCsvText  = e.target.result;
+        _lastCsvText  = decodeCsvBytes(e.target.result);
         var parsed = parseCsvOrders(_lastCsvText);
         _importParsed = parsed;
         renderEcomImportPreview(parsed);
@@ -10061,7 +10075,8 @@
         showToast('Could not parse CSV: ' + err.message, 'error');
       }
     };
-    reader.readAsText(file);
+    // Read raw bytes (not readAsText) so we control the character decoding above.
+    reader.readAsArrayBuffer(file);
   };
 
   // Parse CSV text → array of order objects grouped by Order No.
