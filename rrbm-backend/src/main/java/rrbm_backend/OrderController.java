@@ -1158,6 +1158,50 @@ public class OrderController {
     }
 
     /**
+     * POST /api/orders/{id}/return-replace — the unified Return / Replace flow (Phase B).
+     *
+     * Replaces Process Return + Issue Replacement + Create Replacement + Cancel-for-replacement.
+     * Voids the returned units off the original (revenue reduced, stock restocked), optionally
+     * creates a linked replacement order, and records any refund OWED (not paid — the Refund
+     * button settles cash later). Same auth as /return: order-manager + personal admin key.
+     */
+    @PostMapping("/{id}/return-replace")
+    public ResponseEntity<?> returnReplace(
+            @PathVariable String id,
+            @RequestBody rrbm_backend.dto.ReturnReplaceRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        Long userId = userIdFromHeader(authHeader);
+        if (userId == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Authentication required"));
+
+        if (request.getSecurityKey() == null || request.getSecurityKey().trim().isEmpty())
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Admin security key is required for return/replace"));
+
+        User caller = userRepository.findById(userId).orElse(null);
+        if (caller == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "User not found"));
+        if (!isOrderManager(caller))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "You do not have permission to process returns/replacements (requires the Void & Cancel Orders access)"));
+        if (caller.getAdminSecurityKey() == null)
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "No admin security key has been set for your account. Ask your Super Admin to assign one."));
+        if (!passwordEncoder.matches(request.getSecurityKey().trim(), caller.getAdminSecurityKey()))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "Invalid admin security key"));
+
+        try {
+            Map<String, Object> result = orderService.returnReplace(id, request, userId);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
      * POST /api/orders/{id}/replacement
      *
      * Creates a new replacement order linked to an order that was previously

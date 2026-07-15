@@ -46,6 +46,7 @@ public class OrderService {
     private final CashLedgerService  cashLedgerService;
     private final AgentRepository    agentRepository;
     private final ResellerRepository resellerRepository;
+    private final ReturnEventRepository returnEventRepository;
 
     public OrderService(OrderRepository orderRepository,
                         OrderIdGenerator orderIdGenerator,
@@ -59,7 +60,8 @@ public class OrderService {
                         ProductRepository productRepository,
                         CashLedgerService cashLedgerService,
                         AgentRepository agentRepository,
-                        ResellerRepository resellerRepository) {
+                        ResellerRepository resellerRepository,
+                        ReturnEventRepository returnEventRepository) {
         this.orderRepository    = orderRepository;
         this.orderIdGenerator   = orderIdGenerator;
         this.userRepository     = userRepository;
@@ -73,6 +75,7 @@ public class OrderService {
         this.cashLedgerService  = cashLedgerService;
         this.agentRepository    = agentRepository;
         this.resellerRepository = resellerRepository;
+        this.returnEventRepository = returnEventRepository;
     }
 
     /**
@@ -1267,6 +1270,205 @@ public class OrderService {
         result.put("returnedItems", resultItems);
         result.put("refundIssued",  refundIssued);
         result.put("refundAmount",  refundAmt);
+        return result;
+    }
+
+    /**
+     * Unified Return / Replace (Phase B) — the single flow that replaces Process Return,
+     * Issue Replacement, Create Replacement, and Cancel-for-replacement.
+     *
+     * <p>For each returned line: the returned units are voided off the original (voidedQuantity
+     * grows, voidedAmount grows, a VOID ledger entry dated TODAY removes their revenue so closed
+     * days stay immutable), and their stock is handled by the RETURN movement path — sellableQty
+     * restocked to restockWarehouse, rejectedQty scrapped. The unreturned remainder stays a live
+     * sale. If every unit of every line ends up returned, the order becomes CANCELLED (RETURNED).
+     *
+     * <p>Optionally builds ONE linked replacement order (new SALE dated today + stock deducted,
+     * linked via original_order_id — multiple over time are allowed; no single-replacement guard).
+     *
+     * <p>Cash is deliberately NOT moved here. Any excess payment is recorded as refundOwed on the
+     * ReturnEvent (status OWED) and settled later via the Refund button, which is the only place
+     * cash leaves the drawer — so cash-on-hand stays exact until the refund is actually paid.
+     *
+     * <p>Controller has already verified JWT + the caller's admin security key. Atomic: any failure
+     * rolls the whole thing back.
+     */
+    @Transactional
+    public Map<String, Object> returnReplace(String orderId,
+                                             rrbm_backend.dto.ReturnReplaceRequest req,
+                                             Long userId) {
+        Order order = orderRepository.findByIdWithItems(orderId)
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
+        if ("CANCELLED".equals(order.getStatus()))
+            throw new RuntimeException("Cannot return/replace a cancelled order");
+
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        java.util.List<rrbm_backend.dto.ReturnReplaceRequest.ReturnLine> lines =
+                req.getReturnItems() != null ? req.getReturnItems() : java.util.List.of();
+        java.util.List<rrbm_backend.dto.ReturnReplaceRequest.ReplacementLine> repl =
+                req.getReplacementItems() != null ? req.getReplacementItems() : java.util.List.of();
+        if (lines.isEmpty() && repl.isEmpty())
+            throw new RuntimeException("Nothing to return or replace");
+
+        Map<Long, OrderItem> itemMap = order.getItems().stream()
+                .collect(Collectors.toMap(OrderItem::getId, i -> i));
+
+        // ── Validate everything before any writes ──────────────────────────────
+        for (rrbm_backend.dto.ReturnReplaceRequest.ReturnLine ln : lines) {
+            if (ln.getOrderItemId() == null)
+                throw new RuntimeException("Each return line must include an orderItemId");
+            OrderItem item = itemMap.get(ln.getOrderItemId());
+            if (item == null)
+                throw new RuntimeException("Item id " + ln.getOrderItemId() + " does not belong to order " + orderId);
+            int returned = ln.getReturnedQty() != null ? ln.getReturnedQty() : 0;
+            int sellable = ln.getSellableQty() != null ? ln.getSellableQty() : 0;
+            int rejected = ln.getRejectedQty() != null ? ln.getRejectedQty() : 0;
+            if (returned <= 0)
+                throw new RuntimeException("returnedQty must be greater than 0 for \"" + item.getProductName() + "\"");
+            if (sellable < 0 || rejected < 0)
+                throw new RuntimeException("sellableQty and rejectedQty must be 0 or greater for \"" + item.getProductName() + "\"");
+            if (sellable + rejected != returned)
+                throw new RuntimeException("sellableQty + rejectedQty must equal returnedQty for \""
+                        + item.getProductName() + "\" (" + sellable + " + " + rejected + " ≠ " + returned + ")");
+            int alreadyVoided = item.getVoidedQuantity() != null ? item.getVoidedQuantity() : 0;
+            int remaining = item.getQuantity() - alreadyVoided;
+            if (returned > remaining)
+                throw new RuntimeException("Cannot return " + returned + " unit(s) of \""
+                        + item.getProductName() + "\" — only " + remaining + " active unit(s) remain");
+            if (sellable > 0)
+                inventoryService.requireValidWarehouse(ln.getRestockWarehouse(), item.getProductName());
+        }
+        for (rrbm_backend.dto.ReturnReplaceRequest.ReplacementLine rl : repl) {
+            if (rl.getQuantity() == null || rl.getQuantity() <= 0)
+                throw new RuntimeException("Replacement quantity must be at least 1");
+            if (rl.getUnitPrice() == null || rl.getUnitPrice().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("Replacement unit price must be greater than 0");
+            if (rl.getProductId() != null && !productRepository.existsById(rl.getProductId()))
+                throw new RuntimeException("Replacement product not found: " + rl.getProductId());
+        }
+
+        // ── Apply returns: void the returned units + restock ───────────────────
+        ReturnEvent ev = new ReturnEvent();
+        ev.setOrderId(orderId);
+        ev.setEventType("RETURN");
+        ev.setReason(req.getReason());
+        ev.setCreatedBy(userId);
+        ev.setCreatedByName(actor.getFullName());
+
+        BigDecimal voidedNow = BigDecimal.ZERO;
+        for (rrbm_backend.dto.ReturnReplaceRequest.ReturnLine ln : lines) {
+            OrderItem item = itemMap.get(ln.getOrderItemId());
+            int returned = ln.getReturnedQty();
+            int sellable = ln.getSellableQty() != null ? ln.getSellableQty() : 0;
+            int rejected = ln.getRejectedQty() != null ? ln.getRejectedQty() : 0;
+
+            int alreadyVoided = item.getVoidedQuantity() != null ? item.getVoidedQuantity() : 0;
+            item.setVoidedQuantity(alreadyVoided + returned);
+            voidedNow = voidedNow.add(item.getUnitPrice().multiply(BigDecimal.valueOf(returned)));
+
+            // Stock: sellable restocked to warehouse, rejected scrapped (RETURN movements).
+            inventoryService.processReturnForItem(item, sellable, rejected, ln.getRestockWarehouse(), orderId, userId);
+
+            ReturnEventItem rei = new ReturnEventItem();
+            rei.setOrderItemId(item.getId());
+            rei.setProductId(item.getProductId());
+            rei.setProductName(item.getProductName());
+            rei.setReturnedQty(returned);
+            rei.setSellableQty(sellable);
+            rei.setRejectedQty(rejected);
+            rei.setRestockWarehouse(sellable > 0 ? ln.getRestockWarehouse() : null);
+            ev.addItem(rei);
+        }
+
+        // ── Revenue reduction (VOID dated today) — NO cash movement here ───────
+        if (voidedNow.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal prev = order.getVoidedAmount() != null ? order.getVoidedAmount() : BigDecimal.ZERO;
+            order.setVoidedAmount(prev.add(voidedNow));
+            transactionService.recordItemVoid(orderId, voidedNow,
+                    "Return on order " + orderId + (req.getReason() != null && !req.getReason().isBlank() ? " — " + req.getReason() : ""),
+                    userId, actor.getFullName());
+        }
+
+        // ── Fully returned? → cancel the order ─────────────────────────────────
+        boolean allReturned = !lines.isEmpty() && order.getItems().stream().allMatch(i -> {
+            int v = i.getVoidedQuantity() != null ? i.getVoidedQuantity() : 0;
+            return i.getQuantity() - v <= 0;
+        });
+        if (allReturned) {
+            order.setStatus("CANCELLED");
+            order.setCancelledAt(LocalDateTime.now());
+            order.setCancelledBy(actor);
+            order.setCancellationReason(req.getReason());
+            order.setCancellationType("RETURNED");
+        }
+        orderRepository.save(order);
+
+        // ── Optional linked replacement order (new SALE + stock deducted) ──────
+        Order savedReplacement = null;
+        if (!repl.isEmpty()) {
+            Order replacement = new Order();
+            replacement.setId(orderIdGenerator.generateOrderId());
+            replacement.setCustomerName(order.getCustomerName());
+            replacement.setSource(order.getSource());
+            replacement.setAgentName(order.getAgentName());
+            replacement.setFbPage(order.getFbPage());
+            replacement.setEcommercePlatform(order.getEcommercePlatform());
+            replacement.setPaymentMode(order.getPaymentMode() != null ? order.getPaymentMode() : "CASH");
+            replacement.setOrderType("STANDARD");
+            replacement.setAddress(order.getAddress());
+            replacement.setDiscount(BigDecimal.ZERO);
+            replacement.setDeliveryFee(BigDecimal.ZERO);
+            replacement.setNotes("Replacement for order " + orderId
+                    + (req.getReason() != null && !req.getReason().isBlank() ? " — " + req.getReason() : ""));
+            replacement.setOriginalOrderId(orderId);
+            replacement.setCreatedBy(actor);
+            for (rrbm_backend.dto.ReturnReplaceRequest.ReplacementLine rl : repl) {
+                OrderItem it = new OrderItem();
+                it.setProductId(rl.getProductId());
+                it.setProductName(rl.getProductName());
+                it.setQuantity(rl.getQuantity());
+                it.setUnitPrice(rl.getUnitPrice());
+                it.setWarehouse(rl.getWarehouse() != null ? rl.getWarehouse() : "wh1");
+                replacement.addItem(it);
+            }
+            replacement.calculateTotals();
+            savedReplacement = orderRepository.save(replacement);
+            transactionService.recordSale(savedReplacement, userId);      // dated today
+            inventoryService.deductStockForOrder(savedReplacement, userId);
+            activityLogService.log(userId, actor.getFullName(), "CREATE_REPLACEMENT_ORDER",
+                    "Replacement " + savedReplacement.getId() + " for order " + orderId
+                    + " — ₱" + savedReplacement.getTotal(), "ORDER", savedReplacement.getId());
+            ev.setReplacementOrderId(savedReplacement.getId());
+        }
+
+        // ── Refund owed (recorded, NOT paid — settled later via the Refund button) ─
+        BigDecimal refundOwed = req.getRefundOwed() != null ? req.getRefundOwed() : BigDecimal.ZERO;
+        if (refundOwed.compareTo(BigDecimal.ZERO) > 0) {
+            ev.setRefundOwed(refundOwed);
+            ev.setRefundStatus("OWED");
+        } else {
+            ev.setRefundOwed(BigDecimal.ZERO);
+            ev.setRefundStatus("NONE");
+        }
+        returnEventRepository.save(ev);
+
+        activityLogService.log(userId, actor.getFullName(), "RETURN_REPLACE",
+                "Return/Replace on " + orderId + " — voided ₱" + voidedNow
+                + (savedReplacement != null ? " — replacement " + savedReplacement.getId() : "")
+                + (refundOwed.compareTo(BigDecimal.ZERO) > 0 ? " — refund owed ₱" + refundOwed : "")
+                + (allReturned ? " — order fully returned (cancelled)" : ""),
+                "ORDER", orderId);
+
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("orderId",            orderId);
+        result.put("voidedAmount",       voidedNow);
+        result.put("orderCancelled",     allReturned);
+        result.put("replacementOrderId", savedReplacement != null ? savedReplacement.getId() : null);
+        result.put("refundOwed",         refundOwed);
+        result.put("refundStatus",       ev.getRefundStatus());
+        result.put("returnEventId",      ev.getId());
         return result;
     }
 
