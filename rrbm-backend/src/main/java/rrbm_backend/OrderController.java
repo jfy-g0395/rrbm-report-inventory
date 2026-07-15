@@ -44,6 +44,17 @@ public class OrderController {
     private final CashLedgerService cashLedgerService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
+    // Used to clear the persistence context between rows in the CSV batch import (createOrderBatch).
+    // With open-session-in-view, one Hibernate session is bound to the whole request; every order
+    // created in the loop leaves its entities (order, items, movements, transactions, commission
+    // entries) managed in it. Each query that auto-flushes (e.g. sumStockById in logMovement, and
+    // the per-row existsByNotesContaining duplicate check) then dirty-checks the ENTIRE growing set,
+    // making a large import O(N^2) — slow enough to exceed the proxy timeout so the modal never gets
+    // its result back. Clearing per row keeps each flush cheap (O(N) overall). Mirrors the fix in
+    // ImportController.commit (commit e896a74).
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
     public OrderController(OrderService orderService,
                            JwtUtil jwtUtil,
                            UserRepository userRepository,
@@ -152,6 +163,13 @@ public class OrderController {
         List<Map<String, Object>> errors = new ArrayList<>();
         List<Map<String, Object>> skipped = new ArrayList<>();
         for (CreateOrderRequest request : requests) {
+            // Detach the previous row's entities so the persistence context stays small and each
+            // per-row auto-flush (duplicate check, stock-movement sums) does not degrade to O(N^2)
+            // across a large import (see entityManager field doc). Safe here: the method is not
+            // @Transactional and each createOrder commits its own transaction, so nothing pending
+            // is discarded.
+            entityManager.clear();
+
             // Duplicate check: skip if this ecommerce order number already exists.
             // N-8: append " |" so LIKE '%Order No: 12 |%' does NOT match "Order No: 123 | …".
             // Without the separator, "Order No: 12" is a substring of "Order No: 123" causing

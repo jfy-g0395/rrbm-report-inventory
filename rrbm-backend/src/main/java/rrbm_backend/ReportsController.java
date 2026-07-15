@@ -893,6 +893,80 @@ public class ReportsController {
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // GET /api/reports/page-breakdown?month=YYYY-MM
+    // Per-page breakdown for the monthly report: how many orders came from each source
+    // page (recording-only fb_page attribution), plus the most-recent product ordered
+    // through that page. Covers Direct + Facebook-page orders that carry a page value.
+    // Mirrors /ecommerce-breakdown so it inherits the same access gating and shape.
+    // ──────────────────────────────────────────────────────────────────────────
+    @GetMapping("/page-breakdown")
+    public ResponseEntity<?> getPageBreakdown(@RequestParam(required = false) String month) {
+        try {
+            java.time.YearMonth ym = (month != null && !month.isBlank())
+                ? java.time.YearMonth.parse(month)
+                : java.time.YearMonth.now();
+            java.time.LocalDate start = ym.atDay(1);
+            java.time.LocalDate end   = ym.atEndOfMonth();
+
+            // Per-page order count + revenue (excludes cancelled; only rows with a page set).
+            String pageSql = "SELECT o.fb_page, COUNT(*), COALESCE(SUM(o.total),0) " +
+                             "FROM orders o " +
+                             "WHERE DATE(o.created_at) BETWEEN :start AND :end " +
+                             "  AND o.status != 'CANCELLED' " +
+                             "  AND o.source IN ('FACEBOOK_PAGE','DIRECT') " +
+                             "  AND o.fb_page IS NOT NULL AND o.fb_page <> '' " +
+                             "GROUP BY o.fb_page ORDER BY COUNT(*) DESC";
+
+            @SuppressWarnings("unchecked")
+            java.util.List<Object[]> rows = entityManager.createNativeQuery(pageSql)
+                .setParameter("start", start).setParameter("end", end).getResultList();
+
+            long   totalOrders  = 0L;
+            double totalRevenue = 0.0;
+            java.util.List<java.util.Map<String, Object>> pages = new java.util.ArrayList<>();
+
+            for (Object[] r : rows) {
+                String page = String.valueOf(r[0]);
+                long   cnt  = ((Number) r[1]).longValue();
+                double rev  = ((Number) r[2]).doubleValue();
+                totalOrders  += cnt;
+                totalRevenue += rev;
+
+                // Most-recent product = first line of this page's latest (non-cancelled) order.
+                // Uses the stored product_name so non-catalog items still resolve.
+                String recentSql = "SELECT COALESCE(oi.product_name, 'Item'), DATE(o.created_at) " +
+                                   "FROM order_items oi JOIN orders o ON o.id = oi.order_id " +
+                                   "WHERE DATE(o.created_at) BETWEEN :start AND :end " +
+                                   "  AND o.status != 'CANCELLED' " +
+                                   "  AND o.source IN ('FACEBOOK_PAGE','DIRECT') " +
+                                   "  AND o.fb_page = :page " +
+                                   "ORDER BY o.created_at DESC, oi.id ASC LIMIT 1";
+
+                @SuppressWarnings("unchecked")
+                java.util.List<Object[]> rr = entityManager.createNativeQuery(recentSql)
+                    .setParameter("start", start).setParameter("end", end)
+                    .setParameter("page", page).getResultList();
+
+                java.util.Map<String, Object> pm = new java.util.LinkedHashMap<>();
+                pm.put("page",          page);
+                pm.put("orderCount",    cnt);
+                pm.put("revenue",       rev);
+                pm.put("recentProduct", rr.isEmpty() ? "—"  : String.valueOf(rr.get(0)[0]));
+                pm.put("recentDate",    rr.isEmpty() ? null : String.valueOf(rr.get(0)[1]));
+                pages.add(pm);
+            }
+
+            return ResponseEntity.ok(java.util.Map.of(
+                "totalOrders",  totalOrders,
+                "totalRevenue", totalRevenue,
+                "pages",        pages
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("message", e.getMessage()));
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // GET /api/reports/daily-reports-list
     // Returns all closed daily_reports ordered by date desc with resolved closedByName
     // ──────────────────────────────────────────────────────────────────────────

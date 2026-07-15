@@ -655,7 +655,7 @@
         var _platLabel = _platMap[o.ecommercePlatform] || (o.ecommercePlatform.charAt(0) + o.ecommercePlatform.slice(1).toLowerCase());
         srcDisplay += ' <span style="color:var(--text-secondary);font-size:11px;">/ ' + _platLabel + '</span>';
       }
-      if (o.source === 'FACEBOOK_PAGE' && o.fbPage) srcDisplay += ' <span style="color:var(--text-secondary);font-size:11px;">(' + o.fbPage + ')</span>';
+      if ((o.source === 'FACEBOOK_PAGE' || o.source === 'DIRECT') && o.fbPage) srcDisplay += ' <span style="color:var(--text-secondary);font-size:11px;">(' + o.fbPage + ')</span>';
 
       const payBadge = o.paymentMode === 'COD'
         ? '<span style="color:var(--accent-info);font-weight:600;font-size:11px;">COD</span>'
@@ -7230,7 +7230,8 @@
 
     if (agentWrap)    agentWrap.style.display    = (v === 'AGENT')        ? '' : 'none';
     if (resellerWrap) resellerWrap.style.display = (v === 'RESELLER' || v === 'DISTRIBUTOR') ? '' : 'none';
-    if (fbWrap)       fbWrap.style.display       = (v === 'FACEBOOK_PAGE') ? '' : 'none';
+    // Page attribution applies to both Direct and Facebook-page orders (recording only).
+    if (fbWrap)       fbWrap.style.display       = (v === 'FACEBOOK_PAGE' || v === 'DIRECT') ? '' : 'none';
     if (ecomWrap) {
       ecomWrap.style.display = (v === 'ECOMMERCE') ? '' : 'none';
       if (v !== 'ECOMMERCE' && $('ecommercePlatform')) $('ecommercePlatform').value = '';
@@ -7788,7 +7789,7 @@
       agentId:          agentId,
       resellerId:       resellerId,
       agentName:        contactName || null,
-      fbPage:           source === 'FACEBOOK_PAGE' ? fbPage : null,
+      fbPage:           (source === 'FACEBOOK_PAGE' || source === 'DIRECT') ? (fbPage || null) : null,
       ecommercePlatform,
       paymentMode, orderType,
       address:          address || null,
@@ -7923,7 +7924,7 @@
       agentId:          agentId,
       resellerId:       resellerId,
       agentName:        contactName || null,
-      fbPage:           source === 'FACEBOOK_PAGE' ? fbPage : null,
+      fbPage:           (source === 'FACEBOOK_PAGE' || source === 'DIRECT') ? (fbPage || null) : null,
       ecommercePlatform,
       paymentMode, orderType,
       address:          address || null,
@@ -10604,13 +10605,22 @@
     var btn = document.getElementById('import-submit-btn');
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i>  Importing…'; }
 
+    // Safety net so the modal can never hang forever waiting on the network: abort the
+    // request just before nginx's own proxy_read_timeout (180s) would. On abort the catch
+    // below reloads the order list and tells the user to check what was saved — the backend
+    // may have committed some/all rows even though we stopped waiting.
+    var _importCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var _importTimer = _importCtl ? setTimeout(function () { _importCtl.abort(); }, 175000) : null;
+
     try {
       const token = localStorage.getItem('rrbm_token');
       const res = await fetch(API_BASE + '/api/orders/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: _importCtl ? _importCtl.signal : undefined
       });
+      if (_importTimer) { clearTimeout(_importTimer); _importTimer = null; }
       if (!res.ok) {
         const d = await res.json().catch(function(){ return {}; });
         showToast(d.message || 'Import failed', 'error');
@@ -10644,6 +10654,7 @@
     } catch (err) {
       // Network timeout or parse error — the backend may have already committed some/all orders.
       // Reload the order list so the user can see what was actually saved.
+      if (_importTimer) { clearTimeout(_importTimer); _importTimer = null; }
       console.warn('CSV import fetch error (orders may still have been saved):', err);
       loadOrders();
       showToast('Connection timed out — check the order list to see what was saved', 'warning');
@@ -10784,8 +10795,14 @@
         '<td style="text-align:right;font-weight:600;color:var(--accent);">' + fmt(po.totalAmount) + '</td>' +
         '<td>' + statusBadge + '</td>' +
         '<td>' + drCell + '</td>' +
-        '<td style="text-align:right;" onclick="event.stopPropagation();">' +
+        '<td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation();">' +
           '<button class="btn btn-secondary btn-sm" onclick="printPoDocument(' + po.id + ')" title="Print PO"><i class="ti ti-printer"></i></button>' +
+          // Delete is a fail-safe for creation mistakes: only offered while nothing has been
+          // received (fulfilled === 0). Once goods are received the PO has stock + payable
+          // records and must not be deleted, so the button is not shown (backend also blocks it).
+          (fulfilled === 0
+            ? ' <button class="btn btn-danger btn-sm" onclick="deletePurchaseOrder(' + po.id + ', \'' + escapeHtml(po.poNumber).replace(/'/g, "\\'") + '\')" title="Delete PO (nothing received yet)"><i class="ti ti-trash"></i></button>'
+            : '') +
         '</td>' +
         '</tr>' +
         '<tr id="po-detail-' + po.id + '" style="display:none;">' +
@@ -10951,6 +10968,27 @@
       showToast('Status updated to ' + newStatus, 'success');
     })
     .catch(function(err){ showToast('Failed to update status', 'error'); });
+  };
+
+  // Fail-safe delete for a PO created by mistake. Backend only allows it when nothing has
+  // been received (no stock/payable impact); otherwise it returns 400 and we surface why.
+  window.deletePurchaseOrder = function(id, poNumber) {
+    if (!confirm('Delete purchase order ' + poNumber + '?\n\n'
+        + 'This permanently removes the PO. It is only allowed when nothing has been '
+        + 'received against it, so no stock or payables are affected.')) return;
+    fetch(API_BASE + '/api/purchase-orders/' + id, {
+      method: 'DELETE',
+      headers: authHeaders()
+    })
+    .then(function(res){ return res.json().then(function(d){ return { ok: res.ok, d: d }; }); })
+    .then(function(r){
+      if (!r.ok) { showToast(r.d.message || 'Delete failed', 'error'); return; }
+      // Drop from the in-memory list and re-render.
+      _allPoData = (_allPoData || []).filter(function(p){ return p.id !== id; });
+      filterPoList();
+      showToast(r.d.message || 'Purchase order deleted', 'success');
+    })
+    .catch(function(err){ showToast('Connection error', 'error'); });
   };
 
   // ── New PO modal ────────────────────────────────────────────────────────
@@ -12296,6 +12334,7 @@
     loadAccountingSummary();
     loadSourceBreakdown();
     loadEcommerceBreakdown();
+    loadPageBreakdown();
     loadTopAgents();
     loadTopDates();
     loadPizzaSummary();
@@ -13150,6 +13189,42 @@
           + '</div>';
       }).join('');
     }
+  }
+
+  // Per-page breakdown for the monthly report: order count + revenue + most-recent
+  // product per source page (Direct + Facebook-page orders that carry a page value).
+  function loadPageBreakdown() {
+    const month = ($('rep-month-picker') || {}).value || '';
+    fetch(API_BASE + '/api/reports/page-breakdown' + (month ? '?month=' + month : ''), { headers: authHeaders() })
+      .then(function(res){ return res.json(); })
+      .then(function(data){ renderPageBreakdown(data); })
+      .catch(function(err){ console.warn('page-breakdown failed:', err); });
+  }
+
+  function renderPageBreakdown(data) {
+    const fmt = function(n){ return '₱' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
+    const pages = (data && data.pages) || [];
+    const badge = $('rep-page-total-badge');
+    if (badge) badge.textContent = pages.length
+      ? Number(data.totalOrders||0).toLocaleString() + ' orders · ' + fmt(data.totalRevenue) + ' · ' + pages.length + ' page' + (pages.length !== 1 ? 's' : '')
+      : 'No page-tagged orders this month';
+
+    const tb = $('rep-page-tbody');
+    if (!tb) return;
+    if (!pages.length) {
+      tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No page-tagged orders this month</td></tr>';
+      return;
+    }
+    tb.innerHTML = pages.map(function(p) {
+      const recent = escapeHtml(p.recentProduct || '—')
+        + (p.recentDate ? ' <span style="color:var(--text-muted);font-size:11px;">(' + escapeHtml(formatDate(p.recentDate)) + ')</span>' : '');
+      return '<tr>'
+        + '<td style="font-weight:600;">' + escapeHtml(p.page || '—') + '</td>'
+        + '<td style="text-align:right;">' + Number(p.orderCount||0).toLocaleString() + '</td>'
+        + '<td style="text-align:right;font-weight:600;">' + fmt(p.revenue) + '</td>'
+        + '<td>' + recent + '</td>'
+        + '</tr>';
+    }).join('');
   }
 
   // ================================================================
@@ -15051,7 +15126,8 @@
     var v = ($('addrec-ord-source') || {}).value;
     if ($('addrec-ord-agent-wrap'))    $('addrec-ord-agent-wrap').style.display    = (v === 'AGENT') ? '' : 'none';
     if ($('addrec-ord-reseller-wrap')) $('addrec-ord-reseller-wrap').style.display = (v === 'RESELLER' || v === 'DISTRIBUTOR') ? '' : 'none';
-    if ($('addrec-ord-fb-wrap'))       $('addrec-ord-fb-wrap').style.display       = (v === 'FACEBOOK_PAGE') ? '' : 'none';
+    // Page attribution applies to both Direct and Facebook-page orders (recording only).
+    if ($('addrec-ord-fb-wrap'))       $('addrec-ord-fb-wrap').style.display       = (v === 'FACEBOOK_PAGE' || v === 'DIRECT') ? '' : 'none';
     if ($('addrec-ord-ecom-wrap'))     $('addrec-ord-ecom-wrap').style.display     = (v === 'ECOMMERCE') ? '' : 'none';
     if ($('addrec-ord-ecomid-wrap'))   $('addrec-ord-ecomid-wrap').style.display   = (v === 'ECOMMERCE') ? '' : 'none';
     if (v !== 'ECOMMERCE') {
@@ -15345,7 +15421,7 @@
       date: date, recordingOnly: recordingOnly, paymentStatus: paymentStatus,
       customerName: customerName, source: source,
       agentId: agentId, resellerId: resellerId, agentName: contactName || null,
-      fbPage: source === 'FACEBOOK_PAGE' ? (($('addrec-ord-fb') || {}).value || '').trim() : null,
+      fbPage: (source === 'FACEBOOK_PAGE' || source === 'DIRECT') ? ((($('addrec-ord-fb') || {}).value || '').trim() || null) : null,
       ecommercePlatform: ecommercePlatform,
       paymentMode: paymentMode, orderType: orderType,
       address: address || null,

@@ -562,10 +562,19 @@
                         <div class="product-dropdown" id="field-reseller-dropdown"></div>
                       </div>
                   </div>
-                  <!-- conditional: Facebook page -->
+                  <!-- conditional: Page (Direct + Facebook orders) — records which page the order came from -->
                   <div class="col-md-4" id="field-fb-wrap" style="display: none;">
-                      <label class="form-label">FB Page</label>
-                      <input type="text" class="form-control" id="field-fb" placeholder="Enter FB page name">
+                      <label class="form-label">Page</label>
+                      <select class="form-select" id="field-fb">
+                          <option value="">— Select page —</option>
+                          <option value="CBPS">CBPS</option>
+                          <option value="Pizza Box PH">Pizza Box PH</option>
+                          <option value="Packaging Manila">Packaging Manila</option>
+                          <option value="Box and Printing Depot.">Box and Printing Depot.</option>
+                          <option value="CBC">CBC</option>
+                          <option value="CBP">CBP</option>
+                          <option value="RRBM">RRBM</option>
+                      </select>
                   </div>
                   <!-- conditional: E-commerce platform -->
                   <div class="col-md-4" id="ecommercePlatformGroup" style="display: none;">
@@ -1553,6 +1562,31 @@
             <div id="rep-ecom-platforms-detail"></div>
           </div>
 
+          <!-- ── Page Breakdown (Direct + Facebook pages) ─────────── -->
+          <div class="card" style="margin-bottom:14px;">
+            <div class="card-header">
+              <div class="card-title">Orders by Page</div>
+              <span id="rep-page-total-badge" style="font-size:11px;color:var(--text-muted);">—</span>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <div class="table-scroll">
+                <table class="table" style="margin:0;">
+                  <thead>
+                    <tr>
+                      <th>Page</th>
+                      <th style="text-align:right;">Orders</th>
+                      <th style="text-align:right;">Revenue</th>
+                      <th>Most Recent Product</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rep-page-tbody">
+                    <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">No data</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           <!-- ── Top Agents / Resellers ───────────────────────────── -->
           <div class="card" style="margin-bottom:14px;">
             <div class="card-header">
@@ -2398,10 +2432,19 @@
                       <div class="product-dropdown" id="addrec-ord-reseller-dropdown"></div>
                     </div>
                   </div>
-                  <!-- conditional: Facebook page -->
+                  <!-- conditional: Page (Direct + Facebook orders) — records which page the order came from -->
                   <div id="addrec-ord-fb-wrap" style="display:none;">
-                    <label class="form-label">FB Page</label>
-                    <input type="text" class="form-control" id="addrec-ord-fb" placeholder="Enter FB page name">
+                    <label class="form-label">Page</label>
+                    <select class="form-select" id="addrec-ord-fb">
+                      <option value="">— Select page —</option>
+                      <option value="CBPS">CBPS</option>
+                      <option value="Pizza Box PH">Pizza Box PH</option>
+                      <option value="Packaging Manila">Packaging Manila</option>
+                      <option value="Box and Printing Depot.">Box and Printing Depot.</option>
+                      <option value="CBC">CBC</option>
+                      <option value="CBP">CBP</option>
+                      <option value="RRBM">RRBM</option>
+                    </select>
                   </div>
                   <!-- conditional: E-commerce platform -->
                   <div id="addrec-ord-ecom-wrap" style="display:none;">
@@ -5677,6 +5720,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u35"></script>
+  <script src="js/app.js?v=u36"></script>
 </body>
 </html>

@@ -216,6 +216,40 @@ public class PurchaseOrderController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    // ── Delete a PO (creation-mistake fail-safe) ──────────────────────────
+    // Only permitted while NOTHING has been received against it. Creating a PO has no
+    // stock/ledger side-effects, but receiving a line item adds warehouse stock, writes a
+    // RESTOCK movement, and creates a payable — so a PO with any fulfilledQty > 0 must NOT
+    // be deletable or those records would be stranded. In that case we block with a clear
+    // message. For an unreceived PO the items cascade-delete (orphanRemoval=true) and the
+    // row is removed cleanly with zero financial/stock impact. Gated to the
+    // "purchase-orders" page by PageAccessInterceptor, same as create/receive.
+    @DeleteMapping("/{id}")
+    @Transactional
+    public ResponseEntity<?> deletePurchaseOrder(
+            @PathVariable Long id,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        Long userId = userIdFromHeader(authHeader);
+        return poRepository.findByIdWithItems(id).map(po -> {
+            boolean anyReceived = po.getItems().stream()
+                    .anyMatch(i -> i.getFulfilledQty() != null && i.getFulfilledQty() > 0);
+            if (anyReceived) {
+                return ResponseEntity.badRequest().body((Object) Map.of("message",
+                    "This PO already has received goods and cannot be deleted. "
+                    + "Reverse the received items first if it was recorded by mistake."));
+            }
+            String actor    = actorName(userId, "Admin");
+            String poNumber = po.getPoNumber();
+            int    itemCnt  = po.getItems().size();
+            poRepository.delete(po);
+            activityLogService.log(userId, actor, "DELETE_PURCHASE_ORDER",
+                "Deleted PO " + poNumber + " (" + itemCnt + " item(s), nothing received)",
+                "PURCHASE_ORDER", String.valueOf(id));
+            return ResponseEntity.ok((Object) Map.of("message",
+                "Purchase order " + poNumber + " deleted"));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
     // ── Receive goods against a PO line item ──────────────────────────────
     @PatchMapping("/{id}/items/{itemId}/receive")
     @Transactional
