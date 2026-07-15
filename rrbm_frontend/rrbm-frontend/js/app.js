@@ -13670,12 +13670,14 @@
     $('rtn-order-id').textContent     = orderId;
     $('rtn-reason').value             = '';
     $('rtn-security-key').value       = '';
-    $('rtn-refund-toggle').checked    = false;
-    $('rtn-refund-section').style.display   = 'none';
-    $('rtn-refund-amount').value      = '';
-    $('rtn-replacement-toggle').checked     = false;
-    $('rtn-replacement-note').style.display = 'none';
+    if ($('rtn-refund-amount'))       $('rtn-refund-amount').value = '';
+    if ($('rtn-replacement-container')) $('rtn-replacement-container').innerHTML = '';
+    if ($('rtn-sum-returned'))    $('rtn-sum-returned').textContent = '₱0.00';
+    if ($('rtn-sum-replacement')) $('rtn-sum-replacement').textContent = '₱0.00';
     $('rtn-submit-btn').disabled      = true;
+
+    // Cache the product catalog for the replacement picker.
+    if (!(appState.cachedProducts && appState.cachedProducts.length)) { try { await loadProducts(); } catch (e) {} }
 
     window.renderReturnItems(order);
     $('modal-return').classList.add('open');
@@ -13730,115 +13732,173 @@
   };
 
   // Re-evaluates row validation indicators and the submit lock after any input change
-  window.onReturnQtyChange = function () {
-    var anyReturning = false;
-    var allValid     = true;
+  var _rtnRefundAutofill = '';   // tracks the last auto-suggested refund so a user override is preserved
 
-    document.querySelectorAll('.rtn-item-row').forEach(function(row) {
+  window.onReturnQtyChange = function () {
+    var order = appState.returnTargetOrder || {};
+    var priceMap = {};
+    (order.items || []).forEach(function (it) { priceMap[String(it.id)] = Number(it.unitPrice || 0); });
+
+    var anyReturning = false, allValid = true, warehouseOk = true, returnedValue = 0;
+
+    document.querySelectorAll('.rtn-item-row').forEach(function (row) {
       var total    = parseInt(row.querySelector('.rtn-total').value)    || 0;
-      var sellable = parseInt(row.querySelector('.rtn-sellable').value)  || 0;
-      var rejected = parseInt(row.querySelector('.rtn-rejected').value)  || 0;
+      var sellable = parseInt(row.querySelector('.rtn-sellable').value) || 0;
+      var rejected = parseInt(row.querySelector('.rtn-rejected').value) || 0;
       var indicator = row.querySelector('.rtn-validity');
 
-      // Show warehouse select only when sellable > 0
       var whRow = row.querySelector('.rtn-wh-row');
       if (whRow) whRow.style.display = (sellable > 0) ? '' : 'none';
 
       if (total <= 0) { indicator.textContent = ''; return; }  // row not participating
 
       anyReturning = true;
+      returnedValue += total * (priceMap[row.getAttribute('data-item-id')] || 0);
       if (sellable + rejected === total) {
-        indicator.textContent = '✓';
-        indicator.style.color = '#10B981';
+        indicator.textContent = '✓'; indicator.style.color = '#10B981';
       } else {
-        indicator.textContent = 'Must equal ' + total;
-        indicator.style.color = '#EF4444';
-        allValid = false;
+        indicator.textContent = 'Must equal ' + total; indicator.style.color = '#EF4444'; allValid = false;
       }
-    });
-
-    var reason   = ($('rtn-reason').value      || '').trim();
-    var secKey   = ($('rtn-security-key').value || '').trim();
-    var refundOn = $('rtn-refund-toggle').checked;
-    var refundAmt = refundOn ? (parseFloat($('rtn-refund-amount').value) || 0) : 1; // bypass when toggle off
-
-    var warehouseOk = true;
-    document.querySelectorAll('.rtn-item-row').forEach(function(r) {
-      var sel = parseInt(r.querySelector('.rtn-sellable').value) || 0;
-      if (sel > 0) {
-        var wh = r.querySelector('.rtn-warehouse');
+      if (sellable > 0) {
+        var wh = row.querySelector('.rtn-warehouse');
         if (!wh || !wh.value) warehouseOk = false;
       }
     });
 
-    $('rtn-submit-btn').disabled = !(anyReturning && allValid && reason && secKey && (!refundOn || refundAmt > 0) && warehouseOk);
+    // Replacement rows — untouched (all blank) rows are ignored; partial ones are invalid.
+    var anyReplacement = false, replacementValid = true, replacementValue = 0;
+    document.querySelectorAll('.rtn-repl-row').forEach(function (row) {
+      var pid   = ((row.querySelector('.rtn-repl-product') || {}).value) || '';
+      var qty   = parseInt((row.querySelector('.rtn-repl-qty') || {}).value) || 0;
+      var price = parseFloat((row.querySelector('.rtn-repl-price') || {}).value) || 0;
+      if (!pid && qty === 0 && price === 0) return;
+      anyReplacement = true;
+      if (!pid || qty <= 0 || price <= 0) replacementValid = false;
+      else replacementValue += qty * price;
+    });
+
+    var fmt = function (n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    if ($('rtn-sum-returned'))    $('rtn-sum-returned').textContent    = fmt(returnedValue);
+    if ($('rtn-sum-replacement')) $('rtn-sum-replacement').textContent = fmt(replacementValue);
+
+    // Suggest refund = value returned − value of replacement (when positive); keep any user override.
+    var suggested = Math.max(0, returnedValue - replacementValue);
+    var refundEl = $('rtn-refund-amount');
+    if (refundEl) {
+      var cur = (refundEl.value || '').trim();
+      if (cur === '' || cur === _rtnRefundAutofill) {
+        refundEl.value = suggested > 0 ? suggested.toFixed(2) : '';
+        _rtnRefundAutofill = refundEl.value;
+      }
+    }
+
+    var reason = ($('rtn-reason').value || '').trim();
+    var secKey = ($('rtn-security-key').value || '').trim();
+
+    $('rtn-submit-btn').disabled =
+      !((anyReturning || anyReplacement) && allValid && replacementValid && reason && secKey && warehouseOk);
   };
 
-  // Handles refund-section and replacement-note visibility on toggle change
-  window.onRefundToggleChange = function () {
-    var refundOn = $('rtn-refund-toggle').checked;
-    $('rtn-refund-section').style.display = refundOn ? '' : 'none';
-    if (!refundOn) $('rtn-refund-amount').value = '';
-    $('rtn-replacement-note').style.display = $('rtn-replacement-toggle').checked ? '' : 'none';
-    window.onReturnQtyChange();  // re-evaluate submit gate (refund amount requirement may have changed)
+  // Add one replacement item row (product picker + qty + price + warehouse).
+  window.addRtnReplacementRow = function () {
+    var container = $('rtn-replacement-container');
+    if (!container) return;
+    var prods = (appState.cachedProducts || []).filter(function (p) { return !p.isComponent; })
+      .slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+    var opts = '<option value="">Select product…</option>' + prods.map(function (p) {
+      var code = p.productCode ? ' [' + p.productCode + ']' : '';
+      return '<option value="' + p.id + '" data-price="' + (p.unitPrice || 0)
+           + '" data-name="' + escapeHtml(p.name || '') + '">' + escapeHtml(p.name || '') + escapeHtml(code) + '</option>';
+    }).join('');
+    var row = document.createElement('div');
+    row.className = 'rtn-repl-row';
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 58px 84px 78px 30px;gap:6px;align-items:center;margin-bottom:6px;';
+    row.innerHTML =
+        '<select class="form-select rtn-repl-product" style="font-size:12px;padding:4px 6px;" onchange="onRtnReplProductChange(this)">' + opts + '</select>'
+      + '<input type="number" min="1" step="1" class="form-control rtn-repl-qty" placeholder="Qty" style="font-size:12px;padding:4px 6px;" oninput="onReturnQtyChange()" />'
+      + '<input type="number" min="0" step="0.00001" class="form-control rtn-repl-price" placeholder="Price" style="font-size:12px;padding:4px 6px;" oninput="onReturnQtyChange()" />'
+      + '<select class="form-select rtn-repl-wh" style="font-size:12px;padding:4px 6px;"><option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">Balagtas</option></select>'
+      + '<button type="button" class="btn btn-danger btn-sm" style="padding:4px 6px;" title="Remove" onclick="this.closest(\'.rtn-repl-row\').remove();onReturnQtyChange();"><i class="ti ti-trash"></i></button>';
+    container.appendChild(row);
   };
 
-  window.confirmReturn = async function () {
+  // Prefill the replacement price from the chosen product's catalog price (editable).
+  window.onRtnReplProductChange = function (sel) {
+    var opt = sel.options[sel.selectedIndex];
+    var row = sel.closest('.rtn-repl-row');
+    if (opt && opt.value && row) {
+      var priceEl = row.querySelector('.rtn-repl-price');
+      if (priceEl && !priceEl.value) priceEl.value = opt.getAttribute('data-price') || '';
+    }
+    onReturnQtyChange();
+  };
+
+  window.confirmReturnReplace = async function () {
     var orderId = appState.returnTargetId;
     var reason  = ($('rtn-reason').value       || '').trim();
     var secKey  = ($('rtn-security-key').value  || '').trim();
     if (!reason) { showToast('Reason is required', 'error'); return; }
     if (!secKey) { showToast('Admin security key is required', 'error'); return; }
 
-    // Build items array — only rows with totalReturned > 0 are included
-    var items = [];
-    var valid = true;
-    document.querySelectorAll('.rtn-item-row').forEach(function(row) {
+    // Returned lines — only rows with a quantity are included.
+    var returnItems = [], valid = true;
+    document.querySelectorAll('.rtn-item-row').forEach(function (row) {
       var total    = parseInt(row.querySelector('.rtn-total').value)    || 0;
-      var sellable = parseInt(row.querySelector('.rtn-sellable').value)  || 0;
-      var rejected = parseInt(row.querySelector('.rtn-rejected').value)  || 0;
+      var sellable = parseInt(row.querySelector('.rtn-sellable').value) || 0;
+      var rejected = parseInt(row.querySelector('.rtn-rejected').value) || 0;
       if (total <= 0) return;
       if (sellable + rejected !== total) { valid = false; return; }
       var whEl = row.querySelector('.rtn-warehouse');
-      var whVal = whEl ? whEl.value : '';
-      var entry = {
-        orderItemId:   Number(row.getAttribute('data-item-id')),
-        totalReturned: total,
-        sellableQty:   sellable,
-        rejectedQty:   rejected
-      };
-      if (sellable > 0) entry.restockWarehouse = whVal;
-      items.push(entry);
+      var entry = { orderItemId: Number(row.getAttribute('data-item-id')), returnedQty: total, sellableQty: sellable, rejectedQty: rejected };
+      if (sellable > 0) entry.restockWarehouse = whEl ? whEl.value : '';
+      returnItems.push(entry);
     });
-    if (!valid)        { showToast('Fix item quantities before submitting', 'error'); return; }
-    if (!items.length) { showToast('Enter quantities for at least one item', 'error'); return; }
+    if (!valid) { showToast('Fix item quantities before submitting', 'error'); return; }
 
-    var refundOn  = $('rtn-refund-toggle').checked;
-    var refundAmt = refundOn ? parseFloat($('rtn-refund-amount').value) : null;
-    if (refundOn && (!refundAmt || refundAmt <= 0)) { showToast('Enter a valid refund amount', 'error'); return; }
+    // Replacement lines — untouched rows ignored, partial rows rejected.
+    var replacementItems = [], replValid = true;
+    document.querySelectorAll('.rtn-repl-row').forEach(function (row) {
+      var sel = row.querySelector('.rtn-repl-product');
+      var pid = sel ? sel.value : '';
+      var qty = parseInt((row.querySelector('.rtn-repl-qty') || {}).value) || 0;
+      var price = parseFloat((row.querySelector('.rtn-repl-price') || {}).value) || 0;
+      if (!pid && qty === 0 && price === 0) return;
+      if (!pid || qty <= 0 || price <= 0) { replValid = false; return; }
+      var opt = sel.options[sel.selectedIndex];
+      var name = opt ? (opt.getAttribute('data-name') || opt.textContent) : '';
+      var whEl = row.querySelector('.rtn-repl-wh');
+      replacementItems.push({ productId: Number(pid), productName: name, quantity: qty, unitPrice: price, warehouse: whEl ? whEl.value : 'wh1' });
+    });
+    if (!replValid) { showToast('Complete every replacement row (product, qty, price)', 'error'); return; }
+    if (!returnItems.length && !replacementItems.length) { showToast('Enter a return or a replacement', 'error'); return; }
 
-    var payload = { securityKey: secKey, reason: reason, items: items };
-    if (refundAmt) payload.refundAmount = refundAmt;
+    var refundOwed = parseFloat($('rtn-refund-amount').value) || 0;
+    var payload = {
+      mode: 'RETURN', securityKey: secKey, reason: reason,
+      returnItems: returnItems, replacementItems: replacementItems, refundOwed: refundOwed
+    };
 
-    var wantsReplacement = $('rtn-replacement-toggle').checked;
-
+    var btn = $('rtn-submit-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Submitting…'; }
     try {
-      var res = await fetch(API_BASE + '/api/orders/' + orderId + '/return', {
-        method: 'POST', headers: authHeaders(),
+      var res = await fetch(API_BASE + '/api/orders/' + orderId + '/return-replace', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
         body: JSON.stringify(payload)
       });
-      var data = await res.json();
-      if (!res.ok) { showToast('Return failed: ' + (data.message || res.status), 'error'); return; }
-
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast('Failed: ' + (data.message || res.status), 'error'); return; }
       closeModal('modal-return');
-      var toastMsg = refundAmt
-        ? 'Return and ₱' + Number(refundAmt).toLocaleString('en-PH', { minimumFractionDigits: 2 }) + ' refund recorded for order ' + orderId
-        : 'Return recorded for order ' + orderId;
-      if (wantsReplacement) toastMsg += ' — create the replacement order from the order detail view';
-      showToast(toastMsg, 'success');
-      renderOrderHistory();
+      var msg = 'Return / Replace done for ' + orderId;
+      if (data.replacementOrderId) msg += ' — replacement ' + data.replacementOrderId;
+      if (Number(data.refundOwed) > 0) msg += ' — ₱' + Number(data.refundOwed).toLocaleString('en-PH', { minimumFractionDigits: 2 }) + ' to refund (see To Refund tab)';
+      showToast(msg, 'success');
+      if (typeof loadOrders === 'function') loadOrders();
+      if (typeof renderOrderHistory === 'function') renderOrderHistory();
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-replace"></i> Confirm Return / Replace'; }
     }
   };
 

@@ -4380,7 +4380,7 @@
     <div class="modal-box" style="max-width:560px;width:100%;max-height:90vh;display:flex;flex-direction:column;">
       <div class="modal-header">
         <div style="font-size:14px;font-weight:600;">
-          <i class="ti ti-arrow-back-up" style="margin-right:6px;color:#F59E0B;"></i>Process Return — <span id="rtn-order-id"></span>
+          <i class="ti ti-replace" style="margin-right:6px;color:#F59E0B;"></i>Return / Replace — <span id="rtn-order-id"></span>
         </div>
         <button class="icon-btn" onclick="closeModal('modal-return')"><i class="ti ti-x"></i></button>
       </div>
@@ -4406,36 +4406,43 @@
                  placeholder="Your personal admin security key" autocomplete="off"
                  oninput="onReturnQtyChange()" />
         </div>
-        <!-- Refund toggle -->
-        <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:10px;">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
-            <input type="checkbox" id="rtn-refund-toggle" onchange="onRefundToggleChange()" />
-            Issue a refund to the customer
-          </label>
-          <div id="rtn-refund-section" style="display:none;margin-top:10px;">
-            <label class="form-label">Refund Amount ₱ <span style="color:#EF4444;">*</span></label>
-            <input type="number" class="form-control" id="rtn-refund-amount"
-                   min="0.01" step="0.00001" placeholder="0.00" oninput="onReturnQtyChange()" />
-          </div>
-        </div>
-        <!-- Replacement toggle -->
+        <!-- Replacement items (optional) -->
         <div style="border-top:1px solid var(--border);padding-top:12px;">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
-            <input type="checkbox" id="rtn-replacement-toggle" onchange="onRefundToggleChange()" />
-            Customer wants a replacement order
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <div style="font-size:12px;font-weight:600;color:var(--text-secondary);">
+              Replacement items <span style="font-weight:400;color:var(--text-muted);">(optional)</span>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addRtnReplacementRow()">
+              <i class="ti ti-plus"></i> Add
+            </button>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+            Add the item(s) the customer gets in exchange. A linked replacement order is created automatically.
+          </div>
+          <div id="rtn-replacement-container"></div>
+        </div>
+        <!-- Money summary + refund owed -->
+        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:6px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+            <span style="color:var(--text-muted);">Value returned</span><span id="rtn-sum-returned">₱0.00</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;">
+            <span style="color:var(--text-muted);">Value of replacement</span><span id="rtn-sum-replacement">₱0.00</span>
+          </div>
+          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">
+            Refund owed to customer ₱
           </label>
-          <div id="rtn-replacement-note" style="display:none;margin-top:8px;font-size:11px;
-               color:var(--text-muted);background:var(--bg-secondary);border-radius:6px;
-               padding:8px 10px;line-height:1.5;">
-            After submitting, go to the original order and use Cancel for Replacement to create the
-            linked replacement order, or create a new order manually.
+          <input type="number" class="form-control" id="rtn-refund-amount"
+                 min="0" step="0.00001" placeholder="0.00" oninput="onReturnQtyChange()" />
+          <div id="rtn-refund-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+            Recorded now; pay it later from the <strong>To Refund</strong> tab. Leave 0 if nothing is owed.
           </div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-return')">Cancel</button>
-        <button class="btn btn-warning" id="rtn-submit-btn" onclick="confirmReturn()" disabled style="color:#fff;">
-          <i class="ti ti-arrow-back-up"></i> Confirm Return
+        <button class="btn btn-warning" id="rtn-submit-btn" onclick="confirmReturnReplace()" disabled style="color:#fff;">
+          <i class="ti ti-replace"></i> Confirm Return / Replace
         </button>
       </div>
     </div>
@@ -5770,6 +5777,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u38"></script>
+  <script src="js/app.js?v=u39"></script>
 </body>
 </html>
