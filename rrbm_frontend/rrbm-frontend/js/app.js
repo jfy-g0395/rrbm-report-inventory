@@ -1624,14 +1624,15 @@
   // COLLECTIONS — Pending / History tab switch (same pattern as Movement Log)
   // ================================================================
   window.switchCollectionsTab = function (tab) {
-    var isPending = tab !== 'history';
-    var pend = $('coll-tab-pending'), hist = $('coll-tab-history');
-    if (pend) pend.style.display = isPending ? '' : 'none';
-    if (hist) hist.style.display = isPending ? 'none' : '';
-    var bP = $('coll-tabbtn-pending'), bH = $('coll-tabbtn-history');
-    if (bP) bP.className = 'btn btn-sm ' + (isPending ? 'btn-primary' : 'btn-secondary');
-    if (bH) bH.className = 'btn btn-sm ' + (isPending ? 'btn-secondary' : 'btn-primary');
-    if (!isPending) {
+    var tabs = ['pending', 'refund', 'history'];
+    if (tabs.indexOf(tab) < 0) tab = 'pending';
+    tabs.forEach(function (t) {
+      var pane = $('coll-tab-' + t);
+      if (pane) pane.style.display = (t === tab) ? '' : 'none';
+      var btn = $('coll-tabbtn-' + t);
+      if (btn) btn.className = 'btn btn-sm ' + (t === tab ? 'btn-primary' : 'btn-secondary');
+    });
+    if (tab === 'history') {
       var s = $('coll-hist-start'), e = $('coll-hist-end');
       if (e && !e.value) e.value = new Date().toISOString().split('T')[0];
       if (s && !s.value) {
@@ -1639,6 +1640,86 @@
         s.value = d.toISOString().split('T')[0];
       }
       loadCollectionsHistory();
+    } else if (tab === 'refund') {
+      loadRefundsOwed();
+    }
+  };
+
+  // ── To Refund tab: returns with money owed back (return_events status OWED) ──
+  function _pesoFmt(n) {
+    return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  window.loadRefundsOwed = async function () {
+    var tb = $('coll-refund-tbody');
+    if (!tb) return;
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">Loading…</td></tr>';
+    var sum = $('coll-refund-summary');
+    try {
+      var res = await fetch(API_BASE + '/api/orders/collections/refunds', { headers: authHeaders() });
+      var list = await res.json();
+      if (!Array.isArray(list) || !list.length) {
+        tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">No refunds owed 🎉</td></tr>';
+        if (sum) sum.textContent = '';
+        return;
+      }
+      var total = list.reduce(function (a, r) { return a + Number(r.refundOwed || 0); }, 0);
+      if (sum) sum.innerHTML = '<strong>' + list.length + '</strong> refund' + (list.length !== 1 ? 's' : '')
+        + ' owed · total <strong>' + _pesoFmt(total) + '</strong>';
+      tb.innerHTML = list.map(function (r) {
+        var date = r.createdAt ? formatDate(String(r.createdAt).substring(0, 10)) : '—';
+        var repl = r.replacementOrderId
+          ? '<br><span style="font-size:10px;color:var(--text-muted);">→ ' + escapeHtml(r.replacementOrderId) + '</span>' : '';
+        return '<tr>'
+          + '<td>' + date + '</td>'
+          + '<td style="font-family:monospace;">' + escapeHtml(r.orderId || '') + repl + '</td>'
+          + '<td>' + escapeHtml(r.customerName || '—') + '</td>'
+          + '<td style="max-width:220px;font-size:12px;color:var(--text-muted);">' + escapeHtml(r.reason || '') + '</td>'
+          + '<td style="text-align:right;font-weight:600;color:#F59E0B;">' + _pesoFmt(r.refundOwed) + '</td>'
+          + '<td style="text-align:center;"><button class="btn btn-sm" style="background:#10B981;color:#fff;" '
+          + 'onclick="payRefund(' + Number(r.returnEventId) + ', \'' + escapeHtml(String(r.orderId)).replace(/'/g, "\\'") + '\', ' + Number(r.refundOwed || 0) + ')">'
+          + '<i class="ti ti-cash"></i> Refund</button></td>'
+          + '</tr>';
+      }).join('');
+    } catch (e) {
+      tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#EF4444;padding:20px;">Failed to load</td></tr>';
+    }
+  };
+
+  var _refundTarget = null;   // { eventId, orderId, amount }
+
+  window.payRefund = function (eventId, orderId, amount) {
+    _refundTarget = { eventId: eventId, orderId: orderId, amount: amount };
+    var info = $('refund-confirm-info');
+    if (info) info.innerHTML = 'Refund <strong>' + _pesoFmt(amount) + '</strong> for order <strong>'
+      + escapeHtml(String(orderId)) + '</strong>?<br><span style="font-size:11px;color:var(--text-muted);">This pays the customer back from cash on hand.</span>';
+    if ($('refund-confirm-key')) $('refund-confirm-key').value = '';
+    openModal('modal-refund-confirm');
+    setTimeout(function () { if ($('refund-confirm-key')) $('refund-confirm-key').focus(); }, 50);
+  };
+
+  window.confirmPayRefund = async function () {
+    if (!_refundTarget) return;
+    var key = (($('refund-confirm-key') || {}).value || '').trim();
+    if (!key) { showToast('Admin security key is required', 'error'); return; }
+    var btn = $('refund-confirm-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Refunding…'; }
+    try {
+      var res = await fetch(API_BASE + '/api/orders/collections/refunds/' + _refundTarget.eventId + '/pay', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ securityKey: key })
+      });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast(data.message || 'Refund failed', 'error'); return; }
+      showToast('Refunded ' + _pesoFmt(_refundTarget.amount), 'success');
+      closeModal('modal-refund-confirm');
+      _refundTarget = null;
+      loadRefundsOwed();
+    } catch (e) {
+      showToast('Connection error', 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-cash"></i> Refund'; }
     }
   };
 

@@ -1869,6 +1869,7 @@
           <!-- Pending / History tab switch (same pattern as the Inventory Movement Log) -->
           <div style="display:flex;gap:8px;margin-bottom:14px;">
             <button class="btn btn-sm btn-primary"   id="coll-tabbtn-pending" onclick="switchCollectionsTab('pending')">Pending Collections</button>
+            <button class="btn btn-sm btn-secondary" id="coll-tabbtn-refund"  onclick="switchCollectionsTab('refund')">To Refund</button>
             <button class="btn btn-sm btn-secondary" id="coll-tabbtn-history" onclick="switchCollectionsTab('history')">Collections History</button>
           </div>
           <div id="coll-tab-pending">
@@ -1919,6 +1920,36 @@
             </div>
           </div>
           </div><!-- /coll-tab-pending -->
+
+          <div id="coll-tab-refund" style="display:none;">
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title"><i class="ti ti-receipt-refund" style="margin-right:6px;"></i>To Refund</div>
+                  <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Returns with money owed back to the customer — pay from here so none are missed</div>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="loadRefundsOwed()"><i class="ti ti-refresh"></i> Refresh</button>
+              </div>
+              <div id="coll-refund-summary" style="font-size:12px;color:var(--text-muted);padding:0 4px 10px;"></div>
+              <div class="table-scroll">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Return Date</th>
+                      <th>Order ID</th>
+                      <th>Customer</th>
+                      <th>Reason</th>
+                      <th style="text-align:right;">Refund Owed</th>
+                      <th style="text-align:center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="coll-refund-tbody">
+                    <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div><!-- /coll-tab-refund -->
 
           <div id="coll-tab-history" style="display:none;">
             <div class="card">
@@ -4590,6 +4621,25 @@
     </div>
   </div>
 
+  <!-- MODAL: CONFIRM REFUND (To Refund tab → pay owed refund) -->
+  <div class="modal-overlay" id="modal-refund-confirm">
+    <div class="modal-box" style="max-width:420px;">
+      <div class="modal-header">
+        <div style="font-size:14px;font-weight:600;"><i class="ti ti-receipt-refund" style="margin-right:6px;color:#10B981;"></i>Confirm Refund</div>
+        <button class="icon-btn" onclick="closeModal('modal-refund-confirm')"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="modal-body" style="padding:16px;">
+        <div id="refund-confirm-info" style="font-size:13px;margin-bottom:12px;"></div>
+        <label class="form-label">Admin Security Key <span style="color:#EF4444;">*</span></label>
+        <input type="password" class="form-control" id="refund-confirm-key" placeholder="Your personal admin security key" autocomplete="off" onkeydown="if(event.key==='Enter')confirmPayRefund()" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-refund-confirm')">Cancel</button>
+        <button class="btn" style="background:#10B981;color:#fff;" id="refund-confirm-btn" onclick="confirmPayRefund()"><i class="ti ti-cash"></i> Refund</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: ORDER DETAIL (Step 11) -->
   <div class="modal-overlay" id="modal-order-detail">
     <div class="modal-box" style="max-width:680px;">
@@ -5720,6 +5770,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u37"></script>
+  <script src="js/app.js?v=u38"></script>
 </body>
 </html>
