@@ -19,8 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -166,5 +166,33 @@ class ReturnReplaceIT {
         assertThat(ev.getItems()).hasSize(1);
         assertThat(ev.getItems().get(0).getReturnedQty()).isEqualTo(80);
         assertThat(ev.getItems().get(0).getSellableQty()).isEqualTo(80);
+
+        // ── To-Refund list shows this event (₱800 owed) ──────────────────────────
+        String listJson = mockMvc.perform(get("/api/orders/collections/refunds")
+                .header("Authorization", "Bearer " + jwt))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(listJson).contains("\"orderId\":\"" + orderId + "\"");
+
+        // ── Pay the refund (Refund button) ───────────────────────────────────────
+        mockMvc.perform(post("/api/orders/collections/refunds/" + ev.getId() + "/pay")
+                .header("Authorization", "Bearer " + jwt)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(Map.of("securityKey", SEC_KEY))))
+                .andExpect(status().isOk());
+
+        // ── Event now REFUNDED for ₱800, and no longer owed ──────────────────────
+        ReturnEvent afterRefund = returnEventRepository.findById(ev.getId()).orElseThrow();
+        assertThat(afterRefund.getRefundStatus()).isEqualTo("REFUNDED");
+        assertThat(afterRefund.getRefundedAmount()).isEqualByComparingTo("800.00");
+        assertThat(afterRefund.getRefundedAt()).isNotNull();
+        assertThat(returnEventRepository.findByRefundStatusOrderByCreatedAtDesc("OWED")).isEmpty();
+
+        // ── Paying again is rejected (already refunded) ──────────────────────────
+        mockMvc.perform(post("/api/orders/collections/refunds/" + ev.getId() + "/pay")
+                .header("Authorization", "Bearer " + jwt)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(om.writeValueAsString(Map.of("securityKey", SEC_KEY))))
+                .andExpect(status().isBadRequest());
     }
 }

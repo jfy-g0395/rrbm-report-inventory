@@ -1202,6 +1202,53 @@ public class OrderController {
     }
 
     /**
+     * GET /api/orders/collections/refunds — return events that still owe a refund (status OWED).
+     * Feeds the "To Refund" tab on the Collections page. Gated to the collections page.
+     */
+    @GetMapping("/collections/refunds")
+    public ResponseEntity<?> getRefundsOwed() {
+        return ResponseEntity.ok(orderService.listRefundsOwed());
+    }
+
+    /**
+     * POST /api/orders/collections/refunds/{eventId}/pay — pay the refund owed (the Refund button).
+     * Reverses the owed cash on the original order and marks the event REFUNDED. Requires the
+     * caller's personal admin security key (a cash-out is at least as sensitive as a collection).
+     */
+    @PostMapping("/collections/refunds/{eventId}/pay")
+    public ResponseEntity<?> payRefund(
+            @PathVariable Long eventId,
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+
+        Long userId = userIdFromHeader(authHeader);
+        if (userId == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Authentication required"));
+
+        User caller = userRepository.findById(userId).orElse(null);
+        if (caller == null)
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "User not found"));
+        if (!isOrderManager(caller))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "You do not have permission to issue refunds (requires the Void & Cancel Orders access)"));
+
+        String key = (body != null && body.get("securityKey") != null) ? body.get("securityKey").toString().trim() : "";
+        if (key.isEmpty())
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Admin security key is required to issue a refund"));
+        if (caller.getAdminSecurityKey() == null)
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("message", "No admin security key has been set for your account. Ask your Super Admin to assign one."));
+        if (!passwordEncoder.matches(key, caller.getAdminSecurityKey()))
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Invalid admin security key"));
+
+        try {
+            return ResponseEntity.ok(orderService.payReturnRefund(eventId, userId));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
      * POST /api/orders/{id}/replacement
      *
      * Creates a new replacement order linked to an order that was previously

@@ -1473,6 +1473,75 @@ public class OrderService {
     }
 
     /**
+     * List return events that still owe a refund (status OWED) — feeds the "To Refund" tab
+     * on the Collections page. Each row carries the amount owed and enough context to act.
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> listRefundsOwed() {
+        List<ReturnEvent> events = returnEventRepository.findByRefundStatusOrderByCreatedAtDesc("OWED");
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (ReturnEvent ev : events) {
+            Order o = orderRepository.findById(ev.getOrderId()).orElse(null);
+            Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("returnEventId",      ev.getId());
+            m.put("orderId",            ev.getOrderId());
+            m.put("customerName",       o != null ? o.getCustomerName() : "—");
+            m.put("refundOwed",         ev.getRefundOwed());
+            m.put("reason",             ev.getReason());
+            m.put("replacementOrderId", ev.getReplacementOrderId());
+            m.put("createdAt",          ev.getCreatedAt());
+            m.put("createdByName",      ev.getCreatedByName());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * Pay the refund owed on a return event — the "Refund" button on the To Refund tab.
+     *
+     * This is the ONLY place cash leaves the drawer for a return: the return itself only
+     * reduced revenue (a VOID). Here we reverse the owed cash on the original order (capped
+     * at its remaining cash inflow) and mark the event REFUNDED. No revenue ledger entry is
+     * posted — the VOID already removed the revenue, so this is a pure cash movement.
+     *
+     * Controller has already verified JWT + the caller's admin security key.
+     */
+    @Transactional
+    public Map<String, Object> payReturnRefund(Long eventId, Long userId) {
+        ReturnEvent ev = returnEventRepository.findById(eventId)
+                .orElseThrow(() -> new RuntimeException("Return event not found: " + eventId));
+        if (!"OWED".equals(ev.getRefundStatus()))
+            throw new RuntimeException("This return has no refund owed (status: " + ev.getRefundStatus() + ")");
+
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        BigDecimal owed = ev.getRefundOwed() != null ? ev.getRefundOwed() : BigDecimal.ZERO;
+        if (owed.compareTo(BigDecimal.ZERO) <= 0)
+            throw new RuntimeException("Nothing to refund on return #" + eventId);
+
+        // Cash out of the drawer (no-op / capped if the original wasn't fully cash-paid).
+        cashLedgerService.reverseOrderCashPartial(ev.getOrderId(), owed, userId, actor.getFullName(),
+                "refund on return #" + eventId);
+
+        ev.setRefundStatus("REFUNDED");
+        ev.setRefundedAmount(owed);
+        ev.setRefundedAt(LocalDateTime.now());
+        returnEventRepository.save(ev);
+
+        activityLogService.log(userId, actor.getFullName(), "REFUND_RETURN",
+                "Refunded ₱" + owed + " for return #" + eventId + " (order " + ev.getOrderId() + ")",
+                "ORDER", ev.getOrderId());
+
+        Map<String, Object> r = new java.util.LinkedHashMap<>();
+        r.put("returnEventId",  eventId);
+        r.put("orderId",        ev.getOrderId());
+        r.put("refundedAmount", owed);
+        r.put("refundStatus",   "REFUNDED");
+        return r;
+    }
+
+    /**
      * "Correct Recorded Item" failsafe — swap one wrongly-recorded order item for
      * the correct product/quantity/price.  Standalone feature: shares no code path
      * with return / replacement / void.
