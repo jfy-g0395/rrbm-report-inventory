@@ -46,7 +46,9 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 60s
+      # Spring Boot cold start can take ~2 min on this host; give it ample margin so the
+      # backend never flips to "unhealthy" mid-boot (which makes compose skip the frontend).
+      start_period: 210s
 
   # ── Nginx frontend ─────────────────────────────────────────────────────────
   frontend:
