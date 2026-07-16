@@ -622,27 +622,18 @@
           + cancelBtn;
       } else if (o.status === 'DELIVERED') {
         const safeTotal = Number(o.total || 0).toFixed(3);
-        if (o.refundedAt) {
-          actions = '<span style="color:#F59E0B;font-size:12px;font-weight:600;"><i class="ti ti-receipt-refund"></i> Returned</span>';
-          if (canManageOrders()) {
-            actions += ' <button class="btn btn-sm" onclick="openReturnReplacement(\'' + safeId + '\')" title="Issue Replacement Order" style="background:#10B981;color:#fff;margin-left:4px;"><i class="ti ti-replace"></i> Issue Replacement</button>';
-          }
-        } else {
-          actions = '<span style="color:var(--accent-success);font-size:12px;"><i class="ti ti-check"></i> Done</span>';
-          if (canManageOrders()) {
-            actions += ivmBtn;
-            actions += ' <button class="btn btn-sm" onclick="openReturnModal(\'' + safeId + '\')" title="Process Return" style="background:#F59E0B;color:#fff;margin-left:4px;"><i class="ti ti-arrow-back-up"></i></button>';
-            actions += ' <button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel" style="margin-left:4px;"><i class="ti ti-x"></i></button>';
-          }
+        actions = o.refundedAt
+          ? '<span style="color:#F59E0B;font-size:12px;font-weight:600;"><i class="ti ti-receipt-refund"></i> Returned</span>'
+          : '<span style="color:var(--accent-success);font-size:12px;"><i class="ti ti-check"></i> Done</span>';
+        if (canManageOrders()) {
+          actions += ivmBtn;
+          actions += ' <button class="btn btn-sm" onclick="openReturnModal(\'' + safeId + '\')" title="Return / Replace" style="background:#F59E0B;color:#fff;margin-left:4px;"><i class="ti ti-replace"></i></button>';
+          actions += ' <button class="btn btn-danger btn-sm" onclick="askCancel(\'' + safeId + '\')" title="Cancel" style="margin-left:4px;"><i class="ti ti-x"></i></button>';
         }
       } else if (o.status === 'CANCELLED') {
-        if (canManageOrders() && o.cancellationType === 'REPLACEMENT' && !o.replacementOrderId) {
-          actions = '<button class="btn btn-sm" onclick="openReplacementForm(\'' + safeId + '\')" title="Create Replacement Order" style="background:#10B981;color:#fff;"><i class="ti ti-replace"></i> Create Replacement</button>';
-        } else if (o.cancellationType === 'REPLACEMENT' && o.replacementOrderId) {
-          actions = '<span style="color:var(--accent-success);font-size:12px;font-weight:600;"><i class="ti ti-check"></i> Replaced</span>';
-        } else {
-          actions = '<span style="color:var(--text-muted);font-size:12px;">Cancelled</span>';
-        }
+        actions = (o.cancellationType === 'REPLACEMENT' && o.replacementOrderId)
+          ? '<span style="color:var(--accent-success);font-size:12px;font-weight:600;"><i class="ti ti-check"></i> Replaced</span>'
+          : '<span style="color:var(--text-muted);font-size:12px;">Cancelled</span>';
       } else if (o.status === 'PENDING_COLLECTION') {
         actions = '<span style="color:var(--accent-info);font-size:12px;font-weight:600;"><i class="ti ti-clock-dollar"></i> Pending Collection</span>';
       }
@@ -1024,26 +1015,14 @@
       if (canAdmin) {
         actions += '<button class="btn btn-secondary btn-sm" onclick="printOrderReceipt(\'' + safeId + '\')" title="Print Receipt" style="margin-right:3px;"><i class="ti ti-printer"></i></button>';
       }
-      // Correct Recorded Item — standalone wrong-input failsafe (order history only).
-      // Available on any non-cancelled order, including closed-day orders.
+      // Return / Replace — one flow for returns, replacements, and item corrections.
+      // Available on any non-cancelled order (replaces the old Process Return + Correct Item).
       if (canAdmin && o.status !== 'CANCELLED') {
-        actions += '<button class="btn btn-sm" onclick="openCorrectItemModal(\'' + safeId + '\')" title="Correct Recorded Item" style="background:#C25A0A;color:#fff;margin-right:3px;"><i class="ti ti-edit-circle"></i></button>';
+        actions += '<button class="btn btn-sm" onclick="openReturnModal(\'' + safeId + '\')" title="Return / Replace" style="background:#F59E0B;color:#fff;margin-right:3px;"><i class="ti ti-replace"></i></button>';
       }
-      // N-6: only DELIVERED orders without a prior return can have returns processed
-      if (canAdmin && o.status === 'DELIVERED' && !o.refundedAt) {
-        actions += '<button class="btn btn-sm" onclick="openReturnModal(\'' + safeId + '\')" title="Process Return" style="background:#F59E0B;color:#fff;margin-right:3px;"><i class="ti ti-arrow-back-up"></i></button>';
-      }
-      // After return is processed, offer replacement
-      if (canAdmin && o.refundedAt) {
-        actions += '<button class="btn btn-sm" onclick="openReturnReplacement(\'' + safeId + '\')" title="Issue Replacement Order" style="background:#10B981;color:#fff;margin-right:3px;"><i class="ti ti-replace"></i> Issue Replacement</button>';
-      }
-      // Step 9: CANCELLED + cancellationType REPLACEMENT → Create Replacement or Replaced indicator
-      if (canAdmin && o.status === 'CANCELLED' && o.cancellationType === 'REPLACEMENT') {
-        if (!o.replacementOrderId) {
-          actions += '<button class="btn btn-sm" onclick="openReplacementForm(\'' + safeId + '\')" title="Create Replacement Order" style="background:#10B981;color:#fff;margin-right:3px;"><i class="ti ti-replace"></i> Create Replacement</button>';
-        } else {
-          actions += '<span style="color:#10B981;font-size:12px;font-weight:600;margin-right:3px;"><i class="ti ti-check"></i> Replaced</span>';
-        }
+      // Historical: a cancelled-for-replacement order that already has its replacement.
+      if (canAdmin && o.status === 'CANCELLED' && o.cancellationType === 'REPLACEMENT' && o.replacementOrderId) {
+        actions += '<span style="color:#10B981;font-size:12px;font-weight:600;margin-right:3px;"><i class="ti ti-check"></i> Replaced</span>';
       }
 
       const importedBadgeHtml = o.imported
