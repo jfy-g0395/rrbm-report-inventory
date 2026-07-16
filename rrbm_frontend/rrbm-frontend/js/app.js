@@ -10711,7 +10711,13 @@
 
       // Refresh the order list, then show the full report: what got in, what did
       // not (failed + reason), duplicates skipped, and rows left red (not sent).
-      loadOrders();
+      // NOTE: the refresh must never throw here — a bad call (e.g. the old, now
+      // non-existent loadOrders()) would abort this success block before the modal
+      // closes, leaving the button stuck on "Importing…" forever even though the
+      // backend already committed. Call the real renderers, guarded, so a missing
+      // one can't hang the modal.
+      if (typeof renderOrders === 'function') renderOrders();
+      if (typeof renderOrderList === 'function') renderOrderList();
       showImportReport(succeededL, errorsL, skippedList, notSubmitted);
 
       var msg = imported + ' imported'
@@ -10731,7 +10737,8 @@
       // Reload the order list so the user can see what was actually saved.
       if (_importTimer) { clearTimeout(_importTimer); _importTimer = null; }
       console.warn('CSV import fetch error (orders may still have been saved):', err);
-      loadOrders();
+      if (typeof renderOrders === 'function') renderOrders();
+      if (typeof renderOrderList === 'function') renderOrderList();
       showToast('Connection timed out — check the order list to see what was saved', 'warning');
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-cloud-upload"></i>  Import Orders'; }
     }
@@ -11417,22 +11424,57 @@
     var po = _allPoData.find(function(p){ return p.id === id; });
     if (!po) { showToast('PO not found', 'error'); return; }
 
+    // Open the window synchronously (inside the click gesture) so it isn't popup-blocked,
+    // then fill it once the product catalog is available — the unmapped-line branch resolves
+    // productId → product code/name from appState.cachedProducts.
+    var w = window.open('', '_blank', 'width=960,height=780');
+    if (w) {
+      try {
+        w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>PO-' +
+          escapeHtml(po.poNumber) + '</title></head><body style="font-family:Arial,sans-serif;' +
+          'padding:40px;color:#888;font-size:13px;">Preparing purchase order…</body></html>');
+      } catch (e) {}
+    }
+    var render = function(){ _writePoDocument(w, po); };
+    if (!appState.cachedProducts || !appState.cachedProducts.length) {
+      loadProducts().then(render).catch(render);
+    } else {
+      render();
+    }
+  };
+
+  function _writePoDocument(w, po) {
     var fmt  = function(n){ return '&#8369;' + Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:3,maximumFractionDigits:3}); };
     var poDate = po.createdAt
       ? new Date(po.createdAt).toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric'})
       : new Date().toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric'});
     var genTs = new Date().toLocaleString('en-PH', {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 
+    var productById = {};
+    (appState.cachedProducts || []).forEach(function(p){ productById[p.id] = p; });
+
     var items = (po.items || []);
     var itemRows = items.map(function(item, i){
-      var supCode = item.supplierItemCode || item.itemCode || '';
-      var supDesc = item.supplierDescription || item.itemDescription || '';
+      // Per line: if a supplier mapping existed at PO time (supplier code/desc stamped on the
+      // line), print the supplier code + supplier description; otherwise print the inventory
+      // product's own code + description (resolved via product_id). Matching/receiving always
+      // uses product_id underneath — this is only what shows on paper.
+      var supCode = (item.supplierItemCode || '').trim();
+      var supDesc = (item.supplierDescription || '').trim();
+      var prod    = productById[item.productId] || null;
+      var mapped  = !!(supCode || supDesc);
+      var code, desc;
+      if (mapped) {
+        code = supCode || (prod && prod.productCode) || item.itemCode || '';
+        desc = supDesc || (prod && prod.name)        || item.itemDescription || '';
+      } else {
+        code = (prod && prod.productCode) || item.itemCode || '';
+        desc = (prod && prod.name)        || item.itemDescription || '';
+      }
       return '<tr>' +
         '<td style="text-align:center;">' + (i+1) + '</td>' +
-        '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(item.itemCode || '') + '</td>' +
-        '<td>' + escapeHtml(item.itemDescription || '') + '</td>' +
-        '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(supCode) + '</td>' +
-        '<td style="font-size:11px;">' + escapeHtml(supDesc) + '</td>' +
+        '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(code) + '</td>' +
+        '<td>' + escapeHtml(desc) + '</td>' +
         '<td style="text-align:center;">' + (item.quantityOrdered || 0) + '</td>' +
         '<td style="text-align:right;">' + fmt(item.unitPrice) + '</td>' +
         '<td style="text-align:right;font-weight:700;">' + fmt(item.lineTotal) + '</td>' +
@@ -11447,24 +11489,27 @@
     var grandTotal = subtotal + vatAmount;
     var tfootRows  = po.vatType === 'INCLUSIVE'
       ? '<tr style="background:#fff9f5;">' +
-          '<td colspan="7" style="text-align:right;padding-right:12px;font-weight:600;">SUBTOTAL</td>' +
+          '<td colspan="5" style="text-align:right;padding-right:12px;font-weight:600;">SUBTOTAL</td>' +
           '<td style="text-align:right;font-weight:600;">' + fmt(subtotal) + '</td>' +
         '</tr>' +
         '<tr style="background:#fff9f5;">' +
-          '<td colspan="7" style="text-align:right;padding-right:12px;font-weight:600;">VAT (12%)</td>' +
+          '<td colspan="5" style="text-align:right;padding-right:12px;font-weight:600;">VAT (12%)</td>' +
           '<td style="text-align:right;font-weight:600;">' + fmt(vatAmount) + '</td>' +
         '</tr>' +
         '<tr class="total-row">' +
-          '<td colspan="7" style="text-align:right;padding-right:12px;">GRAND TOTAL</td>' +
+          '<td colspan="5" style="text-align:right;padding-right:12px;">GRAND TOTAL</td>' +
           '<td style="text-align:right;">' + fmt(grandTotal) + '</td>' +
         '</tr>'
       : '<tr class="total-row">' +
-          '<td colspan="7" style="text-align:right;padding-right:12px;">ORDER TOTAL</td>' +
+          '<td colspan="5" style="text-align:right;padding-right:12px;">ORDER TOTAL</td>' +
           '<td style="text-align:right;">' + fmt(subtotal) + '</td>' +
         '</tr>';
 
-    // Resolve absolute logo URL from the current page's origin
-    var logoUrl = window.location.origin + (window.location.pathname.replace(/[^/]*$/, '')) + 'assets/logo-two.png';
+    // Resolve absolute asset URLs from the current page's origin (space in the sig filename is URL-encoded)
+    var baseDir    = window.location.origin + (window.location.pathname.replace(/[^/]*$/, ''));
+    var logoUrl    = baseDir + 'assets/logo-two.png';
+    var sigUrl     = baseDir + 'assets/Katherine%20e-sig.png';
+    var preparedBy = escapeHtml(currentUserName());
 
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
       '<title>PO-' + escapeHtml(po.poNumber) + '</title>' +
@@ -11490,8 +11535,12 @@
         'tr:nth-child(even) td{background:#fafafa;}' +
         '.total-row td{font-weight:700;border-top:2px solid #C25A0A;font-size:13px;background:#fff9f5;}' +
         '.notes-blk{font-size:11px;color:#555;margin:6px 0;font-style:italic;}' +
-        '.sig-block{margin-top:36px;display:grid;grid-template-columns:1fr 1fr;gap:60px;}' +
-        '.sig-line{border-top:1px solid #555;padding-top:4px;font-size:11px;color:#555;margin-top:30px;}' +
+        '.sig-block{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:60px;}' +
+        '.sig-cell{position:relative;padding-top:44px;}' +
+        '.sig-img{position:absolute;left:16px;top:0;height:48px;object-fit:contain;pointer-events:none;}' +
+        '.sig-rule{border-top:1px solid #555;}' +
+        '.sig-name{color:#111;font-weight:700;font-size:12px;padding-top:4px;}' +
+        '.sig-role{font-size:11px;color:#555;}' +
         '.footer{margin-top:20px;border-top:1px solid #e5e7eb;padding-top:8px;font-size:10px;color:#aaa;display:flex;justify-content:space-between;}' +
         '@media print{#po-actions{display:none!important;}}' +
       '</style></head><body>' +
@@ -11523,13 +11572,11 @@
       '<table>' +
         '<thead><tr>' +
           '<th style="width:28px;text-align:center;">#</th>' +
-          '<th style="width:80px;">Item Code</th>' +
+          '<th style="width:110px;">Code</th>' +
           '<th>Description</th>' +
-          '<th style="width:80px;">Supplier Code</th>' +
-          '<th>Supplier Desc</th>' +
-          '<th style="width:40px;text-align:center;">Qty</th>' +
-          '<th style="width:80px;text-align:right;">Unit Cost</th>' +
-          '<th style="width:90px;text-align:right;">Line Total</th>' +
+          '<th style="width:44px;text-align:center;">Qty</th>' +
+          '<th style="width:90px;text-align:right;">Unit Cost</th>' +
+          '<th style="width:100px;text-align:right;">Line Total</th>' +
         '</tr></thead>' +
         '<tbody>' + itemRows + '</tbody>' +
         '<tfoot>' + tfootRows + '</tfoot>' +
@@ -11538,8 +11585,17 @@
       (po.shippingArrangement ? '<p class="notes-blk">Shipping Arrangement: ' + escapeHtml(po.shippingArrangement) + '</p>' : '') +
       (po.notes ? '<p class="notes-blk">Notes / Remarks: ' + escapeHtml(po.notes) + '</p>' : '') +
       '<div class="sig-block">' +
-        '<div><div class="sig-line">Prepared by</div></div>' +
-        '<div><div class="sig-line">Approved by</div></div>' +
+        '<div class="sig-cell">' +
+          '<img class="sig-img" src="' + sigUrl + '" alt="" onerror="this.style.display=\'none\'" />' +
+          '<div class="sig-rule"></div>' +
+          '<div class="sig-name">' + preparedBy + '</div>' +
+          '<div class="sig-role">Prepared by</div>' +
+        '</div>' +
+        '<div class="sig-cell">' +
+          '<div class="sig-rule"></div>' +
+          '<div class="sig-name">&nbsp;</div>' +
+          '<div class="sig-role">Approved by</div>' +
+        '</div>' +
       '</div>' +
       '<div class="footer">' +
         '<span>Generated: ' + genTs + '</span>' +
@@ -11566,9 +11622,11 @@
       '<\/script>' +
       '</body></html>';
 
-    var w = window.open('', '_blank', 'width=960,height=780');
-    if (w) { w.document.write(html); w.document.close(); w.focus(); }
-  };
+    if (w) {
+      try { w.document.open(); w.document.write(html); w.document.close(); w.focus(); }
+      catch (e) {}
+    }
+  }
 
   // ================================================================
   // SUPPLIERS PAGE
@@ -13881,7 +13939,8 @@
       if (data.replacementOrderId) msg += ' — replacement ' + data.replacementOrderId;
       if (Number(data.refundOwed) > 0) msg += ' — ₱' + Number(data.refundOwed).toLocaleString('en-PH', { minimumFractionDigits: 2 }) + ' to refund (see To Refund tab)';
       showToast(msg, 'success');
-      if (typeof loadOrders === 'function') loadOrders();
+      if (typeof renderOrders === 'function') renderOrders();
+      if (typeof renderOrderList === 'function') renderOrderList();
       if (typeof renderOrderHistory === 'function') renderOrderHistory();
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
@@ -14018,7 +14077,8 @@
       var delta = Number(data.netAdjustment || 0);
       showToast('Item corrected — net ' + (delta >= 0 ? '+' : '−') + '₱'
         + Math.abs(delta).toLocaleString('en-PH', { minimumFractionDigits: 2 }) + ' posted to today', 'success');
-      if (typeof loadOrders === 'function') loadOrders();
+      if (typeof renderOrders === 'function') renderOrders();
+      if (typeof renderOrderList === 'function') renderOrderList();
       if (typeof renderOrderHistory === 'function') renderOrderHistory();
     } catch (err) {
       showToast('Error: ' + (err.message || err), 'error');
