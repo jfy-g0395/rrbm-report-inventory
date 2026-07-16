@@ -4385,64 +4385,91 @@
         <button class="icon-btn" onclick="closeModal('modal-return')"><i class="ti ti-x"></i></button>
       </div>
       <div class="modal-body" style="overflow-y:auto;flex:1;">
-        <!-- Per-item return quantities -->
-        <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">Return quantities</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">
-          Fill in only the items being returned. Leave the rest at zero.
+        <!-- Mode toggle -->
+        <div style="display:flex;gap:6px;margin-bottom:12px;">
+          <button type="button" class="btn btn-sm btn-primary"   id="rtn-mode-btn-return"     onclick="setReturnMode('return')">Goods came back</button>
+          <button type="button" class="btn btn-sm btn-secondary" id="rtn-mode-btn-correction" onclick="setReturnMode('correction')">Fix a mis-record</button>
         </div>
-        <div id="rtn-items-container"></div>
-        <!-- Reason -->
-        <div style="margin-top:14px;margin-bottom:10px;">
+
+        <!-- ===== RETURN / REPLACE mode ===== -->
+        <div id="rtn-mode-return">
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">Return quantities</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">
+            Fill in only the items being returned. Leave the rest at zero.
+          </div>
+          <div id="rtn-items-container"></div>
+          <!-- Replacement items (optional) -->
+          <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <div style="font-size:12px;font-weight:600;color:var(--text-secondary);">
+                Replacement items <span style="font-weight:400;color:var(--text-muted);">(optional)</span>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="addRtnReplacementRow()">
+                <i class="ti ti-plus"></i> Add
+              </button>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+              Add the item(s) the customer gets in exchange. A linked replacement order is created automatically.
+            </div>
+            <div id="rtn-replacement-container"></div>
+          </div>
+          <!-- Money summary + refund owed -->
+          <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:6px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+              <span style="color:var(--text-muted);">Value returned</span><span id="rtn-sum-returned">₱0.00</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;">
+              <span style="color:var(--text-muted);">Value of replacement</span><span id="rtn-sum-replacement">₱0.00</span>
+            </div>
+            <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">
+              Refund owed to customer ₱
+            </label>
+            <input type="number" class="form-control" id="rtn-refund-amount"
+                   min="0" step="0.00001" placeholder="0.00" oninput="onReturnQtyChange()" />
+            <div id="rtn-refund-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+              Recorded now; pay it later from the <strong>To Refund</strong> tab. Leave 0 if nothing is owed.
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== CORRECTION mode (nothing physically returned) ===== -->
+        <div id="rtn-mode-correction" style="display:none;">
+          <div style="font-size:11px;color:var(--text-muted);background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;padding:8px 10px;margin-bottom:12px;">
+            <i class="ti ti-info-circle"></i> Fix a wrongly-recorded item — nothing was physically returned. The recorded item is restored to stock, the correct one is deducted, and the price difference posts to <strong>today's</strong> report.
+          </div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:6px;">Recorded item</div>
+          <div id="rtn-ci-recorded"></div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#888;margin:12px 0 6px;">Replace with</div>
+          <select class="form-control form-select" id="rtn-ci-product" onchange="onRtnCiProductChange()" style="margin-bottom:8px;">
+            <option value="">Select correct product…</option>
+          </select>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;color:var(--text-muted);">Quantity</label><input type="number" min="1" class="form-control" id="rtn-ci-qty" oninput="updateRtnCiPreview()" /></div>
+            <div><label style="font-size:11px;color:var(--text-muted);">Unit Price ₱</label><input type="number" min="0" step="0.00001" class="form-control" id="rtn-ci-price" oninput="updateRtnCiPreview()" /></div>
+            <div><label style="font-size:11px;color:var(--text-muted);">Deduct From</label><select class="form-control form-select" id="rtn-ci-wh"><option value="wh1">WH1</option><option value="wh2">WH2</option><option value="wh3">Balagtas</option></select></div>
+          </div>
+          <div id="rtn-ci-preview" style="font-size:12px;background:var(--bg-secondary);border-radius:6px;padding:10px 12px;margin-bottom:4px;display:none;"></div>
+        </div>
+
+        <!-- ===== Shared: reason + admin key ===== -->
+        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px;">
           <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">
             Reason <span style="color:#ef4444;">*</span>
           </label>
           <textarea id="rtn-reason" class="form-control" rows="2" style="resize:none;"
-                    placeholder="e.g. Customer returned wrong-size items" oninput="onReturnQtyChange()"></textarea>
+                    placeholder="e.g. Customer returned wrong-size items" oninput="onReturnFormChange()"></textarea>
         </div>
-        <!-- Security key -->
-        <div style="margin-bottom:14px;">
+        <div style="margin-top:10px;">
           <label class="form-label">Admin Security Key <span style="color:#EF4444;">*</span></label>
           <input type="password" class="form-control" id="rtn-security-key"
                  placeholder="Your personal admin security key" autocomplete="off"
-                 oninput="onReturnQtyChange()" />
-        </div>
-        <!-- Replacement items (optional) -->
-        <div style="border-top:1px solid var(--border);padding-top:12px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            <div style="font-size:12px;font-weight:600;color:var(--text-secondary);">
-              Replacement items <span style="font-weight:400;color:var(--text-muted);">(optional)</span>
-            </div>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="addRtnReplacementRow()">
-              <i class="ti ti-plus"></i> Add
-            </button>
-          </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
-            Add the item(s) the customer gets in exchange. A linked replacement order is created automatically.
-          </div>
-          <div id="rtn-replacement-container"></div>
-        </div>
-        <!-- Money summary + refund owed -->
-        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:6px;">
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
-            <span style="color:var(--text-muted);">Value returned</span><span id="rtn-sum-returned">₱0.00</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;">
-            <span style="color:var(--text-muted);">Value of replacement</span><span id="rtn-sum-replacement">₱0.00</span>
-          </div>
-          <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">
-            Refund owed to customer ₱
-          </label>
-          <input type="number" class="form-control" id="rtn-refund-amount"
-                 min="0" step="0.00001" placeholder="0.00" oninput="onReturnQtyChange()" />
-          <div id="rtn-refund-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">
-            Recorded now; pay it later from the <strong>To Refund</strong> tab. Leave 0 if nothing is owed.
-          </div>
+                 oninput="onReturnFormChange()" />
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-return')">Cancel</button>
-        <button class="btn btn-warning" id="rtn-submit-btn" onclick="confirmReturnReplace()" disabled style="color:#fff;">
-          <i class="ti ti-replace"></i> Confirm Return / Replace
+        <button class="btn btn-warning" id="rtn-submit-btn" onclick="submitReturnModal()" disabled style="color:#fff;">
+          <i class="ti ti-replace"></i> <span id="rtn-submit-label">Confirm Return / Replace</span>
         </button>
       </div>
     </div>
@@ -5777,6 +5804,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u39"></script>
+  <script src="js/app.js?v=u40"></script>
 </body>
 </html>

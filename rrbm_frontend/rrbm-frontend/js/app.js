@@ -13676,10 +13676,18 @@
     if ($('rtn-sum-replacement')) $('rtn-sum-replacement').textContent = '₱0.00';
     $('rtn-submit-btn').disabled      = true;
 
-    // Cache the product catalog for the replacement picker.
+    // Reset correction-mode fields
+    if ($('rtn-ci-qty'))     $('rtn-ci-qty').value = '';
+    if ($('rtn-ci-price'))   $('rtn-ci-price').value = '';
+    if ($('rtn-ci-product')) $('rtn-ci-product').value = '';
+    if ($('rtn-ci-recorded')) $('rtn-ci-recorded').innerHTML = '';
+    if ($('rtn-ci-preview'))  $('rtn-ci-preview').style.display = 'none';
+
+    // Cache the product catalog for the replacement / correction pickers.
     if (!(appState.cachedProducts && appState.cachedProducts.length)) { try { await loadProducts(); } catch (e) {} }
 
     window.renderReturnItems(order);
+    if (typeof setReturnMode === 'function') setReturnMode('return');   // always open on Return mode
     $('modal-return').classList.add('open');
   };
 
@@ -13878,8 +13886,9 @@
       returnItems: returnItems, replacementItems: replacementItems, refundOwed: refundOwed
     };
 
-    var btn = $('rtn-submit-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Submitting…'; }
+    var btn = $('rtn-submit-btn'), lbl = $('rtn-submit-label');
+    if (btn) btn.disabled = true;
+    if (lbl) lbl.textContent = 'Submitting…';
     try {
       var res = await fetch(API_BASE + '/api/orders/' + orderId + '/return-replace', {
         method: 'POST',
@@ -13898,7 +13907,145 @@
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-replace"></i> Confirm Return / Replace'; }
+      if (btn) btn.disabled = false;
+      if (lbl) lbl.textContent = 'Confirm Return / Replace';
+    }
+  };
+
+  // ── Mode toggle (Return / Replace  vs  Correction) ─────────────────────────
+  var _rtnMode = 'return';
+
+  window.setReturnMode = function (mode) {
+    _rtnMode = (mode === 'correction') ? 'correction' : 'return';
+    var isCorr = _rtnMode === 'correction';
+    if ($('rtn-mode-return'))     $('rtn-mode-return').style.display     = isCorr ? 'none' : '';
+    if ($('rtn-mode-correction')) $('rtn-mode-correction').style.display = isCorr ? '' : 'none';
+    var bR = $('rtn-mode-btn-return'), bC = $('rtn-mode-btn-correction');
+    if (bR) bR.className = 'btn btn-sm ' + (isCorr ? 'btn-secondary' : 'btn-primary');
+    if (bC) bC.className = 'btn btn-sm ' + (isCorr ? 'btn-primary' : 'btn-secondary');
+    if ($('rtn-submit-label')) $('rtn-submit-label').textContent = isCorr ? 'Apply Correction' : 'Confirm Return / Replace';
+    if (isCorr) _populateRtnCorrection();
+    onReturnFormChange();
+  };
+
+  // Dispatch input changes + submit to the active mode.
+  window.onReturnFormChange = function () {
+    if (_rtnMode === 'correction') updateRtnCiPreview();
+    else onReturnQtyChange();
+  };
+  window.submitReturnModal = function () {
+    if (_rtnMode === 'correction') confirmRtnCorrection();
+    else confirmReturnReplace();
+  };
+
+  function _populateRtnCorrection() {
+    var order = appState.returnTargetOrder || {};
+    var sel = $('rtn-ci-product');
+    if (sel && sel.options.length <= 1) {
+      var prods = (appState.cachedProducts || []).filter(function (p) { return !p.isComponent; })
+        .slice().sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+      sel.innerHTML = '<option value="">Select correct product…</option>' + prods.map(function (p) {
+        var code = p.productCode ? ' [' + p.productCode + ']' : '';
+        return '<option value="' + p.id + '" data-price="' + (p.unitPrice || 0) + '">' + escapeHtml(p.name || '') + escapeHtml(code) + '</option>';
+      }).join('');
+    }
+    var items = (order.items || []).filter(function (it) { return (it.voidedQuantity || 0) === 0; });
+    var cont = $('rtn-ci-recorded');
+    if (!cont) return;
+    if (!items.length) {
+      cont.innerHTML = '<div style="color:#EF4444;font-size:12px;">No correctable items (all returned/voided).</div>';
+      return;
+    }
+    var single = items.length === 1;
+    cont.innerHTML = items.map(function (it) {
+      var sub = it.subtotal != null ? it.subtotal : (it.quantity || 0) * Number(it.unitPrice || 0);
+      var line = (it.quantity || 0) + ' × ₱' + Number(it.unitPrice || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })
+        + ' = ₱' + Number(sub).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+      return '<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;cursor:pointer;">'
+        + '<input type="radio" name="rtn-ci-radio" value="' + it.id + '" ' + (single ? 'checked' : '') + ' onchange="updateRtnCiPreview()" />'
+        + '<span style="flex:1;"><strong>' + escapeHtml(it.productName) + '</strong>'
+        + '<div style="font-size:11px;color:var(--text-muted);">' + line + '</div></span></label>';
+    }).join('');
+    updateRtnCiPreview();
+  }
+
+  window.onRtnCiProductChange = function () {
+    var sel = $('rtn-ci-product'), opt = sel.options[sel.selectedIndex];
+    if (opt && opt.value) { var pe = $('rtn-ci-price'); if (pe && !pe.value) pe.value = opt.getAttribute('data-price') || ''; }
+    updateRtnCiPreview();
+  };
+
+  window.updateRtnCiPreview = function () {
+    var order = appState.returnTargetOrder || {};
+    var r = document.querySelector('input[name="rtn-ci-radio"]:checked');
+    var rec = (order.items || []).find(function (it) { return r && String(it.id) === String(r.value); });
+    var newQty  = parseInt(($('rtn-ci-qty') || {}).value) || 0;
+    var newUnit = parseFloat(($('rtn-ci-price') || {}).value) || 0;
+    var productPicked = (($('rtn-ci-product') || {}).value) || '';
+    var reason = ($('rtn-reason').value || '').trim();
+    var secKey = ($('rtn-security-key').value || '').trim();
+
+    var prev = $('rtn-ci-preview');
+    if (prev) {
+      if (rec && newQty > 0 && newUnit > 0) {
+        var oldVal = Number(rec.subtotal != null ? rec.subtotal : (rec.quantity || 0) * Number(rec.unitPrice || 0));
+        var newVal = newQty * newUnit, delta = newVal - oldVal;
+        var f = function (v) { return '₱' + Number(v).toLocaleString('en-PH', { minimumFractionDigits: 2 }); };
+        prev.style.display = 'block';
+        prev.innerHTML =
+            '<div style="display:flex;justify-content:space-between;"><span>Recorded value</span><span>' + f(oldVal) + '</span></div>'
+          + '<div style="display:flex;justify-content:space-between;"><span>Corrected value</span><span>' + f(newVal) + '</span></div>'
+          + '<div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--border);margin-top:4px;padding-top:4px;">'
+          + '<span>Adjustment</span><span style="color:' + (delta >= 0 ? '#10B981' : '#EF4444') + ';">' + (delta >= 0 ? '+' : '−') + f(Math.abs(delta)) + '</span></div>';
+      } else {
+        prev.style.display = 'none';
+      }
+    }
+    if ($('rtn-submit-btn'))
+      $('rtn-submit-btn').disabled = !(rec && productPicked && newQty > 0 && newUnit > 0 && reason && secKey);
+  };
+
+  window.confirmRtnCorrection = async function () {
+    var orderId = appState.returnTargetId;
+    var r = document.querySelector('input[name="rtn-ci-radio"]:checked');
+    var orderItemId = r ? r.value : '';
+    var productId = ($('rtn-ci-product') || {}).value || '';
+    var qty       = parseInt(($('rtn-ci-qty') || {}).value) || 0;
+    var unitPrice = parseFloat(($('rtn-ci-price') || {}).value) || 0;
+    var warehouse = ($('rtn-ci-wh') || {}).value || 'wh1';
+    var reason = ($('rtn-reason').value || '').trim();
+    var secKey = ($('rtn-security-key').value || '').trim();
+    if (!orderItemId) { showToast('Select which recorded item to correct', 'error'); return; }
+    if (!productId)   { showToast('Choose the correct product', 'error'); return; }
+    if (qty <= 0 || unitPrice <= 0) { showToast('Enter a valid quantity and price', 'error'); return; }
+    if (!reason || !secKey) { showToast('Reason and admin key are required', 'error'); return; }
+
+    var btn = $('rtn-submit-btn'), lbl = $('rtn-submit-label');
+    if (btn) btn.disabled = true;
+    if (lbl) lbl.textContent = 'Applying…';
+    try {
+      var res = await fetch(API_BASE + '/api/orders/' + encodeURIComponent(orderId) + '/correct-item', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({
+          securityKey: secKey, reason: reason, orderItemId: Number(orderItemId),
+          replacementProductId: Number(productId), replacementQty: qty,
+          replacementUnitPrice: unitPrice, warehouse: warehouse
+        })
+      });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast('Correction failed: ' + (data.message || res.status), 'error'); return; }
+      closeModal('modal-return');
+      var delta = Number(data.netAdjustment || 0);
+      showToast('Item corrected — net ' + (delta >= 0 ? '+' : '−') + '₱'
+        + Math.abs(delta).toLocaleString('en-PH', { minimumFractionDigits: 2 }) + ' posted to today', 'success');
+      if (typeof loadOrders === 'function') loadOrders();
+      if (typeof renderOrderHistory === 'function') renderOrderHistory();
+    } catch (err) {
+      showToast('Error: ' + (err.message || err), 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+      if (lbl) lbl.textContent = 'Apply Correction';
     }
   };
 
