@@ -15311,6 +15311,11 @@
 
   window.initAddRecords = function () {
     var today = new Date().toISOString().split('T')[0];
+    // Records can never belong to a day that hasn't happened yet — cap every Add Records
+    // date picker at today (the backend rejects future dates too, as a hard guard).
+    ['addrec-default-date','addrec-exp-date','addrec-ord-date'].forEach(function (id) {
+      if ($(id)) $(id).max = today;
+    });
     if ($('addrec-default-date') && !$('addrec-default-date').value) $('addrec-default-date').value = today;
     if ($('addrec-exp-date')     && !$('addrec-exp-date').value)     $('addrec-exp-date').value = today;
     if ($('addrec-ord-date')     && !$('addrec-ord-date').value)     $('addrec-ord-date').value = today;

@@ -109,6 +109,7 @@ public class BackdatedEntryController {
             Map<String, Object> entry = orders.get(i);
             try {
                 LocalDate date = parseDate(entry.get("date"));
+                requireNotFuture(date);   // a day that hasn't happened yet cannot hold records
                 boolean recordingOnly = Boolean.TRUE.equals(entry.get("recordingOnly"));
                 String paymentStatus = entry.get("paymentStatus") == null
                         ? null : entry.get("paymentStatus").toString();
@@ -158,6 +159,7 @@ public class BackdatedEntryController {
             Map<String, Object> entry = expenses.get(i);
             try {
                 LocalDate date = parseDate(entry.get("date"));
+                requireNotFuture(date);   // a day that hasn't happened yet cannot hold records
                 boolean recordingOnly = Boolean.TRUE.equals(entry.get("recordingOnly"));
 
                 Expense saved = expenseController.createBackdatedExpense(
@@ -248,6 +250,12 @@ public class BackdatedEntryController {
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid date: " + raw);
         }
+    }
+
+    /** Reject a business date that hasn't happened yet — records can never belong to a future day. */
+    private static void requireNotFuture(LocalDate date) {
+        if (date != null && date.isAfter(LocalDate.now()))
+            throw new IllegalArgumentException("Cannot record entries for a future date (" + date + ")");
     }
 
     private static Map<String, Object> rowError(String type, int index, Exception e) {

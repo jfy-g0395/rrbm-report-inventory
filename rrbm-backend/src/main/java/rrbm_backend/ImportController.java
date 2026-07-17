@@ -188,6 +188,12 @@ public class ImportController {
                 "Cannot parse date '" + s + "' — use YYYY-MM-DD, M/D/YYYY, or MM/DD/YYYY");
     }
 
+    /** Reject a business date that hasn't happened yet — records can never belong to a future day. */
+    private static void requireNotFuture(LocalDate date) {
+        if (date != null && date.isAfter(LocalDate.now()))
+            throw new IllegalArgumentException("Cannot record entries for a future date (" + date + ")");
+    }
+
     // ── Template CSVs ──────────────────────────────────────────────────────────
 
     // Flat sales template: one row per item; same Receipt# on multiple rows = one order.
@@ -1074,6 +1080,7 @@ public class ImportController {
             if (skipReceipts.contains(saleRow.receiptNum())) { skipped++; skippedReceipts.add(saleRow.receiptNum()); continue; }
             try {
                 LocalDate targetDate  = saleRow.date();
+                requireNotFuture(targetDate);   // a day that hasn't happened yet cannot hold records
                 boolean   reportClosed = dailyReportRepository.findByReportDate(targetDate).isPresent();
 
                 Order order = buildOrderFromRow(saleRow, override);
@@ -1196,6 +1203,7 @@ public class ImportController {
 
             try {
                 LocalDate expDate = expRow.date();
+                requireNotFuture(expDate);   // a day that hasn't happened yet cannot hold records
                 boolean reportClosed = dailyReportRepository.findByReportDate(expDate).isPresent();
 
                 Expense expense = buildExpenseFromRow(expRow, user, override);
