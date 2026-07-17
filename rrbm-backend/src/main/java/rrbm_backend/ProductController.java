@@ -170,8 +170,6 @@ public class ProductController {
             product.setSubCategory(body.get("subCategory").toString().trim());
         if (body.get("description") != null && !body.get("description").toString().isBlank())
             product.setDescription(body.get("description").toString().trim());
-        if (body.get("itemCode") != null && !body.get("itemCode").toString().isBlank())
-            product.setItemCode(body.get("itemCode").toString().trim());
         product.setSellingTag("SELLING"); // always default to SELLING; tag editable from inventory UI
         if (body.get("unitPrice") != null) product.setUnitPrice(new BigDecimal(body.get("unitPrice").toString()));
         if (body.get("unitCost") != null) product.setUnitCost(new BigDecimal(body.get("unitCost").toString()));
@@ -373,15 +371,6 @@ public class ProductController {
             if (!Objects.equals(newDesc, product.getDescription())) {
                 changes.add("Description updated");
                 product.setDescription(newDesc);
-            }
-        }
-        // Item Code
-        if (body.containsKey("itemCode")) {
-            String raw = body.get("itemCode") != null ? body.get("itemCode").toString().trim() : "";
-            String newCode = raw.isEmpty() ? null : raw;
-            if (!Objects.equals(newCode, product.getItemCode())) {
-                changes.add("ItemCode: \"" + product.getItemCode() + "\" → \"" + newCode + "\"");
-                product.setItemCode(newCode);
             }
         }
         // isSet flag

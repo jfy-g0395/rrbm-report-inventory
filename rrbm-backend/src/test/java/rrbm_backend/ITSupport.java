@@ -76,7 +76,6 @@ final class ITSupport {
                                int stockWh1) {
         Product p = new Product();
         p.setProductCode(productCode);
-        p.setItemCode(productCode + "-item");
         p.setName(name);
         p.setUnitPrice(price);
         p.setUnitCost(price.multiply(new BigDecimal("0.6"))); // Set cost to 60% of selling price

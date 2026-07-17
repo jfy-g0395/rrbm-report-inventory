@@ -79,9 +79,7 @@ class ImportU2Test {
         // Product with known itemCode and enough stock for a 1-unit order
         testProduct = new Product();
         testProduct.setName("U2 Test Product " + suffix);
-        // itemCode max 50 chars; use last 6 digits of timestamp to keep it unique
         testProduct.setProductCode("U2PD" + suffix.substring(suffix.length() - 2));
-        testProduct.setItemCode("U2IC" + suffix.substring(suffix.length() - 6));
         testProduct.setStockWh1(100);
         testProduct.setStockWh2(0);
         testProduct.setStockWh3(0);

@@ -88,7 +88,6 @@ class ImportU6Test {
         testProduct = new Product();
         testProduct.setName("U6 Test Product " + suffix);
         testProduct.setProductCode("U6PD" + (RUN_ID % 100));
-        testProduct.setItemCode("U6IC" + RUN_ID);
         testProduct.setStockWh1(500);
         testProduct.setStockWh2(0);
         testProduct.setStockWh3(0);

@@ -1916,7 +1916,6 @@
     $('editprod-name').value         = p.name         || '';
     $('editprod-category').value     = p.category     || '';
     $('editprod-subcategory').value  = p.subCategory  || '';
-    $('editprod-item-code').value    = p.itemCode      || '';
     $('editprod-description').value  = p.description   || '';
     $('editprod-price').value        = p.unitPrice    != null ? p.unitPrice  : '';
     $('editprod-cost').value         = p.unitCost     != null ? p.unitCost   : '';
@@ -1980,7 +1979,7 @@
     // Legacy pricing-only lock (was for Accounting+): now inert since agent-pricing viewers
     // are exactly the admins who can also edit inventory, so pricingOnly is always false.
     var pricingOnly = canViewAgentPricing() && !canEditInventory();
-    ['editprod-code','editprod-name','editprod-category','editprod-subcategory','editprod-item-code',
+    ['editprod-code','editprod-name','editprod-category','editprod-subcategory',
      'editprod-description','editprod-price','editprod-cost','editprod-wh1','editprod-wh2','editprod-wh3']
       .forEach(function (id) { var el = $(id); if (el) el.readOnly = pricingOnly; });
     ['editprod-active-yes','editprod-active-no','editprod-is-set']
@@ -2022,7 +2021,6 @@
       productCode:   (($('editprod-code')        || {}).value || '').trim() || null,
       category:      (($('editprod-category')    || {}).value || '').trim() || null,
       subCategory:   (($('editprod-subcategory') || {}).value || '').trim() || null,
-      itemCode:      (($('editprod-item-code')   || {}).value || '').trim() || null,
       description:   (($('editprod-description') || {}).value || '').trim() || null,
       unitPrice:     parseFloat(($('editprod-price') || {}).value) || 0,
       unitCost:      parseFloat(($('editprod-cost')  || {}).value) || 0,
@@ -2050,7 +2048,7 @@
       if (prod) {
         prod.name = name;
         prod.productCode = body.productCode; prod.category = body.category; prod.subCategory = body.subCategory;
-        prod.itemCode = body.itemCode; prod.description = body.description;
+        prod.description = body.description;
         prod.unitPrice = body.unitPrice; prod.unitCost = body.unitCost;
         prod.stockWh1 = body.stockWh1; prod.stockWh2 = body.stockWh2; prod.stockWh3 = body.stockWh3;
         prod.active = body.active; prod.isSet = body.isSet;
@@ -2127,7 +2125,6 @@
     if (kw) products = products.filter(function (p) {
       return (p.name || '').toLowerCase().includes(kw)
           || (p.productCode || '').toLowerCase().includes(kw)
-          || (p.itemCode || '').toLowerCase().includes(kw)
           || (p.sku || '').toLowerCase().includes(kw)
           || (p.description || '').toLowerCase().includes(kw);
     });
@@ -2142,7 +2139,7 @@
     });
 
     if (products.length === 0) {
-      tb.innerHTML = '<tr><td colspan="' + (canEditActions ? '12' : '11') + '" style="text-align:center;color:var(--text-muted);padding:20px;">No products found</td></tr>';
+      tb.innerHTML = '<tr><td colspan="' + (canEditActions ? '11' : '10') + '" style="text-align:center;color:var(--text-muted);padding:20px;">No products found</td></tr>';
       return;
     }
 
@@ -2188,9 +2185,6 @@
       const codeCell = p.productCode
         ? '<span class="product-code">' + escapeHtml(p.productCode) + '</span>'
         : '<span style="color:var(--border);font-size:11px;">—</span>';
-      const itemCodeCell = p.itemCode
-        ? '<span style="font-size:11px;color:var(--text-muted);font-family:monospace;">' + escapeHtml(p.itemCode) + '</span>'
-        : '<span style="color:var(--border);font-size:11px;">—</span>';
       const subCatLabel = p.subCategory
         ? '<br><span style="font-size:11px;color:var(--text-muted);font-weight:400;">' + p.subCategory + '</span>'
         : '';
@@ -2222,7 +2216,6 @@
 
       return '<tr data-id="' + p.id + '" class="' + rowClass + '">'
         + '<td>' + codeCell + '</td>'
-        + '<td>' + itemCodeCell + '</td>'
         + '<td><span style="' + nameStyle + '">' + p.name + '</span>' + setBadge + componentBadge + subCatLabel + inactiveLabel + setEffectiveNote + '</td>'
         + '<td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + (p.description ? escapeHtml(p.description) : '') + '">' + descCell + '</td>'
         + '<td>' + tagSelect + '</td>'
@@ -2349,7 +2342,7 @@
 
   function openAddProductForm() {
     ['addprod-code','addprod-name','addprod-category','addprod-subcategory','addprod-cost',
-     'addprod-item-code','addprod-description'].forEach(function (id) {
+     'addprod-description'].forEach(function (id) {
       if ($(id)) $(id).value = '';
     });
     if ($('addprod-price')) $('addprod-price').value = '';
@@ -2408,7 +2401,6 @@
       name:              name,
       category:          category,
       subCategory:       (($('addprod-subcategory')  || {}).value || '').trim() || null,
-      itemCode:          (($('addprod-item-code')     || {}).value || '').trim() || null,
       description:       (($('addprod-description')  || {}).value || '').trim() || null,
       sellingTag:        'SELLING',
       unitPrice:         price,
@@ -2614,7 +2606,7 @@
       return {
         id: pid,
         name: (prod && prod.name) || it.itemDescription || '(unnamed)',
-        code: it.itemCode || (prod && prod.productCode) || '',
+        code: (prod && prod.productCode) || '',
         remaining: remaining > 0 ? remaining : 0,
         unitPrice: it.unitPrice != null ? it.unitPrice : (prod && prod.unitCost != null ? prod.unitCost : null),
         poItemId: it.id
@@ -2839,13 +2831,10 @@
     if (item.unitPrice != null && $('delivery-unit-cost-' + n)) $('delivery-unit-cost-' + n).value = parseFloat(item.unitPrice);
   }
 
-  /** Resolve a PO item's productId from the cached product list by itemCode or name. */
+  /** Resolve a PO item's productId — the line carries it directly now; fall back to name match. */
   function _resolveProductIdForPoItem(poItem) {
+    if (poItem.productId) return poItem.productId;
     var prods = appState.cachedProducts || [];
-    if (poItem.itemCode) {
-      var byCode = prods.find(function(p){ return p.itemCode && p.itemCode.toLowerCase() === poItem.itemCode.toLowerCase(); });
-      if (byCode) return byCode.id;
-    }
     if (poItem.itemDescription) {
       var byName = prods.find(function(p){ return p.name && p.name.toLowerCase() === (poItem.itemDescription || '').toLowerCase(); });
       if (byName) return byName.id;
@@ -2864,6 +2853,8 @@
     unfulfilled.forEach(function(item, idx) {
       var n = 'po' + idx;
       var productId = _resolveProductIdForPoItem(item);
+      var _prodForCode = (appState.cachedProducts || []).find(function(p){ return String(p.id) === String(productId); });
+      var _codeHint = (_prodForCode && _prodForCode.productCode) ? 'Code: ' + escapeHtml(_prodForCode.productCode) + ' &nbsp;&middot;&nbsp; ' : '';
       var resolved  = productId ? '' : ' style="border-left:3px solid #F59E0B;"';
       var hint      = productId ? '' :
         '<div style="font-size:10px;color:#F59E0B;margin-top:2px;">&#9888; Product not found — select manually</div>';
@@ -2885,7 +2876,7 @@
               '<div class="product-dropdown" id="d-prod-dd-' + n + '"></div>' +
               '</div>') +
           '<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">' +
-          (item.itemCode ? 'Code: ' + escapeHtml(item.itemCode) + ' &nbsp;&middot;&nbsp; ' : '') +
+          _codeHint +
           'PO Qty: ' + (item.quantityOrdered || 0) + '</div>' +
           hint +
         '</div>' +
@@ -10325,8 +10316,7 @@
       for (var si = 0; si < products.length; si++) {
         var p = products[si];
         if ((p.sku         && p.sku.toLowerCase()          === skuNorm) ||
-            (p.productCode && p.productCode.toLowerCase()  === skuNorm) ||
-            (p.itemCode    && p.itemCode.toLowerCase()     === skuNorm)) {
+            (p.productCode && p.productCode.toLowerCase()  === skuNorm)) {
           skuMatch = p; break;
         }
       }
@@ -10906,7 +10896,6 @@
             '<i class="ti ti-package-import"></i> Receive</button>'
         : '';
       return '<tr style="' + rowBg + '">' +
-        '<td style="font-family:monospace;font-size:12px;color:var(--text-muted);">' + escapeHtml(item.itemCode || '—') + '</td>' +
         '<td>' + escapeHtml(item.itemDescription) + '</td>' +
         '<td style="font-family:monospace;font-size:11px;color:var(--text-muted);">' + escapeHtml(item.supplierItemCode || '—') + '</td>' +
         '<td style="font-size:11px;color:var(--text-muted);">' + escapeHtml(item.supplierDescription || '—') + '</td>' +
@@ -10934,13 +10923,13 @@
       '</div>' +
       '<table class="table" style="margin:0;font-size:12px;">' +
         '<thead><tr>' +
-          '<th>Item Code</th><th>Description</th>' +
+          '<th>Description</th>' +
           '<th style="max-width:90px;">Supplier Code</th><th>Supplier Desc</th>' +
           '<th style="text-align:right;">Qty</th><th style="text-align:right;">Unit Cost</th>' +
           '<th style="text-align:right;">Line Total</th><th style="text-align:right;">Fulfilled</th>' +
           '<th>DR #</th><th>Status</th><th></th>' +
         '</tr></thead>' +
-        '<tbody>' + (rows || '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);">No items</td></tr>') + '</tbody>' +
+        '<tbody>' + (rows || '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">No items</td></tr>') + '</tbody>' +
       '</table>' +
       (po.notes ? '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Notes: ' + escapeHtml(po.notes) + '</div>' : '') +
       (function() {
@@ -11466,10 +11455,10 @@
       var mapped  = !!(supCode || supDesc);
       var code, desc;
       if (mapped) {
-        code = supCode || (prod && prod.productCode) || item.itemCode || '';
+        code = supCode || (prod && prod.productCode) || '';
         desc = supDesc || (prod && prod.name)        || item.itemDescription || '';
       } else {
-        code = (prod && prod.productCode) || item.itemCode || '';
+        code = (prod && prod.productCode) || '';
         desc = (prod && prod.name)        || item.itemDescription || '';
       }
       return '<tr>' +
@@ -11875,7 +11864,7 @@
     var sel = $('new-map-product-id');
     if (!sel) return;
     var opts = (_allProductsCache || []).map(function(p) {
-      var label = escapeHtml(p.name) + (p.itemCode ? ' (' + escapeHtml(p.itemCode) + ')' : '');
+      var label = escapeHtml(p.name) + (p.productCode ? ' (' + escapeHtml(p.productCode) + ')' : '');
       return '<option value="' + p.id + '">' + label + '</option>';
     });
     sel.innerHTML = '<option value="">— select product —</option>' + opts.join('');

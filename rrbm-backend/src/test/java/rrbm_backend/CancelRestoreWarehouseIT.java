@@ -73,7 +73,6 @@ class CancelRestoreWarehouseIT {
         // Set product (no own stock) made of 1× component
         setProduct = new Product();
         setProduct.setProductCode("CRWS" + (RUN % 99));
-        setProduct.setItemCode("CRWS" + (RUN % 99) + "-item");
         setProduct.setName("CRW Set");
         setProduct.setUnitPrice(new BigDecimal("100.00"));
         setProduct.setUnitCost(new BigDecimal("60.00"));

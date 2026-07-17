@@ -878,7 +878,7 @@
                 <thead>
                   <!-- #3: Product Code column added before Product -->
                   <tr>
-                    <th>Code</th><th>Item Code</th><th>Product</th><th>Description</th><th>Tag</th><th>WH1</th><th>WH2</th>
+                    <th>Code</th><th>Product</th><th>Description</th><th>Tag</th><th>WH1</th><th>WH2</th>
                     <th>Balagtas</th><th>Total</th><th>Stock Bar</th><th>Status</th>
                     <th id="inv-actions-th" style="display:none;">Actions</th>
                   </tr>
@@ -3119,12 +3119,7 @@
           </div>
         </div>
         <div class="row mb-3">
-          <div class="col-md-5">
-            <label class="form-label">Item Code <span style="font-size:10px;color:var(--text-muted);font-weight:400;">— for Purchase Orders</span></label>
-            <input type="text" class="form-control" id="addprod-item-code" placeholder="e.g. PO-REF-001" autocomplete="off" />
-            <div style="font-size:10px;color:var(--text-muted);margin-top:3px;">Optional, must be unique</div>
-          </div>
-          <div class="col-md-7">
+          <div class="col-md-12">
             <label class="form-label">Description</label>
             <textarea class="form-control" id="addprod-description" rows="2" placeholder="Optional notes — size, material, specs…" style="resize:vertical;"></textarea>
           </div>
@@ -3267,10 +3262,6 @@
           </div>
         </div>
         <div class="grid grid-2" style="gap:10px;margin-bottom:12px;">
-          <div>
-            <label class="form-label">Item Code <span style="font-size:10px;color:var(--text-muted);font-weight:400;">— for Purchase Orders</span></label>
-            <input type="text" class="form-control" id="editprod-item-code" placeholder="e.g. PO-REF-001" autocomplete="off" />
-          </div>
           <div>
             <label class="form-label">Status</label>
             <div style="display:flex;gap:16px;margin-top:6px;">
@@ -5803,6 +5794,6 @@
 
   <!-- App Script -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="js/app.js?v=u44"></script>
+  <script src="js/app.js?v=u45"></script>
 </body>
 </html>

@@ -16,9 +16,6 @@ public class PoItem {
     @JsonIgnore
     private PurchaseOrder purchaseOrder;
 
-    @Column(name = "item_code", length = 50)
-    private String itemCode;
-
     @Column(name = "item_description", length = 500, nullable = false)
     private String itemDescription;
 
@@ -57,8 +54,6 @@ public class PoItem {
     public Long getId()                        { return id; }
     public PurchaseOrder getPurchaseOrder()    { return purchaseOrder; }
     public void setPurchaseOrder(PurchaseOrder po) { this.purchaseOrder = po; }
-    public String getItemCode()                { return itemCode; }
-    public void setItemCode(String v)          { this.itemCode = v; }
     public String getItemDescription()         { return itemDescription; }
     public void setItemDescription(String v)   { this.itemDescription = v; }
     public Integer getQuantityOrdered()        { return quantityOrdered; }

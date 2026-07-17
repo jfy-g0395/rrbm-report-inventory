@@ -142,7 +142,6 @@ public class PurchaseOrderController {
 
             PoItem item = new PoItem();
             item.setPurchaseOrder(po);
-            item.setItemCode(strOrNull(ri.get("itemCode")));
             item.setItemDescription(desc);
             item.setQuantityOrdered(qty);
             item.setFulfilledQty(0);
@@ -373,7 +372,6 @@ public class PurchaseOrderController {
         for (PoItem i : po.getItems()) {
             Map<String, Object> im = new LinkedHashMap<>();
             im.put("id",              i.getId());
-            im.put("itemCode",        i.getItemCode());
             im.put("itemDescription", i.getItemDescription());
             im.put("quantityOrdered", i.getQuantityOrdered());
             im.put("unitPrice",       i.getUnitPrice());

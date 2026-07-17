@@ -44,11 +44,6 @@ public class Product {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    // Item Code — used for Purchase Orders; separate from productCode (6-char UI identifier)
-    // e.g. supplier's part number or internal PO reference code
-    @Column(name = "item_code", length = 50, unique = true)
-    private String itemCode;
-
     // HOT, SELLING, or SLOW — indicates sales velocity
     @Column(name = "selling_tag", length = 20)
     private String sellingTag = "SELLING";

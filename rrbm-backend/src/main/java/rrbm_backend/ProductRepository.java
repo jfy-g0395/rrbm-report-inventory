@@ -57,7 +57,5 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT COALESCE(p.stockWh1,0) + COALESCE(p.stockWh2,0) + COALESCE(p.stockWh3,0) FROM Product p WHERE p.id = :id")
     Integer sumStockById(@Param("id") Long id);
 
-    java.util.Optional<Product> findByItemCode(String itemCode);
-
     java.util.Optional<Product> findByProductCode(String productCode);
 }

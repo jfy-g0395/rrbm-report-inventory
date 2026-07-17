@@ -59,7 +59,6 @@ class ImportProductCodeGapTest {
         testProduct = new Product();
         testProduct.setName("PCGAP Test Product " + suffix);
         testProduct.setProductCode("PCGAP" + suffix.substring(suffix.length() - 2));
-        testProduct.setItemCode("PCGIC" + suffix.substring(suffix.length() - 6));
         testProduct.setStockWh1(100);
         testProduct.setStockWh2(0);
         testProduct.setStockWh3(0);
