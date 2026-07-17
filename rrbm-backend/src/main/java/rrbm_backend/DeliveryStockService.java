@@ -293,9 +293,10 @@ public class DeliveryStockService {
     }
 
     private boolean productMatchesPoItem(Product prod, PoItem pi) {
-        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()
-                && (prod.getItemCode().equalsIgnoreCase(pi.getItemCode())
-                 || prod.getItemCode().equalsIgnoreCase(pi.getSupplierItemCode()))) return true;
+        // Primary: same product by id. Fallback: product name vs the PO line's description
+        // (defensive — every live PO line carries product_id).
+        if (pi.getProductId() != null && prod.getId() != null
+                && pi.getProductId().equals(prod.getId())) return true;
         return prod.getName() != null && prod.getName().equalsIgnoreCase(pi.getItemDescription());
     }
 
@@ -410,22 +411,13 @@ public class DeliveryStockService {
 
     /**
      * First OPEN (unfulfilled) line within a specific PO matching this product —
-     * legacy itemCode, then supplier itemCode, then product name vs item description.
+     * by product_id, then product name vs item description (defensive fallback).
      */
     private PoItem matchOpenPoItem(PurchaseOrder po, Product prod) {
-        PoItem poItem = null;
-        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-            poItem = po.getItems().stream()
-                    .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                            && prod.getItemCode().equalsIgnoreCase(i.getItemCode()))
-                    .findFirst().orElse(null);
-        }
-        if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-            poItem = po.getItems().stream()
-                    .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
-                            && prod.getItemCode().equalsIgnoreCase(i.getSupplierItemCode()))
-                    .findFirst().orElse(null);
-        }
+        PoItem poItem = po.getItems().stream()
+                .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
+                        && i.getProductId() != null && i.getProductId().equals(prod.getId()))
+                .findFirst().orElse(null);
         if (poItem == null && prod.getName() != null) {
             poItem = po.getItems().stream()
                     .filter(i -> !Boolean.TRUE.equals(i.getIsFulfilled())
@@ -437,36 +429,25 @@ public class DeliveryStockService {
 
     /** FIFO fallback across ALL open POs for this product (oldest open line first). */
     private PoItem fifoMatchOpenPoItem(Product prod) {
-        PoItem poItem = null;
-        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-            List<PoItem> open = poItemRepository.findByItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
-            if (!open.isEmpty()) poItem = open.get(0);
+        if (prod.getId() != null) {
+            List<PoItem> open = poItemRepository.findByProductIdAndIsFulfilledFalseOrderByIdAsc(prod.getId());
+            if (!open.isEmpty()) return open.get(0);
         }
-        if (poItem == null && prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-            List<PoItem> open = poItemRepository.findBySupplierItemCodeAndIsFulfilledFalseOrderByIdAsc(prod.getItemCode());
-            if (!open.isEmpty()) poItem = open.get(0);
-        }
-        if (poItem == null && prod.getName() != null) {
+        if (prod.getName() != null) {
             List<PoItem> open = poItemRepository.findByItemDescriptionIgnoreCaseAndIsFulfilledFalseOrderByIdAsc(prod.getName());
-            if (!open.isEmpty()) poItem = open.get(0);
+            if (!open.isEmpty()) return open.get(0);
         }
-        return poItem;
+        return null;
     }
 
     private PoItem findPoItemForDrItem(DeliveryLogItem drItem, List<PoItem> poItems) {
         if (drItem.getProductId() == null) return null;
         Product prod = productRepository.findById(drItem.getProductId()).orElse(null);
         if (prod == null) return null;
-        if (prod.getItemCode() != null && !prod.getItemCode().isBlank()) {
-            PoItem match = poItems.stream()
-                    .filter(i -> prod.getItemCode().equalsIgnoreCase(i.getItemCode()))
-                    .findFirst().orElse(null);
-            if (match != null) return match;
-            match = poItems.stream()
-                    .filter(i -> prod.getItemCode().equalsIgnoreCase(i.getSupplierItemCode()))
-                    .findFirst().orElse(null);
-            if (match != null) return match;
-        }
+        PoItem match = poItems.stream()
+                .filter(i -> i.getProductId() != null && i.getProductId().equals(prod.getId()))
+                .findFirst().orElse(null);
+        if (match != null) return match;
         if (prod.getName() != null) {
             return poItems.stream()
                     .filter(i -> prod.getName().equalsIgnoreCase(i.getItemDescription()))
@@ -480,13 +461,7 @@ public class DeliveryStockService {
             if (drItem.getProductId() == null) continue;
             Product prod = productRepository.findById(drItem.getProductId()).orElse(null);
             if (prod == null) continue;
-            boolean byCode = prod.getItemCode() != null && !prod.getItemCode().isBlank()
-                    && prod.getItemCode().equalsIgnoreCase(poItem.getItemCode());
-            boolean bySupplierCode = prod.getItemCode() != null && !prod.getItemCode().isBlank()
-                    && prod.getItemCode().equalsIgnoreCase(poItem.getSupplierItemCode());
-            boolean byName = prod.getName() != null
-                    && prod.getName().equalsIgnoreCase(poItem.getItemDescription());
-            if (byCode || bySupplierCode || byName) return receivedOf(drItem);
+            if (productMatchesPoItem(prod, poItem)) return receivedOf(drItem);
         }
         return 0;
     }

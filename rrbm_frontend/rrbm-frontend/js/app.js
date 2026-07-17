@@ -10806,8 +10806,8 @@
   // PURCHASE ORDERS PAGE
   // ================================================================
   var _allPoData        = [];    // raw list from backend
-  var _poItemCodeMap      = {};   // itemCode → {name, unitCost, productId} from products
-  var _poDescMap          = {};   // product name.toLowerCase() → itemCode (reverse lookup)
+  var _poItemCodeMap      = {};   // productCode → {name, unitCost, productId} from products
+  var _poDescMap          = {};   // product name.toLowerCase() → {productId, itemCode:productCode, name, unitCost}
   var _poSuppliersCache   = null; // session-level cache of active suppliers for PO dropdown (null = not loaded)
   var _poSupplierMappings = {};   // productId → {supplierItemCode, supplierDescription, unitCost}
   var _deliveryPoCache  = {};    // poNumber → full PO object (for receive stocks auto-populate)
@@ -11116,7 +11116,7 @@
         .catch(function(err){ console.warn('Failed to load suppliers for PO dropdown:', err); });
     }
 
-    // Pre-load inventory for autocomplete — item codes & product names
+    // Pre-load inventory for autocomplete — product codes & product names
     fetch(API_BASE + '/api/products', { headers: authHeaders() })
       .then(function(r){ return r.json(); })
       .then(function(products){
@@ -11130,8 +11130,9 @@
         products.filter(function(p){ return p.active !== false; }).forEach(function(p){
           var name = p.name || '';
           if (!name) return;
-          var code = p.itemCode ? p.itemCode.toUpperCase() : null;
-          // Desc map is keyed by product NAME → full info, so items WITHOUT an item
+          // PO lines are now identified by Product Code (the SKU), not the legacy Item Code.
+          var code = p.productCode ? p.productCode.toUpperCase() : null;
+          // Desc map is keyed by product NAME → full info, so products WITHOUT a product
           // code are still selectable by name (the backend links lines by productId).
           _poDescMap[name.toLowerCase()] = { productId: p.id, itemCode: code, name: name, unitCost: p.unitCost || 0 };
           if (code) {
@@ -11215,10 +11216,10 @@
     var tr  = document.createElement('tr');
     tr.innerHTML =
       '<td style="text-align:center;color:var(--text-muted);font-size:12px;">' + idx + '</td>' +
-      // Item Code — required, linked to datalist, triggers auto-fill on change/blur
+      // Product Code — required, linked to datalist, triggers auto-fill on change/blur
       // Hint div below shows supplier code when a mapping exists for the selected supplier
       '<td><input type="text" class="form-control form-control-sm po-item-code" ' +
-           'list="po-datalist-codes" placeholder="Item code *" ' +
+           'list="po-datalist-codes" placeholder="Product code *" ' +
            'style="font-family:monospace;text-transform:uppercase;" ' +
            'oninput="this.value=this.value.toUpperCase()" ' +
            'onchange="lookupPoItemCode(this)" onblur="lookupPoItemCode(this)" />' +
@@ -11248,7 +11249,7 @@
     });
   };
 
-  // Called when the Item Code field changes or loses focus.
+  // Called when the Product Code field changes or loses focus.
   // Validates the code against inventory, auto-fills description + unit price.
   window.lookupPoItemCode = function(input) {
     var code = (input.value || '').trim().toUpperCase();
@@ -11258,7 +11259,7 @@
     if (!info) {
       // Not in inventory — highlight red, show toast if it looks intentional (non-empty)
       input.style.outline = '2px solid #EF4444';
-      showToast('Item code "' + code + '" is not in the inventory. Select a valid product.', 'error');
+      showToast('Product code "' + code + '" is not in the inventory. Select a valid product.', 'error');
       return;
     }
     input.style.outline = ''; // reset
@@ -11358,8 +11359,8 @@
       var desc   = ((descEl || {}).value || '').trim();
       // Skip blank rows
       if (!code && !desc) return;
-      // Resolve the product: by item code if present, else by name, else the
-      // productId stamped on the row. Item code is OPTIONAL (backend links by productId).
+      // Resolve the product: by product code if present, else by name, else the
+      // productId stamped on the row. Code is OPTIONAL (backend links by productId).
       var info = null, productId = null, resolvedCode = null, resolvedName = null;
       if (code && _poItemCodeMap[code]) {
         info = _poItemCodeMap[code]; productId = info.productId; resolvedCode = code; resolvedName = info.name;
