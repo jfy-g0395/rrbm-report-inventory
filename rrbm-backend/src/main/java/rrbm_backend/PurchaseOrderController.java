@@ -190,6 +190,141 @@ public class PurchaseOrderController {
                 .orElse(ResponseEntity.ok((Object) toMap(saved)));
     }
 
+    // ── Edit an existing PO (header always; items with received-line guards) ──
+    // Header fields (vendor / ship-to / supplier / VAT / shipping / notes / ref) are always
+    // editable. Line items: unreceived lines can be edited or removed and new lines added, but
+    // a line that already has received goods (fulfilledQty > 0) is LOCKED — it cannot be changed
+    // or removed, protecting the warehouse stock + supplier payable created at receiving. The PO
+    // number is the identifier used by receiving and is not editable here.
+    @PatchMapping("/{id}")
+    @Transactional
+    public ResponseEntity<?> updatePurchaseOrder(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        Long userId = userIdFromHeader(authHeader);
+        PurchaseOrder po = poRepository.findByIdWithItems(id).orElse(null);
+        if (po == null) return ResponseEntity.notFound().build();
+
+        String vendorName = body.getOrDefault("vendorName", "").toString().trim();
+        if (vendorName.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Vendor name is required"));
+        }
+
+        // ── Header (always editable) ─────────────────────────────────────────
+        po.setVendorName(vendorName);
+        po.setVendorContact(strOrNull(body.get("vendorContact")));
+        po.setVendorAddress(strOrNull(body.get("vendorAddress")));
+        po.setShipToName(strOrNull(body.get("shipToName")));
+        po.setShipToContact(strOrNull(body.get("shipToContact")));
+        po.setShipToAddress(strOrNull(body.get("shipToAddress")));
+        po.setVatType(body.getOrDefault("vatType", "EXCLUSIVE").toString());
+        po.setShippingArrangement(strOrNull(body.get("shippingArrangement")));
+        po.setNotes(strOrNull(body.get("notes")));
+        po.setVendorReference(strOrNull(body.get("vendorReference")));
+        Long supplierId = body.get("supplierId") != null
+                ? ((Number) body.get("supplierId")).longValue() : null;
+        po.setSupplierId(supplierId);
+
+        // ── Items reconciliation ─────────────────────────────────────────────
+        Map<Long, PoItem> existing = new LinkedHashMap<>();
+        for (PoItem i : po.getItems()) existing.put(i.getId(), i);
+        Set<Long> keptIds = new HashSet<>();
+        List<PoItem> newItems = new ArrayList<>();
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rawItems =
+                (List<Map<String, Object>>) body.getOrDefault("items", Collections.emptyList());
+
+        for (Map<String, Object> ri : rawItems) {
+            Long itemId = ri.get("id") != null ? ((Number) ri.get("id")).longValue() : null;
+            String desc = ri.getOrDefault("itemDescription", "").toString().trim();
+            Long productId = ri.get("productId") != null ? ((Number) ri.get("productId")).longValue() : null;
+            int qty = ri.get("quantityOrdered") != null ? ((Number) ri.get("quantityOrdered")).intValue() : 1;
+            BigDecimal up = (ri.get("unitPrice") != null && !ri.get("unitPrice").toString().isBlank())
+                    ? new BigDecimal(ri.get("unitPrice").toString()) : null;
+
+            if (itemId != null && existing.containsKey(itemId)) {
+                PoItem item = existing.get(itemId);
+                keptIds.add(itemId);
+                int fulfilled = item.getFulfilledQty() != null ? item.getFulfilledQty() : 0;
+                if (fulfilled > 0) continue;   // received line is locked — keep exactly as-is
+                if (desc.isBlank()) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Item description is required"));
+                }
+                item.setItemDescription(desc);
+                item.setQuantityOrdered(qty);
+                item.setProductId(productId);
+                resolveSupplierSnapshot(item, supplierId, productId, up);
+                item.setLineTotal(item.getUnitPrice().multiply(BigDecimal.valueOf(qty)));
+            } else {
+                if (desc.isBlank()) continue;   // skip blank new rows
+                PoItem item = new PoItem();
+                item.setPurchaseOrder(po);
+                item.setItemDescription(desc);
+                item.setQuantityOrdered(qty);
+                item.setProductId(productId);
+                item.setFulfilledQty(0);
+                item.setIsFulfilled(false);
+                resolveSupplierSnapshot(item, supplierId, productId, up);
+                item.setLineTotal(item.getUnitPrice().multiply(BigDecimal.valueOf(qty)));
+                newItems.add(item);
+            }
+        }
+
+        // Removals: existing lines not present in the request. A received line cannot be removed.
+        for (PoItem old : existing.values()) {
+            if (keptIds.contains(old.getId())) continue;
+            int fulfilled = old.getFulfilledQty() != null ? old.getFulfilledQty() : 0;
+            if (fulfilled > 0) {
+                return ResponseEntity.badRequest().body(Map.of("message",
+                    "Cannot remove \"" + old.getItemDescription() + "\" — it already has received goods."));
+            }
+            po.getItems().remove(old);   // orphanRemoval deletes it
+        }
+        po.getItems().addAll(newItems);
+
+        if (po.getItems().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "At least one item is required"));
+        }
+
+        // Totals + status recompute (fulfillment can shift when lines are added/removed).
+        BigDecimal totalAmount = po.getItems().stream()
+                .map(i -> i.getLineTotal() != null ? i.getLineTotal() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        po.setTotalAmount(totalAmount);
+        boolean allFulfilled = po.getItems().stream().allMatch(i -> Boolean.TRUE.equals(i.getIsFulfilled()));
+        boolean anyReceived  = po.getItems().stream().anyMatch(i -> i.getFulfilledQty() != null && i.getFulfilledQty() > 0);
+        po.setStatus(allFulfilled ? "COMPLETE" : anyReceived ? "PARTIALLY_RECEIVED" : "INCOMPLETE");
+
+        poRepository.save(po);
+        String actor = actorName(userId, strOrNull(body.get("updatedBy")));
+        activityLogService.log(userId, actor, "UPDATE_PURCHASE_ORDER",
+            "Edited PO " + po.getPoNumber() + " for " + vendorName
+            + " | " + po.getItems().size() + " items | ₱" + totalAmount,
+            "PURCHASE_ORDER", String.valueOf(po.getId()));
+
+        return poRepository.findByIdWithItems(po.getId())
+                .map(full -> ResponseEntity.ok((Object) toMap(full)))
+                .orElse(ResponseEntity.ok((Object) toMap(po)));
+    }
+
+    /** Set a PO line's supplier snapshot + unit price from the (supplierId, productId) mapping,
+     *  mirroring create. Explicit caller price always wins; else the mapping cost; else keep/zero. */
+    private void resolveSupplierSnapshot(PoItem item, Long supplierId, Long productId, BigDecimal explicitPrice) {
+        item.setSupplierItemCode(null);
+        item.setSupplierDescription(null);
+        if (supplierId != null && productId != null) {
+            mappingRepository.findBySupplierIdAndProductId(supplierId, productId).ifPresent(m -> {
+                item.setSupplierItemCode(m.getSupplierItemCode());
+                item.setSupplierDescription(m.getSupplierDescription());
+                if (explicitPrice == null && m.getUnitCost() != null) item.setUnitPrice(m.getUnitCost());
+            });
+        }
+        if (explicitPrice != null) item.setUnitPrice(explicitPrice);
+        if (item.getUnitPrice() == null) item.setUnitPrice(BigDecimal.ZERO);
+    }
+
     // ── Update PO status (manual toggle) ──────────────────────────────────
     @PatchMapping("/{id}/status")
     @Transactional

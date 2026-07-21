@@ -10800,6 +10800,9 @@
   var _poDescMap          = {};   // product name.toLowerCase() → {productId, itemCode:productCode, name, unitCost}
   var _poSuppliersCache   = null; // session-level cache of active suppliers for PO dropdown (null = not loaded)
   var _poSupplierMappings = {};   // productId → {supplierItemCode, supplierDescription, unitCost}
+  var _poEditId           = null; // null = New PO modal in create mode; else the PO id being edited
+  var _poProductsById     = {};   // productId → {productCode, name} for edit-mode row prefill
+  var _poProductsLoadPromise = null; // resolves when the New/Edit PO product catalog has loaded
   var _deliveryPoCache  = {};    // poNumber → full PO object (for receive stocks auto-populate)
   var _deliveryRecords  = [];    // cached delivery report rows (for detail modal)
   var _importParsed     = [];    // parsed CSV orders waiting for import confirmation
@@ -10868,7 +10871,8 @@
         '<td>' + statusBadge + '</td>' +
         '<td>' + drCell + '</td>' +
         '<td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation();">' +
-          '<button class="btn btn-secondary btn-sm" onclick="printPoDocument(' + po.id + ')" title="Print PO"><i class="ti ti-printer"></i></button>' +
+          '<button class="btn btn-secondary btn-sm" onclick="openEditPoModal(' + po.id + ')" title="Edit PO"><i class="ti ti-edit"></i></button>' +
+          ' <button class="btn btn-secondary btn-sm" onclick="printPoDocument(' + po.id + ')" title="Print PO"><i class="ti ti-printer"></i></button>' +
           // Delete is a fail-safe for creation mistakes: only offered while nothing has been
           // received (fulfilled === 0). Once goods are received the PO has stock + payable
           // records and must not be deleted, so the button is not shown (backend also blocks it).
@@ -11077,6 +11081,10 @@
   }
 
   window.openNewPoModal = function() {
+    _poEditId = null;
+    var titleEl = $('po-modal-title'); if (titleEl) titleEl.textContent = 'New Purchase Order';
+    var numEl = $('po-number'); if (numEl) { numEl.readOnly = false; numEl.style.opacity = ''; }
+    var saveBtn = $('po-save-btn'); if (saveBtn) saveBtn.innerHTML = '<i class="ti ti-device-floppy"></i> Save Purchase Order';
     // Reset form
     ['po-number','po-vendor-name','po-vendor-contact','po-vendor-address',
      'po-shipping','po-notes','po-vendor-reference'].forEach(function(id){ var el = $(id); if (el) el.value = ''; });
@@ -11105,8 +11113,9 @@
         .catch(function(err){ console.warn('Failed to load suppliers for PO dropdown:', err); });
     }
 
-    // Pre-load inventory for autocomplete — product codes & product names
-    fetch(API_BASE + '/api/products', { headers: authHeaders() })
+    // Pre-load inventory for autocomplete — product codes & product names.
+    // Promise captured so openEditPoModal can build its item rows once the catalog is ready.
+    _poProductsLoadPromise = fetch(API_BASE + '/api/products', { headers: authHeaders() })
       .then(function(r){ return r.json(); })
       .then(function(products){
         _poItemCodeMap = {};
@@ -11116,6 +11125,8 @@
         if (codeList) codeList.innerHTML = '';
         if (descList) descList.innerHTML = '';
 
+        _poProductsById = {};
+        products.forEach(function(p){ _poProductsById[p.id] = { productCode: p.productCode || '', name: p.name || '' }; });
         products.filter(function(p){ return p.active !== false; }).forEach(function(p){
           var name = p.name || '';
           if (!name) return;
@@ -11144,6 +11155,61 @@
       .catch(function(){});
 
     $('modal-new-po').classList.add('open');
+  };
+
+  // Open the shared PO modal in EDIT mode for an existing PO. Header fields are pre-filled and
+  // editable; item rows are rebuilt from the PO (received lines locked). PO number is read-only.
+  window.openEditPoModal = function(id) {
+    var po = (_allPoData || []).find(function(p){ return p.id === id; });
+    if (!po) { showToast('PO not found', 'error'); return; }
+    openNewPoModal();   // reset + load suppliers/products (async) + open modal in create mode
+    _poEditId = id;
+    var titleEl = $('po-modal-title'); if (titleEl) titleEl.textContent = 'Edit Purchase Order ' + po.poNumber;
+    var saveBtn = $('po-save-btn');   if (saveBtn) saveBtn.innerHTML = '<i class="ti ti-device-floppy"></i> Update Purchase Order';
+    var numEl   = $('po-number');     if (numEl)   { numEl.value = po.poNumber; numEl.readOnly = true; numEl.style.opacity = '0.6'; }
+
+    var setv = function(fid, v){ var el = $(fid); if (el) el.value = v != null ? v : ''; };
+    var setSupplier = function(){ setv('po-supplier-id', po.supplierId != null ? String(po.supplierId) : ''); };
+    setSupplier();
+    setv('po-vendor-name', po.vendorName);       setv('po-vendor-contact', po.vendorContact);
+    setv('po-vendor-address', po.vendorAddress);  setv('po-vendor-reference', po.vendorReference);
+    setv('po-ship-name', po.shipToName);          setv('po-ship-contact', po.shipToContact);
+    setv('po-ship-address', po.shipToAddress);
+    setv('po-vat-type', po.vatType || 'EXCLUSIVE');
+    setv('po-shipping', po.shippingArrangement);  setv('po-notes', po.notes);
+
+    // Load the supplier's mappings for the row picker hints — WITHOUT overwriting the PO's stored
+    // vendor fields (they may have been edited away from the supplier's current data).
+    _poSupplierMappings = {};
+    if (po.supplierId) {
+      fetch(API_BASE + '/api/suppliers/' + po.supplierId + '/mappings', { headers: authHeaders() })
+        .then(function(r){ return r.json(); })
+        .then(function(maps){
+          if (Array.isArray(maps)) maps.forEach(function(m){
+            _poSupplierMappings[m.productId] = { supplierItemCode: m.supplierItemCode, supplierDescription: m.supplierDescription, unitCost: m.unitCost != null ? m.unitCost : null };
+          });
+        }).catch(function(){});
+    }
+
+    // Rebuild the item rows once the product catalog is ready (to resolve product codes).
+    (_poProductsLoadPromise || Promise.resolve()).then(function(){
+      setSupplier();   // re-apply now the dropdown is populated (first-open case)
+      var tb = $('po-items-tbody'); if (tb) tb.innerHTML = '';
+      (po.items || []).forEach(function(it){
+        var prod = _poProductsById[it.productId] || {};
+        addPoItemRow({
+          poItemId:     it.id,
+          productId:    it.productId,
+          code:         (prod.productCode || '').toUpperCase(),
+          name:         it.itemDescription || prod.name || '',
+          qty:          it.quantityOrdered != null ? it.quantityOrdered : 1,
+          price:        it.unitPrice != null ? it.unitPrice : 0,
+          fulfilledQty: it.fulfilledQty || 0
+        });
+      });
+      if (!(po.items || []).length) addPoItemRow();
+      calculatePoTotal();
+    });
   };
 
   // Called when the Supplier dropdown in the New PO modal changes.
@@ -11198,7 +11264,10 @@
       .catch(function(err){ console.warn('Failed to load PO supplier mappings:', err); });
   };
 
-  window.addPoItemRow = function() {
+  // prefill (edit mode): { poItemId, code, name, qty, price, fulfilledQty }. A line that already
+  // has received goods (fulfilledQty > 0) is rendered read-only — its qty/price/product and the
+  // remove button are locked, protecting the stock + payable recorded at receiving.
+  window.addPoItemRow = function(prefill) {
     var tbody = $('po-items-tbody');
     if (!tbody) return;
     var idx = tbody.rows.length + 1;
@@ -11224,6 +11293,28 @@
       '<td style="text-align:right;font-weight:600;" class="po-item-lt">₱0.00</td>' +
       '<td><button class="icon-btn" onclick="removePoItemRow(this)" title="Remove"><i class="ti ti-trash" style="color:#EF4444;"></i></button></td>';
     tbody.appendChild(tr);
+
+    if (prefill) {
+      if (prefill.poItemId != null) tr.setAttribute('data-po-item-id', prefill.poItemId);
+      if (prefill.productId != null) tr.setAttribute('data-product-id', prefill.productId);
+      var codeEl  = tr.querySelector('.po-item-code');
+      var descEl  = tr.querySelector('.po-item-desc');
+      var qtyEl   = tr.querySelector('.po-item-qty');
+      var priceEl = tr.querySelector('.po-item-price');
+      if (codeEl)  codeEl.value  = prefill.code || '';
+      if (descEl)  descEl.value  = prefill.name || '';
+      if (qtyEl)   qtyEl.value   = prefill.qty != null ? prefill.qty : 1;
+      if (priceEl) priceEl.value = prefill.price != null ? prefill.price : 0;
+      var received = (prefill.fulfilledQty || 0) > 0;
+      if (received) {
+        tr.setAttribute('data-received', '1');
+        [codeEl, descEl, qtyEl, priceEl].forEach(function(el){
+          if (el) { el.readOnly = true; el.disabled = true; el.style.background = 'var(--bg-secondary)'; el.title = 'Received line — locked'; }
+        });
+        var actionCell = tr.cells[tr.cells.length - 1];
+        if (actionCell) actionCell.innerHTML = '<span title="Already received — cannot edit or remove" style="font-size:9px;font-weight:700;color:#059669;">RECEIVED</span>';
+      }
+    }
   };
 
   window.removePoItemRow = function(btn) {
@@ -11364,7 +11455,9 @@
         showToast('Line "' + (desc || code) + '" is not a valid inventory product. Select from the list.', 'error');
         hasError = true; return;
       }
+      var poItemId = tr.getAttribute('data-po-item-id');
       items.push({
+        id:              poItemId ? parseInt(poItemId, 10) : undefined,   // present in edit mode
         itemCode:        resolvedCode,
         productId:       productId,
         itemDescription: desc || resolvedName || '',
@@ -11390,21 +11483,29 @@
       supplierId:          supplierIdRaw || null,
       vendorReference:     ($('po-vendor-reference')  || {}).value || null,
       createdBy:           currentUserName(),
+      updatedBy:           currentUserName(),
       items:               items
     };
 
-    fetch(API_BASE + '/api/purchase-orders', {
-      method: 'POST',
+    var isEdit = _poEditId != null;
+    var url    = isEdit ? (API_BASE + '/api/purchase-orders/' + _poEditId) : (API_BASE + '/api/purchase-orders');
+    fetch(url, {
+      method: isEdit ? 'PATCH' : 'POST',
       headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
       body: JSON.stringify(payload)
     })
     .then(function(res){ return res.json().then(function(d){ return {ok: res.ok, data: d}; }); })
     .then(function(r){
-      if (!r.ok) { showToast(r.data.message || 'Failed to save PO', 'error'); return; }
-      _allPoData.unshift(r.data);
+      if (!r.ok) { showToast(r.data.message || ('Failed to ' + (isEdit ? 'update' : 'save') + ' PO'), 'error'); return; }
+      if (isEdit) {
+        var idx = _allPoData.findIndex(function(p){ return p.id === _poEditId; });
+        if (idx >= 0) _allPoData[idx] = r.data; else _allPoData.unshift(r.data);
+      } else {
+        _allPoData.unshift(r.data);
+      }
       filterPoList();
       closeModal('modal-new-po');
-      showToast('Purchase Order ' + r.data.poNumber + ' saved', 'success');
+      showToast('Purchase Order ' + r.data.poNumber + (isEdit ? ' updated' : ' saved'), 'success');
     })
     .catch(function(err){ showToast('Error saving PO: ' + (err.message || err), 'error'); });
   };
