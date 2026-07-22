@@ -11578,29 +11578,22 @@
     var subtotal   = Number(po.totalAmount || 0);
     var vatAmount  = po.vatType === 'INCLUSIVE' ? subtotal * 0.12 : 0;
     var grandTotal = subtotal + vatAmount;
-    var tfootRows  = po.vatType === 'INCLUSIVE'
-      ? '<tr style="background:#fff9f5;">' +
-          '<td colspan="5" style="text-align:right;padding-right:12px;font-weight:600;">SUBTOTAL</td>' +
-          '<td style="text-align:right;font-weight:600;">' + fmt(subtotal) + '</td>' +
-        '</tr>' +
-        '<tr style="background:#fff9f5;">' +
-          '<td colspan="5" style="text-align:right;padding-right:12px;font-weight:600;">VAT (12%)</td>' +
-          '<td style="text-align:right;font-weight:600;">' + fmt(vatAmount) + '</td>' +
-        '</tr>' +
-        '<tr class="total-row">' +
-          '<td colspan="5" style="text-align:right;padding-right:12px;">GRAND TOTAL</td>' +
-          '<td style="text-align:right;">' + fmt(grandTotal) + '</td>' +
-        '</tr>'
-      : '<tr class="total-row">' +
-          '<td colspan="5" style="text-align:right;padding-right:12px;">ORDER TOTAL</td>' +
-          '<td style="text-align:right;">' + fmt(subtotal) + '</td>' +
-        '</tr>';
+    var sboxHtml   = po.vatType === 'INCLUSIVE'
+      ? '<div class="srow"><span>Subtotal</span><span>' + fmt(subtotal) + '</span></div>' +
+        '<div class="srow"><span>VAT (12%)</span><span>' + fmt(vatAmount) + '</span></div>' +
+        '<div class="srow stot"><span>Grand Total</span><span>' + fmt(grandTotal) + '</span></div>'
+      : '<div class="srow stot"><span>Order Total</span><span>' + fmt(subtotal) + '</span></div>';
 
     // Resolve absolute asset URLs from the current page's origin (space in the sig filename is URL-encoded)
     var baseDir    = window.location.origin + (window.location.pathname.replace(/[^/]*$/, ''));
     var logoUrl    = baseDir + 'assets/logo-two.png';
     var sigUrl     = baseDir + 'assets/Katherine%20e-sig.png';
     var preparedBy = escapeHtml(currentUserName());
+    // The e-signature belongs to user 4 (Katherine) only — it appears when she is the signed-in
+    // preparer, and is blank for every other user. The printed name stays the actual preparer's.
+    var sigImg     = String(currentUserId()) === '4'
+      ? '<img class="sig-img" src="' + sigUrl + '" alt="" onerror="this.style.display=\'none\'" />'
+      : '';
 
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
       '<title>PO-' + escapeHtml(po.poNumber) + '</title>' +
@@ -11608,58 +11601,65 @@
         ' onload="var b=document.getElementById(\'po-save-png\');if(b){b.disabled=false;b.title=\'Save as PNG\';}"><\/script>' +
       '<style>' +
         '@page{size:letter;margin:15mm;}' +
-        'body{font-family:Arial,sans-serif;font-size:12px;margin:0;padding:18px;color:#111;}' +
+        'body{font-family:Arial,sans-serif;font-size:12px;padding:20px;color:#1A1208;max-width:960px;margin:0 auto;}' +
         '#po-actions{position:fixed;top:10px;right:10px;z-index:9999;display:flex;gap:8px;}' +
         '#po-actions button{padding:6px 14px;border-radius:6px;border:1px solid #ccc;cursor:pointer;font-size:12px;background:#fff;}' +
-        '#po-actions .btn-pdf{background:#C25A0A;color:#fff;border-color:#C25A0A;}' +
-        '.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #C25A0A;padding-bottom:10px;margin-bottom:14px;}' +
-        '.po-title-blk{text-align:right;}' +
-        '.po-title{font-size:22px;font-weight:700;color:#C25A0A;}' +
-        '.po-num{font-size:13px;font-family:monospace;color:#555;margin-top:2px;}' +
-        '.po-date{font-size:11px;color:#888;margin-top:2px;}' +
-        '.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:0 0 14px 0;border:1px solid #e5e7eb;border-radius:6px;padding:12px;}' +
-        '.meta-sect h4{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:0 0 5px 0;}' +
-        '.meta-sect p{margin:2px 0;font-size:12px;}' +
-        'table{width:100%;border-collapse:collapse;margin:0 0 10px 0;}' +
-        'thead th{background:#C25A0A;color:#fff;padding:6px 8px;font-size:11px;text-align:left;}' +
-        'td{padding:5px 8px;border-bottom:1px solid #f0f0f0;font-size:11px;vertical-align:top;}' +
-        'tr:nth-child(even) td{background:#fafafa;}' +
-        '.total-row td{font-weight:700;border-top:2px solid #C25A0A;font-size:13px;background:#fff9f5;}' +
-        '.notes-blk{font-size:11px;color:#555;margin:6px 0;font-style:italic;}' +
-        '.sig-block{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:60px;}' +
+        '#po-actions .btn-pdf{background:#E0A800;color:#5C1A0E;border-color:#E0A800;font-weight:600;}' +
+        '.hdr{display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:3px solid #E0A800;padding-bottom:12px;margin-bottom:16px;}' +
+        '.hdr-po{text-align:right;}' +
+        '.hdr-po .po-title{font-size:20px;font-weight:800;color:#5C1A0E;letter-spacing:1px;}' +
+        '.hdr-po .n{font-size:13px;font-family:monospace;font-weight:700;color:#5C1A0E;margin-top:3px;}' +
+        '.hdr-po .d{font-size:11px;color:#666;margin-top:2px;}' +
+        '.igrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}' +
+        '.ibox{background:#FFFBE6;border:1px solid #E0A800;border-radius:6px;padding:10px 14px;}' +
+        '.lbl{font-size:10px;color:#666;text-transform:uppercase;margin-bottom:2px;}' +
+        '.ibox .nm{font-weight:700;font-size:12px;}' +
+        '.ibox p{margin:2px 0;font-size:12px;}' +
+        '.ibox .ref{font-family:monospace;font-size:11px;color:#666;}' +
+        'h3{margin:16px 0 8px;font-size:13px;color:#5C1A0E;border-bottom:2px solid #E0A800;padding-bottom:4px;}' +
+        'table{width:100%;border-collapse:collapse;margin-bottom:12px;}' +
+        'th{background:#E0A800;color:#5C1A0E;padding:6px 8px;text-align:left;font-size:11px;text-transform:uppercase;}' +
+        'td{padding:5px 8px;border-bottom:1px solid #eee;font-size:11px;vertical-align:top;}' +
+        '.vat-note{font-size:11px;color:#666;margin:4px 0;}' +
+        '.notes-blk{font-size:11px;color:#666;margin:6px 0;font-style:italic;}' +
+        '.sbox{background:#FFFBE6;border:2px solid #E0A800;border-radius:6px;padding:14px;max-width:320px;margin-left:auto;margin-bottom:8px;}' +
+        '.srow{display:flex;justify-content:space-between;margin-bottom:6px;font-size:12px;}' +
+        '.stot{font-size:14px;font-weight:700;color:#5C1A0E;border-top:1px solid #E0A800;padding-top:8px;margin-top:4px;}' +
+        '.sig-block{margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:60px;}' +
         '.sig-cell{position:relative;padding-top:44px;}' +
         '.sig-img{position:absolute;left:16px;top:0;height:48px;object-fit:contain;pointer-events:none;}' +
-        '.sig-rule{border-top:1px solid #555;}' +
-        '.sig-name{color:#111;font-weight:700;font-size:12px;padding-top:4px;}' +
-        '.sig-role{font-size:11px;color:#555;}' +
-        '.footer{margin-top:20px;border-top:1px solid #e5e7eb;padding-top:8px;font-size:10px;color:#aaa;display:flex;justify-content:space-between;}' +
-        '@media print{#po-actions{display:none!important;}}' +
+        '.sig-rule{border-top:1px solid #5C1A0E;}' +
+        '.sig-name{color:#1A1208;font-weight:700;font-size:12px;padding-top:4px;}' +
+        '.sig-role{font-size:11px;color:#666;}' +
+        '.footer{margin-top:24px;font-size:10px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:8px;}' +
+        '@media print{#po-actions{display:none!important;}body{padding:10px;}}' +
       '</style></head><body>' +
       '<div id="po-actions">' +
         '<button class="btn-pdf" onclick="window.print()"><i>&#128438;</i> Print / Save PDF</button>' +
         '<button id="po-save-png" onclick="savePNG()" disabled title="Loading export library…" style="opacity:0.5;cursor:not-allowed;">&#128247; Save as PNG</button>' +
       '</div>' +
       '<div class="hdr">' +
-        '<img src="' + logoUrl + '" style="height:64px;object-fit:contain;" onerror="this.style.display=\'none\'" />' +
-        '<div class="po-title-blk">' +
+        '<img src="' + logoUrl + '" alt="RRBM Packaging Supplies" style="height:56px;width:auto;object-fit:contain;" onerror="this.style.display=\'none\'" />' +
+        '<div class="hdr-po">' +
           '<div class="po-title">PURCHASE ORDER</div>' +
-          '<div class="po-num">P.O. # ' + escapeHtml(po.poNumber) + '</div>' +
-          '<div class="po-date">Date: ' + poDate + '</div>' +
+          '<div class="n">P.O. # ' + escapeHtml(po.poNumber) + '</div>' +
+          '<div class="d">Date: ' + poDate + '</div>' +
         '</div>' +
       '</div>' +
-      '<div class="meta-grid">' +
-        '<div class="meta-sect"><h4>Vendor</h4>' +
-          '<p><strong>' + escapeHtml(po.vendorName || '') + '</strong></p>' +
+      '<div class="igrid">' +
+        '<div class="ibox"><div class="lbl">Vendor</div>' +
+          '<div class="nm">' + escapeHtml(po.vendorName || '') + '</div>' +
           (po.vendorContact ? '<p>' + escapeHtml(po.vendorContact) + '</p>' : '') +
           (po.vendorAddress ? '<p>' + escapeHtml(po.vendorAddress) + '</p>' : '') +
-          (po.vendorReference ? '<p style="font-family:monospace;font-size:11px;color:#555;">Ref: ' + escapeHtml(po.vendorReference) + '</p>' : '') +
+          (po.vendorReference ? '<p class="ref">Ref: ' + escapeHtml(po.vendorReference) + '</p>' : '') +
         '</div>' +
-        '<div class="meta-sect"><h4>Ship To</h4>' +
-          '<p><strong>' + escapeHtml(po.shipToName || 'RRBM Packaging Supplies') + '</strong></p>' +
+        '<div class="ibox"><div class="lbl">Ship To</div>' +
+          '<div class="nm">' + escapeHtml(po.shipToName || 'RRBM Packaging Supplies') + '</div>' +
           (po.shipToContact ? '<p>' + escapeHtml(po.shipToContact) + '</p>' : '') +
           (po.shipToAddress ? '<p>' + escapeHtml(po.shipToAddress) + '</p>' : '') +
         '</div>' +
       '</div>' +
+      '<h3>Items Ordered</h3>' +
       '<table>' +
         '<thead><tr>' +
           '<th style="width:28px;text-align:center;">#</th>' +
@@ -11670,14 +11670,14 @@
           '<th style="width:100px;text-align:right;">Line Total</th>' +
         '</tr></thead>' +
         '<tbody>' + itemRows + '</tbody>' +
-        '<tfoot>' + tfootRows + '</tfoot>' +
       '</table>' +
-      '<p style="font-size:11px;color:#888;margin:4px 0;">' + vatNote + '</p>' +
+      '<div class="sbox">' + sboxHtml + '</div>' +
+      '<p class="vat-note">' + vatNote + '</p>' +
       (po.shippingArrangement ? '<p class="notes-blk">Shipping Arrangement: ' + escapeHtml(po.shippingArrangement) + '</p>' : '') +
       (po.notes ? '<p class="notes-blk">Notes / Remarks: ' + escapeHtml(po.notes) + '</p>' : '') +
       '<div class="sig-block">' +
         '<div class="sig-cell">' +
-          '<img class="sig-img" src="' + sigUrl + '" alt="" onerror="this.style.display=\'none\'" />' +
+          sigImg +
           '<div class="sig-rule"></div>' +
           '<div class="sig-name">' + preparedBy + '</div>' +
           '<div class="sig-role">Prepared by</div>' +
@@ -11688,10 +11688,7 @@
           '<div class="sig-role">Approved by</div>' +
         '</div>' +
       '</div>' +
-      '<div class="footer">' +
-        '<span>Generated: ' + genTs + '</span>' +
-        '<span>INTERNAL DOCUMENT &mdash; CONFIDENTIAL &mdash; FOR RRBM USE ONLY</span>' +
-      '</div>' +
+      '<div class="footer">RRBM Management System &middot; Generated ' + genTs + ' &middot; Confidential &middot; Internal use only</div>' +
       '<script>' +
         'function savePNG(){' +
           'if(!window.html2canvas){alert("Export library not available. Use Print / Save PDF instead.");return;}' +
