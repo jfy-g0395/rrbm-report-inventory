@@ -54,48 +54,88 @@ public class InventoryService {
             int qty = item.getQuantity();
 
             if (Boolean.TRUE.equals(product.getIsSet())) {
-                // ── SET PRODUCT: deduct each component across ALL warehouses ─────
+                // ── SET PRODUCT ─────────────────────────────────────────────────
                 // A set has no stock of its own; availability is derived from its
-                // components. Components are sourced greedily across wh1→wh2→wh3 so a
-                // set is fulfillable whenever combined component stock is sufficient.
+                // components. Staff physically pull every component from ONE location,
+                // so when the order line names a warehouse we deduct all components
+                // from that single warehouse (validated). Only when no warehouse is
+                // supplied (legacy / blank) do we fall back to greedy wh1→wh2→wh3.
                 List<ProductSetComponent> comps = productSetComponentRepository.findBySetProductId(product.getId());
                 if (comps.isEmpty()) {
                     throw new RuntimeException("Set product \"" + product.getName() + "\" has no components defined.");
                 }
 
-                // Pre-validate combined availability with a clear set-level message
-                int setAvailable = computeSetAvailableQty(product, comps);
-                if (setAvailable < qty) {
-                    throw new RuntimeException(
-                        "Insufficient stock for set \"" + product.getName() + "\". "
-                        + "Available: " + setAvailable + " set(s), requested: " + qty + ".");
-                }
-
-                // Deduct each component greedily across warehouses; record the first
-                // warehouse drawn from so the order line carries a representative value.
-                String primaryWh = null;
-                for (ProductSetComponent comp : comps) {
-                    Product compProduct = productRepository.findByIdForUpdate(comp.getComponentProductId())
-                            .orElseThrow(() -> new RuntimeException(
-                                    "Component product (id=" + comp.getComponentProductId() + ") not found."));
-                    int needed = qty * comp.getQuantityPerSet();
-                    for (String wh : new String[]{"wh1", "wh2", "wh3"}) {
-                        if (needed <= 0) break;
-                        int avail = getWhStock(compProduct, wh);
-                        if (avail <= 0) continue;
-                        int take = Math.min(avail, needed);
-                        deductWhStock(compProduct, wh, take);
-                        logMovement(compProduct.getId(), "ORDER_OUT", wh, -take,
+                String setWh = item.getWarehouse();
+                if (setWh != null && !setWh.isBlank()) {
+                    // ── Single chosen warehouse: every component comes from here ──
+                    final String wh = setWh.trim().toLowerCase();
+                    if (!wh.equals("wh1") && !wh.equals("wh2") && !wh.equals("wh3")) {
+                        throw new RuntimeException("Invalid warehouse \"" + setWh + "\" for set \""
+                                + product.getName() + "\". Must be wh1, wh2, or wh3.");
+                    }
+                    // Pre-validate: chosen warehouse must hold enough of EVERY component.
+                    for (ProductSetComponent comp : comps) {
+                        Product compProduct = productRepository.findByIdForUpdate(comp.getComponentProductId())
+                                .orElseThrow(() -> new RuntimeException(
+                                        "Component product (id=" + comp.getComponentProductId() + ") not found."));
+                        int needed = qty * comp.getQuantityPerSet();
+                        int avail  = getWhStock(compProduct, wh);
+                        if (avail < needed) {
+                            throw new RuntimeException("Insufficient stock in " + wh.toUpperCase()
+                                    + " for set \"" + product.getName() + "\" — component \""
+                                    + compProduct.getName() + "\" needs " + needed + ", only " + avail
+                                    + " available. Transfer stock or choose another warehouse.");
+                        }
+                    }
+                    // Deduct each component from the single chosen warehouse.
+                    for (ProductSetComponent comp : comps) {
+                        Product compProduct = productRepository.findByIdForUpdate(comp.getComponentProductId())
+                                .orElseThrow(() -> new RuntimeException(
+                                        "Component product (id=" + comp.getComponentProductId() + ") not found."));
+                        int needed = qty * comp.getQuantityPerSet();
+                        deductWhStock(compProduct, wh, needed);
+                        logMovement(compProduct.getId(), "ORDER_OUT", wh, -needed,
                                 order.getId(),
                                 "Set order by " + order.getCustomerName() + " (set: " + product.getName() + ")",
                                 userId);
-                        if (primaryWh == null) primaryWh = wh;
-                        needed -= take;
+                        productRepository.save(compProduct);
                     }
-                    productRepository.save(compProduct);
-                    // Combined availability was pre-validated, so needed must be 0 here.
+                    item.setWarehouse(wh);
+
+                } else {
+                    // ── Blank warehouse fallback: greedy across wh1→wh2→wh3 ──────
+                    // Pre-validate combined availability with a clear set-level message.
+                    int setAvailable = computeSetAvailableQty(product, comps);
+                    if (setAvailable < qty) {
+                        throw new RuntimeException(
+                            "Insufficient stock for set \"" + product.getName() + "\". "
+                            + "Available: " + setAvailable + " set(s), requested: " + qty + ".");
+                    }
+                    // Deduct each component greedily; record the first warehouse drawn from.
+                    String primaryWh = null;
+                    for (ProductSetComponent comp : comps) {
+                        Product compProduct = productRepository.findByIdForUpdate(comp.getComponentProductId())
+                                .orElseThrow(() -> new RuntimeException(
+                                        "Component product (id=" + comp.getComponentProductId() + ") not found."));
+                        int needed = qty * comp.getQuantityPerSet();
+                        for (String wh : new String[]{"wh1", "wh2", "wh3"}) {
+                            if (needed <= 0) break;
+                            int avail = getWhStock(compProduct, wh);
+                            if (avail <= 0) continue;
+                            int take = Math.min(avail, needed);
+                            deductWhStock(compProduct, wh, take);
+                            logMovement(compProduct.getId(), "ORDER_OUT", wh, -take,
+                                    order.getId(),
+                                    "Set order by " + order.getCustomerName() + " (set: " + product.getName() + ")",
+                                    userId);
+                            if (primaryWh == null) primaryWh = wh;
+                            needed -= take;
+                        }
+                        productRepository.save(compProduct);
+                        // Combined availability was pre-validated, so needed must be 0 here.
+                    }
+                    item.setWarehouse(primaryWh != null ? primaryWh : "wh1");
                 }
-                item.setWarehouse(primaryWh != null ? primaryWh : "wh1");
                 // Do NOT deduct from the set product itself — it has no physical stock
 
             } else {

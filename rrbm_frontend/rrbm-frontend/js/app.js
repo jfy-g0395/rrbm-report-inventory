@@ -6638,11 +6638,11 @@
     var warns = [];
     (o.items || []).forEach(function (it) {
       var wh = it.warehouse;
-      if (!wh) return; // sets / unassigned — backend allocates
+      if (!wh) return; // unassigned — backend allocates
       var p = (appState.cachedProducts || []).find(function (x) { return String(x.id) === String(it.productId); });
       if (!p) return;
-      var live = wh === 'wh1' ? (p.stockWh1 || 0) : wh === 'wh2' ? (p.stockWh2 || 0) : wh === 'wh3' ? (p.stockWh3 || 0) : null;
-      if (live == null) return;
+      // _orderWhAvail handles sets (buildable sets in that warehouse) and regular products (pcs).
+      var live = _orderWhAvail(p, wh);
       if (it.quantity > live) {
         warns.push((it.productName || 'item') + ': need ' + it.quantity + ', only ' + live + ' in ' + smWhLabel(wh));
       }
@@ -7504,6 +7504,81 @@
     appState.orderFormReady = true;
   }
 
+  /**
+   * Units available in a single warehouse for an order line — pieces for a regular
+   * product, buildable sets for a set product (min over components of floor(whStock/perSet)).
+   * Mirrors the backend single-warehouse deduction rule.
+   */
+  function _orderWhAvail(prod, wh) {
+    if (!prod) return 0;
+    if (prod.isSet) {
+      if (!prod.components || !prod.components.length) return 0;
+      var all = (appState.cachedProducts && appState.cachedProducts.length) ? appState.cachedProducts
+              : (appState.inventoryAllProducts || []);
+      var min = Infinity;
+      prod.components.forEach(function (c) {
+        var comp = all.find(function (p) { return p.id === c.componentProductId; });
+        if (!comp) { min = 0; return; }
+        var s = wh === 'wh1' ? (comp.stockWh1 || 0) : wh === 'wh2' ? (comp.stockWh2 || 0) : (comp.stockWh3 || 0);
+        var a = Math.floor(s / (c.quantityPerSet || 1));
+        if (a < min) min = a;
+      });
+      return min === Infinity ? 0 : min;
+    }
+    return wh === 'wh1' ? (prod.stockWh1 || 0) : wh === 'wh2' ? (prod.stockWh2 || 0) : (prod.stockWh3 || 0);
+  }
+
+  /** Warehouse <select> options for an order line, each showing per-warehouse availability. */
+  function _orderWhOptionsHtml(prod) {
+    var unit = (prod && prod.isSet) ? 'sets' : 'pcs';
+    var opts = '<option value="">— Select warehouse —</option>';
+    ['wh1', 'wh2', 'wh3'].forEach(function (wh) {
+      var a = _orderWhAvail(prod, wh);
+      opts += '<option value="' + wh + '">' + smWhLabel(wh) + ' (' + a.toLocaleString() + ' ' + unit + ')</option>';
+    });
+    return opts;
+  }
+
+  /**
+   * Per-warehouse stock notification for an order line. Reads the chosen warehouse and qty,
+   * then warns when the picked warehouse is out / short / critical / low, or confirms availability.
+   */
+  window.updateOrderStockNote = function (rn) {
+    var si = $('stockInfo-' + rn); if (!si) return;
+    var pid = (($('productId-' + rn) || {}).value) || '';
+    if (!pid) { si.innerHTML = '<span style="color:#888;">Select a product, then choose the warehouse to deduct from.</span>'; return; }
+    var prod = (appState.cachedProducts || []).find(function (p) { return String(p.id) === String(pid); });
+    if (!prod) { si.innerHTML = ''; return; }
+    var unit = prod.isSet ? 'set(s)' : 'pc(s)';
+    var wh  = (($('warehouse-' + rn) || {}).value) || '';
+    var qty = parseInt(($('quantity-' + rn) || {}).value) || 0;
+    if (!wh) {
+      // No warehouse chosen yet — show where stock sits and prompt an explicit choice.
+      var parts = ['wh1', 'wh2', 'wh3'].map(function (w) {
+        return smWhLabel(w) + ': ' + _orderWhAvail(prod, w).toLocaleString();
+      });
+      si.innerHTML = '<span style="color:#D97706;font-weight:600;">⚠ Choose a warehouse to deduct from</span> '
+        + '<span style="color:#888;">— ' + parts.join(' · ') + '</span>';
+      return;
+    }
+    var avail = _orderWhAvail(prod, wh);
+    var lbl = smWhLabel(wh);
+    if (avail <= 0) {
+      si.innerHTML = '<span style="color:#EF4444;font-weight:600;">⛔ Out of stock in ' + lbl + '</span> <span style="color:#888;">— pick another warehouse or transfer stock</span>';
+    } else if (qty > avail) {
+      si.innerHTML = '<span style="color:#EF4444;font-weight:600;">⛔ Only ' + avail.toLocaleString() + ' ' + unit + ' in ' + lbl + ', need ' + qty.toLocaleString() + '</span>';
+    } else {
+      var critical = prod.thresholdCritical || 0, low = prod.thresholdLow || 0;
+      if (avail <= critical) {
+        si.innerHTML = '<span style="color:#EF4444;font-weight:600;">🔴 Critically low: ' + avail.toLocaleString() + ' ' + unit + ' in ' + lbl + '</span>';
+      } else if (avail <= low) {
+        si.innerHTML = '<span style="color:#D97706;font-weight:600;">🟡 Low: ' + avail.toLocaleString() + ' ' + unit + ' in ' + lbl + '</span>';
+      } else {
+        si.innerHTML = '<span style="color:#10B981;font-weight:600;">✓ ' + avail.toLocaleString() + ' ' + unit + ' available in ' + lbl + '</span>';
+      }
+    }
+  };
+
   function addItemRow() {
     appState.itemRowCounter++;
     const num = appState.itemRowCounter;
@@ -7511,13 +7586,14 @@
     const container = $('orderItemsContainer'); if (!container) return;
     var isAgent = ($('field-source') || {}).value === 'AGENT';
     container.insertAdjacentHTML('beforeend', '<div class="order-item-row" id="' + rowId + '"><div class="row align-items-end">'
-      + '<div class="col-md-4"><label class="form-label">Product <span class="text-danger">*</span></label><div class="product-autocomplete-wrapper"><input type="text" class="form-control product-input" id="productInput-' + num + '" placeholder="Type to search products..." autocomplete="off" required><input type="hidden" class="product-id-hidden" id="productId-' + num + '" value=""><input type="hidden" id="warehouse-' + num + '" value="wh1"><div class="product-dropdown" id="productDropdown-' + num + '"></div><div id="productStatus-' + num + '" style="display:none;font-size:11px;margin-top:3px;"></div></div></div>'
+      + '<div class="col-md-4"><label class="form-label">Product <span class="text-danger">*</span></label><div class="product-autocomplete-wrapper"><input type="text" class="form-control product-input" id="productInput-' + num + '" placeholder="Type to search products..." autocomplete="off" required><input type="hidden" class="product-id-hidden" id="productId-' + num + '" value=""><div class="product-dropdown" id="productDropdown-' + num + '"></div><div id="productStatus-' + num + '" style="display:none;font-size:11px;margin-top:3px;"></div></div></div>'
       + '<div class="col-md-2"><label class="form-label">Qty <span class="text-danger">*</span></label><input type="number" class="form-control item-quantity" id="quantity-' + num + '" min="1" value="1" required></div>'
       + '<div class="col-md-2"><label class="form-label">Unit Price (₱) <span class="text-danger">*</span></label><input type="number" class="form-control item-unit-price" id="unitPrice-' + num + '" min="0" step="0.00001" value="0" required></div>'
-      + '<div class="col-md-2"><label class="form-label">Stock Info</label><div class="stock-info-display" id="stockInfo-' + num + '" style="font-size:11px;padding:6px 8px;background:#f0f0f0;border-radius:6px;min-height:34px;display:flex;align-items:center;color:#666;">Select a product</div></div>'
+      + '<div class="col-md-2"><label class="form-label">Warehouse <span class="text-danger">*</span></label><select class="form-control item-warehouse" id="warehouse-' + num + '" required><option value="">— Select warehouse —</option></select></div>'
       + '<div class="col-md-1"><label class="form-label">Subtotal</label><input type="text" class="form-control item-subtotal" id="subtotal-' + num + '" value="₱0.00" readonly style="background-color:#e9ecef;font-size:12px;"></div>'
       + '<div class="col-md-1 text-center"><label class="form-label">&nbsp;</label><button type="button" class="remove-item-btn d-block" onclick="removeItemRow(\'' + rowId + '\')"><i class="ti ti-trash"></i></button></div>'
       + '</div>'
+      + '<div class="stock-info-display" id="stockInfo-' + num + '" style="font-size:11px;padding:5px 8px;margin-top:4px;background:#f7f7f7;border-radius:6px;color:#666;">Select a product, then choose the warehouse to deduct from.</div>'
       + '<div class="row agent-op-row g-2 mt-0" id="op-row-' + num + '" style="display:' + (isAgent ? '' : 'none') + ';padding:4px 0;">'
       + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Base Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="basePrice-' + num + '" min="0" step="0.00001" placeholder="Company price per unit"></div>'
       + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Over Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="opPerUnit-' + num + '" min="0" step="0.00001" placeholder="Auto = Unit − Base" readonly style="background-color:#e9ecef;"></div>'
@@ -7525,9 +7601,10 @@
       + '</div>'
       + '</div>');
     setupProductAutocomplete(num);
-    const q = $('quantity-' + num); if (q) q.addEventListener('input', function () { calcItemSubtotal(num); });
+    const q = $('quantity-' + num); if (q) q.addEventListener('input', function () { calcItemSubtotal(num); updateOrderStockNote(num); });
     const p = $('unitPrice-' + num); if (p) p.addEventListener('input', function () { calcItemSubtotal(num); _recomputeOverPrice('unitPrice-' + num, 'basePrice-' + num, 'opPerUnit-' + num); });
     const bp = $('basePrice-' + num); if (bp) bp.addEventListener('input', function () { _recomputeOverPrice('unitPrice-' + num, 'basePrice-' + num, 'opPerUnit-' + num); });
+    const wh = $('warehouse-' + num); if (wh) wh.addEventListener('change', function () { updateOrderStockNote(num); });
   }
 
   window.removeItemRow = function (rowId) { const row = $(rowId); if (row) { row.remove(); calculateOrderTotals(); } };
@@ -7604,23 +7681,18 @@
             && _resellerPriceMap && _resellerPriceMap[this.getAttribute('data-id')] != null) {
           $('unitPrice-' + rn).value = parseFloat(_resellerPriceMap[this.getAttribute('data-id')]);
         }
-        const si = $('stockInfo-' + rn);
         const qEl = $('quantity-' + rn);
-        if (isSetItem) {
-          // Sets are sourced across all warehouses; backend allocates. Show set availability.
-          $('warehouse-' + rn).value = '';
-          var avail = isNaN(setAvail) ? 0 : setAvail;
-          if (qEl) { qEl.max = avail > 0 ? avail : ''; qEl.setAttribute('data-setmax', avail); }
-          if (si) {
-            si.innerHTML = avail > 0
-              ? '📦 <span style="color:#10B981;font-weight:600;">' + avail.toLocaleString() + ' sets available</span> <span style="color:#888;">(all warehouses)</span>'
-              : '<span style="color:#EF4444;">No sets available</span>';
-          }
-        } else {
-          $('warehouse-' + rn).value = pw;
-          if (qEl) { qEl.removeAttribute('max'); qEl.removeAttribute('data-setmax'); }
-          if (si) { let pts = []; if (wh1 > 0) pts.push('<span style="color:' + (pw === 'wh1' ? '#10B981;font-weight:600' : '#666') + '">WH1: ' + wh1.toLocaleString() + '</span>'); if (wh2 > 0) pts.push('<span style="color:' + (pw === 'wh2' ? '#10B981;font-weight:600' : '#666') + '">WH2: ' + wh2.toLocaleString() + '</span>'); if (wh3 > 0) pts.push('<span style="color:' + (pw === 'wh3' ? '#10B981;font-weight:600' : '#666') + '">Balagtas: ' + wh3.toLocaleString() + '</span>'); si.innerHTML = pts.length > 0 ? '📦 ' + pts.join(' · ') : '<span style="color:#EF4444;">No stock</span>'; }
+        if (qEl) { qEl.removeAttribute('max'); qEl.removeAttribute('data-setmax'); }
+        // Rebuild the warehouse picker with THIS product's per-warehouse availability and
+        // force an explicit choice (staff physically pull stock from one location). Applies
+        // to sets too — a set is deducted entirely from the chosen warehouse.
+        var whSel = $('warehouse-' + rn);
+        if (whSel) {
+          var prodObj = (appState.cachedProducts || []).find(function (p) { return String(p.id) === String($('productId-' + rn).value); });
+          whSel.innerHTML = _orderWhOptionsHtml(prodObj);
+          whSel.value = '';
         }
+        updateOrderStockNote(rn);
         dropdown.classList.remove('show'); calcItemSubtotal(rn);
       });
     });
@@ -7818,11 +7890,20 @@
       const productId   = ($('productId-'    + rn) || {}).value || '';
       const quantity    = parseInt(($('quantity-'  + rn) || {}).value) || 0;
       const unitPrice   = parseFloat(($('unitPrice-'  + rn) || {}).value) || 0;
-      const warehouse   = ($('warehouse-'    + rn) || {}).value || 'wh1';
+      const warehouse   = ($('warehouse-'    + rn) || {}).value || '';
+      var _prodObj = (appState.cachedProducts || []).find(function (pp) { return String(pp.id) === String(productId); });
+      var _isSetItem = !!(_prodObj && _prodObj.isSet);
       if (!productName.trim()) { showToast('Please select a product for all items', 'error'); hasError = true; return; }
       if (!productId || productId === '') { showToast('Select "' + productName + '" from the product catalog — type and choose from the list', 'error'); var ps0 = $('productStatus-' + rn); if (ps0) { ps0.style.display = ''; ps0.style.color = '#D97706'; ps0.textContent = '⚠ Select from catalog'; } hasError = true; return; }
       if (quantity <= 0)       { showToast('Quantity must be at least 1 for ' + productName, 'error'); hasError = true; return; }
       if (unitPrice <= 0)      { showToast('Unit price must be greater than 0 for ' + productName, 'error'); hasError = true; return; }
+      if (!warehouse)          { showToast('Choose a warehouse to deduct "' + productName + '" from', 'error'); updateOrderStockNote(rn); hasError = true; return; }
+      var _whAvail = _orderWhAvail(_prodObj, warehouse);
+      if (quantity > _whAvail) {
+        showToast('Only ' + _whAvail.toLocaleString() + ' ' + (_isSetItem ? 'set(s)' : 'pc(s)')
+          + ' of "' + productName + '" in ' + smWhLabel(warehouse) + ' — reduce qty or pick another warehouse', 'error');
+        updateOrderStockNote(rn); hasError = true; return;
+      }
       const item = { productName: productName.trim(), quantity, unitPrice, warehouse };
       item.productId = parseInt(productId);
       if (source === 'AGENT') {
@@ -7937,16 +8018,19 @@
       const unitPrice = parseFloat(($('unitPrice-' + rn) || {}).value) || 0;
       var _prodObj = (appState.cachedProducts || []).find(function (pp) { return String(pp.id) === String(productId); });
       var _isSetItem = !!(_prodObj && _prodObj.isSet);
-      // Sets are sourced across warehouses (backend allocates) — send blank warehouse.
-      const warehouse = _isSetItem ? '' : (($('warehouse-' + rn) || {}).value || 'wh1');
+      // Warehouse is mandatory for EVERY line (sets included) — staff pull stock from one location.
+      const warehouse = (($('warehouse-' + rn) || {}).value || '');
       if (!productName.trim()) { showToast('Please select a product for all items', 'error'); hasError = true; return; }
       if (!productId || productId === '') { showToast('Select "' + productName + '" from the product catalog — type and choose from the list', 'error'); var ps0 = $('productStatus-' + rn); if (ps0) { ps0.style.display = ''; ps0.style.color = '#D97706'; ps0.textContent = '⚠ Select from catalog'; } hasError = true; return; }
       if (quantity <= 0)       { showToast('Quantity must be at least 1 for ' + productName, 'error'); hasError = true; return; }
       if (unitPrice <= 0)      { showToast('Unit price must be greater than 0 for ' + productName, 'error'); hasError = true; return; }
-      if (_isSetItem) {
-        var _avail = (_prodObj.setAvailableQty != null) ? _prodObj.setAvailableQty : effectiveSetStock(_prodObj);
-        _avail = (_avail == null ? 0 : _avail);
-        if (quantity > _avail) { showToast('Only ' + _avail + ' set(s) of "' + productName + '" available', 'error'); hasError = true; return; }
+      if (!warehouse)          { showToast('Choose a warehouse to deduct "' + productName + '" from', 'error'); updateOrderStockNote(rn); hasError = true; return; }
+      // Per-warehouse availability check (regular = pcs, set = buildable sets in that warehouse).
+      var _whAvail = _orderWhAvail(_prodObj, warehouse);
+      if (quantity > _whAvail) {
+        showToast('Only ' + _whAvail.toLocaleString() + ' ' + (_isSetItem ? 'set(s)' : 'pc(s)')
+          + ' of "' + productName + '" in ' + smWhLabel(warehouse) + ' — reduce qty or pick another warehouse', 'error');
+        updateOrderStockNote(rn); hasError = true; return;
       }
       const item = { productName: productName.trim(), quantity, unitPrice, warehouse };
       item.productId = parseInt(productId);
@@ -10134,6 +10218,8 @@
   // Template format (1 header row only):
   //   [0] Order Number  [1] Shipping  [2] Tracking Number  [3] Product Name
   //   [4] Quantity      [5] Total     [6] Customer Name    [7] SKU (optional)
+  //   [8] Warehouse (WH1/WH2/WH3/Balagtas) — where stock is deducted from; required
+  //       before import (chosen in the preview if left blank in the file).
   function parseCsvOrders(text) {
     var lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     var dataLines = [];
@@ -10162,6 +10248,7 @@
       var total    = parseFloat((cols[5] || '0').replace(/[^0-9.]/g, '')) || 0;
       var customer = (cols[6] || '').trim();
       var csvSku   = (cols[7] || '').trim();
+      var csvWh    = _normalizeImportWh(cols[8] || '');
 
       if (!orderMap[orderNo]) {
         orderMap[orderNo] = {
@@ -10195,7 +10282,9 @@
         productId:   match ? match.product.id   : null,
         productName: match ? match.product.name : prodName,
         unitPrice:   unitPrice,
-        warehouse:   match ? bestWarehouse(match.product) : 'wh1',
+        // Warehouse comes from the CSV (validated). Left blank when not supplied/invalid —
+        // the person must pick it in the preview before the order can be imported.
+        warehouse:   csvWh,
         confidence:  match ? match.confidence : null
       });
       orderMap[orderNo].orderTotal += total;
@@ -10263,8 +10352,8 @@
 
   // Download the RRBM CSV import template
   window.downloadImportTemplate = function() {
-    var header  = 'Order Number,Shipping,Tracking Number,Product Name,Quantity,Total,Customer Name,SKU';
-    var example = '240530ABC001,SPX,TH1234567890PH,Pizza Box 10in White,10,1500.00,Maria Santos,PB10W';
+    var header  = 'Order Number,Shipping,Tracking Number,Product Name,Quantity,Total,Customer Name,SKU,Warehouse';
+    var example = '240530ABC001,SPX,TH1234567890PH,Pizza Box 10in White,10,1500.00,Maria Santos,PB10W,WH1';
     var csv     = header + '\n' + example + '\n';
     var blob    = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     var url     = URL.createObjectURL(blob);
@@ -10289,15 +10378,6 @@
       return o.length >= 17 ? 'TIKTOK' : 'LAZADA';
     }
     return 'SHOPEE'; // alphanumeric = Shopee
-  }
-
-  // Return the warehouse with the most available stock
-  function bestWarehouse(product) {
-    if (!product) return 'wh1';
-    var w1 = product.stockWh1 || 0, w2 = product.stockWh2 || 0, w3 = product.stockWh3 || 0;
-    if (w1 >= w2 && w1 >= w3) return 'wh1';
-    if (w2 >= w3)             return 'wh2';
-    return 'wh3';
   }
 
   // Match a CSV product to the inventory.
@@ -10388,6 +10468,40 @@
     return '<span style="background:' + c + ';color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">' + l + '</span>';
   }
 
+  // ── Batch-import warehouse helpers ────────────────────────────────────────
+  function _validImportWh(w) { return w === 'wh1' || w === 'wh2' || w === 'wh3'; }
+
+  // Accept WH1/WH2/WH3, bare 1/2/3, or "Balagtas" (= wh3); anything else → '' (unset).
+  function _normalizeImportWh(raw) {
+    var s = (raw || '').toString().toLowerCase().replace(/\s+/g, '');
+    if (s === 'wh1' || s === 'w1' || s === '1') return 'wh1';
+    if (s === 'wh2' || s === 'w2' || s === '2') return 'wh2';
+    if (s === 'wh3' || s === 'w3' || s === '3' || s === 'balagtas') return 'wh3';
+    return '';
+  }
+
+  function _importFindProduct(item) {
+    if (!item || item.productId == null) return null;
+    var _c = appState.cachedProducts, _i = appState.inventoryAllProducts;
+    var prods = (_c && _c.length) ? _c : (_i && _i.length) ? _i : [];
+    return prods.find(function (p) { return String(p.id) === String(item.productId); }) || null;
+  }
+
+  // Warehouse <select> options for a preview line, each showing that warehouse's stock.
+  function _importWhOptionsHtml(product, selected) {
+    var opts = '<option value="">— Select —</option>';
+    ['wh1', 'wh2', 'wh3'].forEach(function (w) {
+      var s = product ? (w === 'wh1' ? (product.stockWh1 || 0) : w === 'wh2' ? (product.stockWh2 || 0) : (product.stockWh3 || 0)) : 0;
+      opts += '<option value="' + w + '"' + (w === selected ? ' selected' : '') + '>' + smWhLabel(w) + ' (' + s.toLocaleString() + ')</option>';
+    });
+    return opts;
+  }
+
+  // An order is importable only when every item is a confirmed product AND has a warehouse.
+  function _importOrderReady(order) {
+    return order.items.every(function (i) { return i.confidence === 'high' && _validImportWh(i.warehouse); });
+  }
+
   // Render the preview table from _importParsed
   function renderEcomImportPreview(orders) {
     var wrap  = document.getElementById('import-preview-wrap');
@@ -10420,9 +10534,9 @@
 
     var html = '';
     orders.forEach(function(order, oi) {
-      // Two states only (no "review"): every item must be confirmed green, or the
-      // whole order is red / "Fix needed".
-      var allHigh   = order.items.every(function(i){ return i.confidence === 'high'; });
+      // Two states only (no "review"): every item must be confirmed green AND have a
+      // warehouse chosen, or the whole order is red / "Fix needed".
+      var allHigh   = _importOrderReady(order);
       var statusChip, statusClass;
       if (allHigh) {
         statusChip  = '<span style="background:#10B981;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Ready</span>';
@@ -10460,6 +10574,7 @@
         + '<th style="min-width:200px;">Matched Product <span style="font-weight:400;color:var(--text-muted);">(type to search)</span></th>'
         + '<th style="text-align:right;width:70px;">Qty</th>'
         + '<th style="text-align:right;width:90px;">Unit Price</th>'
+        + '<th style="text-align:center;width:120px;">Warehouse <span class="text-danger">*</span></th>'
         + '<th style="text-align:right;width:90px;">Line Total</th>'
         + '</tr></thead>'
         + '<tbody>';
@@ -10493,6 +10608,12 @@
           +   ' value="' + Number(item.unitPrice || 0).toFixed(3) + '" min="0" step="0.00001"'
           +   ' oninput="onImportPriceInput(this,' + oi + ',' + ii + ')"'
           +   ' style="width:78px;text-align:right;' + inputBase + 'border:1px solid var(--border);"></td>'
+          // Warehouse picker (required) — shows per-warehouse stock; deduction comes from here
+          + '<td style="text-align:center;"><select id="ipw-' + oi + '-' + ii + '"'
+          +   ' onchange="onImportWhInput(this,' + oi + ',' + ii + ')"'
+          +   ' style="' + inputBase + 'border:1.5px solid ' + (_validImportWh(item.warehouse) ? '#10B981' : '#EF4444') + ';">'
+          +   _importWhOptionsHtml(_importFindProduct(item), _validImportWh(item.warehouse) ? item.warehouse : '')
+          +   '</select></td>'
           // Line total (read-only, auto-updated)
           + '<td style="text-align:right;" id="iplt-' + oi + '-' + ii + '">' + fmt(lineTotal) + '</td>'
           + '</tr>';
@@ -10526,8 +10647,15 @@
     if (match) {
       item.productId   = match.id;
       item.productName = match.name;
-      item.warehouse   = bestWarehouse(match);
+      // Keep any warehouse already chosen; otherwise it stays unset (staff must pick).
+      if (!_validImportWh(item.warehouse)) item.warehouse = '';
       item.confidence  = 'high';
+      // Refresh the warehouse dropdown to show THIS product's per-warehouse stock.
+      var _whSel = document.getElementById('ipw-' + oi + '-' + ii);
+      if (_whSel) {
+        _whSel.innerHTML = _importWhOptionsHtml(match, _validImportWh(item.warehouse) ? item.warehouse : '');
+        _whSel.style.borderColor = _validImportWh(item.warehouse) ? '#10B981' : '#EF4444';
+      }
       // Price stays as-is (CSV-derived) — user can override it in the price input
       // Green border — confirmed match
       input.style.borderColor = '#10B981';
@@ -10544,6 +10672,16 @@
     }
 
     _importUpdateLineTotal(oi, ii);
+    _importRefreshChip(oi);
+    updateImportSummary();
+  };
+
+  /** Warehouse picker changed for a preview line — record it and re-evaluate readiness. */
+  window.onImportWhInput = function(sel, oi, ii) {
+    if (!_importParsed[oi] || !_importParsed[oi].items[ii]) return;
+    var item = _importParsed[oi].items[ii];
+    item.warehouse = sel.value;
+    sel.style.borderColor = _validImportWh(item.warehouse) ? '#10B981' : '#EF4444';
     _importRefreshChip(oi);
     updateImportSummary();
   };
@@ -10575,7 +10713,7 @@
   function _importRefreshChip(oi) {
     var order = _importParsed[oi];
     if (!order) return;
-    var allHigh = order.items.every(function(i){ return i.confidence === 'high'; });
+    var allHigh = _importOrderReady(order);
     var chip = allHigh
       ? '<span style="background:#10B981;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Ready</span>'
       : '<span style="background:#EF4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">Fix needed</span>';
@@ -10596,11 +10734,10 @@
     var ready = 0, fix = 0;
     _importParsed.forEach(function(order) {
       // Green (importable) ONLY when every item is confirmed — an exact SKU/code
-      // match or a hand-picked product ('high'). Anything else (a name guess or
-      // no match) makes the whole order red and it must be fixed first.
-      var allHigh = order.items.every(function(i){ return i.confidence === 'high'; });
-      if (allHigh) ready++;
-      else         fix++;
+      // match or a hand-picked product ('high') — AND has a warehouse chosen.
+      // Anything else (a name guess, no match, or missing warehouse) stays red.
+      if (_importOrderReady(order)) ready++;
+      else                          fix++;
     });
     var btn     = document.getElementById('import-submit-btn');
     var summary = document.getElementById('import-summary-line');
@@ -10618,21 +10755,25 @@
   window.submitCsvImport = async function() {
     var importable = _importParsed.filter(function(order){
       // Only fully-confirmed orders import — every item must be an exact SKU match
-      // or a hand-picked product ('high'). Name guesses ('suggested') and
-      // unmatched (null) rows are excluded until a person confirms them.
-      return order.items.every(function(i){ return i.confidence === 'high'; });
+      // or a hand-picked product ('high') AND have a warehouse chosen. Name guesses,
+      // unmatched rows, and missing-warehouse rows are excluded until a person fixes them.
+      return _importOrderReady(order);
     });
     if (!importable.length) { showToast('No orders ready to import', 'error'); return; }
 
-    // Orders left RED (not confirmed) — never sent; reported as "not submitted".
+    // Orders left RED (not confirmed / missing warehouse) — never sent; reported as "not submitted".
     var notSubmitted = _importParsed.filter(function(order){
-      return !order.items.every(function(i){ return i.confidence === 'high'; });
+      return !_importOrderReady(order);
     }).map(function(order){
-      var bad = order.items.filter(function(i){ return i.confidence !== 'high'; }).length;
+      var unconfirmed = order.items.filter(function(i){ return i.confidence !== 'high'; }).length;
+      var noWh        = order.items.filter(function(i){ return i.confidence === 'high' && !_validImportWh(i.warehouse); }).length;
+      var reasons = [];
+      if (unconfirmed) reasons.push(unconfirmed + ' item' + (unconfirmed !== 1 ? 's' : '') + ' not confirmed');
+      if (noWh)        reasons.push(noWh + ' item' + (noWh !== 1 ? 's' : '') + ' missing warehouse');
       return {
         ref:      (order.allOrderNos && order.allOrderNos.length > 1) ? order.allOrderNos.join(', ') : order.orderNo,
         customer: order.customer || '—',
-        reason:   bad + ' item' + (bad !== 1 ? 's' : '') + ' not confirmed (still red)'
+        reason:   reasons.join(' · ') || 'not ready'
       };
     });
 
@@ -10661,7 +10802,7 @@
             productName: item.productName,
             quantity:    item.qty,
             unitPrice:   item.unitPrice || 0,
-            warehouse:   item.warehouse || 'wh1'
+            warehouse:   item.warehouse   // required + validated by _importOrderReady gate
           };
         })
       };
