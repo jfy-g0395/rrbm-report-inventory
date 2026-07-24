@@ -7528,6 +7528,53 @@
     return wh === 'wh1' ? (prod.stockWh1 || 0) : wh === 'wh2' ? (prod.stockWh2 || 0) : (prod.stockWh3 || 0);
   }
 
+  /** Stock of one set component in a given warehouse (null when the component product is missing). */
+  function _componentWhStock(comp, wh) {
+    var all = (appState.cachedProducts && appState.cachedProducts.length) ? appState.cachedProducts
+            : (appState.inventoryAllProducts || []);
+    var c = all.find(function (p) { return p.id === comp.componentProductId; });
+    if (!c) return null;
+    return wh === 'wh1' ? (c.stockWh1 || 0) : wh === 'wh2' ? (c.stockWh2 || 0) : (c.stockWh3 || 0);
+  }
+
+  /**
+   * Compact per-component, per-warehouse stock breakdown for a set product. Shows where each
+   * component's stock physically sits + buildable sets per warehouse. When chosenWh/qty are
+   * given, the component(s) that can't cover the order in that warehouse are flagged red so the
+   * limiting piece is obvious. Returns '' for non-set products.
+   */
+  function _setComponentBreakdownHtml(prod, chosenWh, qty) {
+    if (!prod || !prod.isSet || !prod.components || !prod.components.length) return '';
+    var q = qty > 0 ? qty : 0;
+    var rows = prod.components.map(function (comp) {
+      var perSet = comp.quantityPerSet || 1;
+      var name   = escapeHtml(comp.componentProductName || ('component #' + comp.componentProductId));
+      var s1 = _componentWhStock(comp, 'wh1'), s2 = _componentWhStock(comp, 'wh2'), s3 = _componentWhStock(comp, 'wh3');
+      if (s1 == null) return '<div style="color:#EF4444;">' + name + ' — not found in inventory</div>';
+      var needed      = q * perSet;
+      var chosenStock = chosenWh === 'wh1' ? s1 : chosenWh === 'wh2' ? s2 : chosenWh === 'wh3' ? s3 : null;
+      var short       = chosenWh && chosenStock != null && chosenStock < needed;
+      function cell(wh, val) {
+        var hi = (wh === chosenWh);
+        var col = hi ? (short ? '#EF4444' : '#10B981') : '#999';
+        return '<span style="color:' + col + ';' + (hi ? 'font-weight:700;' : '') + '">' + smWhLabel(wh) + ': ' + val.toLocaleString() + '</span>';
+      }
+      return '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:baseline;">'
+        + '<span style="min-width:130px;' + (short ? 'color:#EF4444;font-weight:600;' : 'color:#555;') + '">' + name + (perSet > 1 ? ' <span style="color:#888;">×' + perSet + '</span>' : '') + '</span>'
+        + cell('wh1', s1) + '<span style="color:#ccc;">·</span>' + cell('wh2', s2) + '<span style="color:#ccc;">·</span>' + cell('wh3', s3)
+        + (short ? ' <span style="color:#EF4444;">(need ' + needed.toLocaleString() + ')</span>' : '')
+        + '</div>';
+    }).join('');
+    var b1 = _orderWhAvail(prod, 'wh1'), b2 = _orderWhAvail(prod, 'wh2'), b3 = _orderWhAvail(prod, 'wh3');
+    var buildable = '<div style="margin-top:3px;color:#666;">→ Buildable sets — '
+      + smWhLabel('wh1') + ': <b>' + b1.toLocaleString() + '</b> · '
+      + smWhLabel('wh2') + ': <b>' + b2.toLocaleString() + '</b> · '
+      + smWhLabel('wh3') + ': <b>' + b3.toLocaleString() + '</b></div>';
+    return '<div style="font-size:10px;line-height:1.55;background:#faf7ef;border-left:3px solid #E0A800;padding:4px 8px;border-radius:4px;">'
+      + '<div style="font-weight:700;color:#5C1A0E;margin-bottom:2px;">Bundle components (stock per warehouse)</div>'
+      + rows + buildable + '</div>';
+  }
+
   /** Warehouse <select> options for an order line, each showing per-warehouse availability. */
   function _orderWhOptionsHtml(prod) {
     var unit = (prod && prod.isSet) ? 'sets' : 'pcs';
@@ -7545,13 +7592,20 @@
    */
   window.updateOrderStockNote = function (rn) {
     var si = $('stockInfo-' + rn); if (!si) return;
+    var bd = $('setBreakdown-' + rn);
+    var clearBd = function () { if (bd) { bd.style.display = 'none'; bd.innerHTML = ''; } };
     var pid = (($('productId-' + rn) || {}).value) || '';
-    if (!pid) { si.innerHTML = '<span style="color:#888;">Select a product, then choose the warehouse to deduct from.</span>'; return; }
+    if (!pid) { si.innerHTML = '<span style="color:#888;">Select a product, then choose the warehouse to deduct from.</span>'; clearBd(); return; }
     var prod = (appState.cachedProducts || []).find(function (p) { return String(p.id) === String(pid); });
-    if (!prod) { si.innerHTML = ''; return; }
+    if (!prod) { si.innerHTML = ''; clearBd(); return; }
     var unit = prod.isSet ? 'set(s)' : 'pc(s)';
     var wh  = (($('warehouse-' + rn) || {}).value) || '';
     var qty = parseInt(($('quantity-' + rn) || {}).value) || 0;
+    // Bundle component breakdown (where each component's stock sits per warehouse).
+    if (bd) {
+      if (prod.isSet) { bd.style.display = ''; bd.innerHTML = _setComponentBreakdownHtml(prod, wh, qty); }
+      else            { clearBd(); }
+    }
     if (!wh) {
       // No warehouse chosen yet — show where stock sits and prompt an explicit choice.
       var parts = ['wh1', 'wh2', 'wh3'].map(function (w) {
@@ -7594,6 +7648,7 @@
       + '<div class="col-md-1 text-center"><label class="form-label">&nbsp;</label><button type="button" class="remove-item-btn d-block" onclick="removeItemRow(\'' + rowId + '\')"><i class="ti ti-trash"></i></button></div>'
       + '</div>'
       + '<div class="stock-info-display" id="stockInfo-' + num + '" style="font-size:11px;padding:5px 8px;margin-top:4px;background:#f7f7f7;border-radius:6px;color:#666;">Select a product, then choose the warehouse to deduct from.</div>'
+      + '<div id="setBreakdown-' + num + '" style="margin-top:4px;display:none;"></div>'
       + '<div class="row agent-op-row g-2 mt-0" id="op-row-' + num + '" style="display:' + (isAgent ? '' : 'none') + ';padding:4px 0;">'
       + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Base Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="basePrice-' + num + '" min="0" step="0.00001" placeholder="Company price per unit"></div>'
       + '<div class="col-md-3"><label class="form-label" style="font-size:11px;margin-bottom:2px;">Over Price/Unit (₱)</label><input type="number" class="form-control form-control-sm" id="opPerUnit-' + num + '" min="0" step="0.00001" placeholder="Auto = Unit − Base" readonly style="background-color:#e9ecef;"></div>'
@@ -10487,14 +10542,30 @@
     return prods.find(function (p) { return String(p.id) === String(item.productId); }) || null;
   }
 
-  // Warehouse <select> options for a preview line, each showing that warehouse's stock.
+  // Warehouse <select> options for a preview line, each showing that warehouse's availability.
+  // Set-aware: a bundle shows buildable sets per warehouse (its own stock columns are always 0).
   function _importWhOptionsHtml(product, selected) {
     var opts = '<option value="">— Select —</option>';
+    var isSet = product && product.isSet;
     ['wh1', 'wh2', 'wh3'].forEach(function (w) {
-      var s = product ? (w === 'wh1' ? (product.stockWh1 || 0) : w === 'wh2' ? (product.stockWh2 || 0) : (product.stockWh3 || 0)) : 0;
-      opts += '<option value="' + w + '"' + (w === selected ? ' selected' : '') + '>' + smWhLabel(w) + ' (' + s.toLocaleString() + ')</option>';
+      var s = product
+        ? (isSet ? _orderWhAvail(product, w)
+                 : (w === 'wh1' ? (product.stockWh1 || 0) : w === 'wh2' ? (product.stockWh2 || 0) : (product.stockWh3 || 0)))
+        : 0;
+      opts += '<option value="' + w + '"' + (w === selected ? ' selected' : '') + '>' + smWhLabel(w) + ' (' + s.toLocaleString() + (isSet ? ' sets' : '') + ')</option>';
     });
     return opts;
+  }
+
+  /** Repopulate the bundle-component breakdown row for one preview line from current state. */
+  function _importRefreshBreakdown(oi, ii) {
+    var item = _importParsed[oi] && _importParsed[oi].items[ii]; if (!item) return;
+    var prod = _importFindProduct(item);
+    var rowEl = document.getElementById('ipbr-' + oi + '-' + ii);
+    var cell  = document.getElementById('ipb-' + oi + '-' + ii);
+    if (!rowEl || !cell) return;
+    if (prod && prod.isSet) { rowEl.style.display = ''; cell.innerHTML = _setComponentBreakdownHtml(prod, item.warehouse, item.qty); }
+    else                    { rowEl.style.display = 'none'; cell.innerHTML = ''; }
   }
 
   // An order is importable only when every item is a confirmed product AND has a warehouse.
@@ -10617,6 +10688,14 @@
           // Line total (read-only, auto-updated)
           + '<td style="text-align:right;" id="iplt-' + oi + '-' + ii + '">' + fmt(lineTotal) + '</td>'
           + '</tr>';
+
+        // Bundle component breakdown row (shown only for set products)
+        var _bp = _importFindProduct(item);
+        var _isSet = !!(_bp && _bp.isSet);
+        html += '<tr id="ipbr-' + oi + '-' + ii + '"' + (_isSet ? '' : ' style="display:none;"') + '>'
+          + '<td colspan="6" style="padding:0 8px 6px 8px;background:var(--bg-secondary);" id="ipb-' + oi + '-' + ii + '">'
+          + (_isSet ? _setComponentBreakdownHtml(_bp, item.warehouse, item.qty) : '')
+          + '</td></tr>';
       });
 
       html += '</tbody></table></div></td></tr>';
@@ -10672,6 +10751,7 @@
     }
 
     _importUpdateLineTotal(oi, ii);
+    _importRefreshBreakdown(oi, ii);
     _importRefreshChip(oi);
     updateImportSummary();
   };
@@ -10682,6 +10762,7 @@
     var item = _importParsed[oi].items[ii];
     item.warehouse = sel.value;
     sel.style.borderColor = _validImportWh(item.warehouse) ? '#10B981' : '#EF4444';
+    _importRefreshBreakdown(oi, ii);
     _importRefreshChip(oi);
     updateImportSummary();
   };
@@ -10691,6 +10772,7 @@
     if (!_importParsed[oi] || !_importParsed[oi].items[ii]) return;
     _importParsed[oi].items[ii].qty = Math.max(1, parseInt(input.value, 10) || 1);
     _importUpdateLineTotal(oi, ii);
+    _importRefreshBreakdown(oi, ii);
   };
 
   /** Unit price field edited — update state and line total. */
